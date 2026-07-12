@@ -1,18 +1,41 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
 
+// versionName is human-set in version.properties; the build number (versionCode) is passed by
+// CI via -PbuildNumber and increments on every push. Defaults keep local builds working.
+val appVersionName = Properties().apply {
+    rootProject.file("version.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+}.getProperty("versionName", "1.0")
+val appBuildNumber = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 1
+
+// Release signing comes from env (CI injects it from GitHub secrets). Absent locally → unsigned.
+val ciKeystore: String? = System.getenv("XFILES_KEYSTORE")
+
 android {
-    namespace = "com.xfiles"
+    namespace = "app.local1st.files"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.xfiles"
+        applicationId = "app.local1st.files"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = appBuildNumber
+        versionName = appVersionName
+    }
+
+    signingConfigs {
+        if (ciKeystore != null) {
+            create("release") {
+                storeFile = file(ciKeystore)
+                storePassword = System.getenv("XFILES_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("XFILES_KEY_ALIAS")
+                keyPassword = System.getenv("XFILES_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -23,6 +46,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            if (ciKeystore != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 

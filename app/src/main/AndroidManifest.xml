@@ -19,11 +19,7 @@
         tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
-    <!-- Networking (LAN/WiFi sharing features) -->
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-
+    <!-- No INTERNET permission: XFiles is fully offline — no network, no telemetry. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Long-running file operations continue in a foreground service -->

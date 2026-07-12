@@ -1,8 +1,17 @@
 # XFiles
 
-An Android file manager that clones the workflow of **X-plore File Manager**
-(lonelycatgames) — dual-pane tree browsing, archive-as-folder, app manager —
-rebuilt on the latest Android stack with a **Material 3 Expressive** UI.
+An offline, open-source Android file manager with X-plore's workflow — dual-pane
+tree browsing, archive-as-folder, app manager, root access — on the latest Android
+stack with a **Material 3 Expressive** UI.
+
+Package `app.local1st.files`. **No network permission, no telemetry.**
+
+## Why
+
+- **X-plore broke on [Waydroid](https://waydro.id)** over the past half-year; I needed a replacement.
+- **It's the LLM era** — if a tool doesn't fit, build your own.
+- **Software with dangerous root powers should be open-source, fully offline, and
+  collect nothing.** XFiles has no `INTERNET` permission and no analytics.
 
 ## Features
 
@@ -89,6 +98,18 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 Requires JDK 17+ and an Android SDK with platform 37. On first launch grant
 “All files access” (the app deep-links to the system page).
+
+## Releases
+
+A **self-hosted** GitHub Actions workflow (`.github/workflows/release.yml`) builds a
+signed APK on every push to `main`:
+
+- The build number (`versionCode`) increments each run (`github.run_number`).
+- `versionName` lives in `version.properties`. While it's unchanged, each push just
+  refreshes a single rolling **`nightly`** prerelease with the latest build. Bump
+  `versionName` to cut a new stable `vX.Y` release.
+- Signing keys/passwords come from repo secrets: `KEYSTORE_BASE64`,
+  `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. The runner needs the Android SDK.
 
 ---
 *This is a study/clone project inspired by X-plore File Manager; it shares no
