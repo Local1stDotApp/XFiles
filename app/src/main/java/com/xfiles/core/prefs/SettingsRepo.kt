@@ -3,9 +3,12 @@ package com.xfiles.core.prefs
 import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import java.io.IOException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 
 enum class SortBy { NAME, SIZE, DATE, TYPE }
@@ -22,14 +25,20 @@ class SettingsRepo(private val context: Context) {
     private val keyThemeMode = stringPreferencesKey("theme_mode")
     private val keyDynamicColor = booleanPreferencesKey("dynamic_color")
 
-    val showHidden: Flow<Boolean> = context.dataStore.data.map { it[keyShowHidden] ?: false }
+    // A corrupted preferences file surfaces as an IOException on every read; recover with
+    // defaults instead of crash-looping the app at startup.
+    private val data = context.dataStore.data.catch { e ->
+        if (e is IOException) emit(emptyPreferences()) else throw e
+    }
+
+    val showHidden: Flow<Boolean> = data.map { it[keyShowHidden] ?: false }
     val sortBy: Flow<SortBy> =
-        context.dataStore.data.map { runCatching { SortBy.valueOf(it[keySortBy] ?: "") }.getOrDefault(SortBy.NAME) }
-    val sortDescending: Flow<Boolean> = context.dataStore.data.map { it[keySortDescending] ?: false }
-    val dirsFirst: Flow<Boolean> = context.dataStore.data.map { it[keyDirsFirst] ?: true }
+        data.map { runCatching { SortBy.valueOf(it[keySortBy] ?: "") }.getOrDefault(SortBy.NAME) }
+    val sortDescending: Flow<Boolean> = data.map { it[keySortDescending] ?: false }
+    val dirsFirst: Flow<Boolean> = data.map { it[keyDirsFirst] ?: true }
     val themeMode: Flow<ThemeMode> =
-        context.dataStore.data.map { runCatching { ThemeMode.valueOf(it[keyThemeMode] ?: "") }.getOrDefault(ThemeMode.SYSTEM) }
-    val dynamicColor: Flow<Boolean> = context.dataStore.data.map { it[keyDynamicColor] ?: true }
+        data.map { runCatching { ThemeMode.valueOf(it[keyThemeMode] ?: "") }.getOrDefault(ThemeMode.SYSTEM) }
+    val dynamicColor: Flow<Boolean> = data.map { it[keyDynamicColor] ?: true }
 
     suspend fun setShowHidden(value: Boolean) = context.dataStore.edit { it[keyShowHidden] = value }
     suspend fun setSortBy(value: SortBy) = context.dataStore.edit { it[keySortBy] = value.name }

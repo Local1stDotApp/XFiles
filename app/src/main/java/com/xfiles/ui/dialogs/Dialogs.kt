@@ -221,15 +221,7 @@ private fun EntryMenuContent(
         }
         if (entry.kind == EntryKind.ARCHIVE) {
             MenuItem("Extract to other pane") {
-                vm.inactiveCtrl.focusedDirEntry()?.let { dest ->
-                    Graph.opEngine.submit(
-                        FileOp.Copy(
-                            listOf(entry.copy(kind = EntryKind.ARCHIVE)),
-                            dest,
-                            move = false,
-                        ),
-                    )
-                }
+                vm.extractArchive(entry)
                 dismiss()
             }
             if (entry.extension == "apk") {

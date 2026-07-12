@@ -86,7 +86,7 @@ fun PaneView(
                 ) {
                     items(
                         count = state.nodes.size,
-                        key = { state.nodes[it].entry.id },
+                        key = { state.nodes[it].key },
                     ) { index ->
                         val node = state.nodes[index]
                         EntryRow(

@@ -7,6 +7,13 @@ import com.xfiles.core.fs.XEntry
 @Immutable
 data class TreeNode(
     val entry: XEntry,
+    /**
+     * Position-unique list key. An entry id alone is not unique across the whole tree:
+     * a removable volume root (`file:///storage/UUID`) also appears as a child of `/storage`
+     * under the filesystem `Root`, so keying a LazyColumn by id would crash. Qualifying with
+     * the parent container id disambiguates (a name is unique within one parent).
+     */
+    val key: String,
     val depth: Int,
     val expanded: Boolean,
     val loading: Boolean,

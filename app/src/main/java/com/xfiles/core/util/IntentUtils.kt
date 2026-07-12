@@ -14,6 +14,18 @@ object IntentUtils {
     private fun uriFor(context: Context, path: String): Uri =
         FileProvider.getUriForFile(context, context.packageName + ".fileprovider", File(path))
 
+    /**
+     * These are launched from the application context (see [com.xfiles.di.Graph.appContext]),
+     * which is not an Activity, so every started intent — including the chooser wrapper — must
+     * carry FLAG_ACTIVITY_NEW_TASK or startActivity throws.
+     */
+    private fun Context.launch(intent: Intent): Boolean = try {
+        startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    } catch (_: ActivityNotFoundException) {
+        false
+    }
+
     /** Open a local file with an external app chooser. Returns false when nothing handled it. */
     fun openWith(context: Context, entry: XEntry): Boolean {
         val path = entry.localPath ?: return false
@@ -21,12 +33,7 @@ object IntentUtils {
         val intent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uriFor(context, path), mime)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        return try {
-            context.startActivity(Intent.createChooser(intent, entry.name))
-            true
-        } catch (_: ActivityNotFoundException) {
-            false
-        }
+        return context.launch(Intent.createChooser(intent, entry.name))
     }
 
     fun share(context: Context, entries: List<XEntry>) {
@@ -42,36 +49,30 @@ object IntentUtils {
                 .putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
         }
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        runCatching { context.startActivity(Intent.createChooser(intent, null)) }
+        context.launch(Intent.createChooser(intent, null))
     }
 
     fun installApk(context: Context, path: String) {
         val intent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uriFor(context, path), "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        runCatching { context.startActivity(intent) }
+        context.launch(intent)
     }
 
     fun uninstall(context: Context, packageName: String) {
-        runCatching {
-            context.startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName")))
-        }
+        context.launch(Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName")))
     }
 
     fun appInfo(context: Context, packageName: String) {
-        runCatching {
-            context.startActivity(
-                Intent(
-                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                    Uri.parse("package:$packageName"),
-                ),
-            )
-        }
+        context.launch(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:$packageName"),
+            ),
+        )
     }
 
     fun launchApp(context: Context, packageName: String) {
-        context.packageManager.getLaunchIntentForPackage(packageName)?.let {
-            runCatching { context.startActivity(it) }
-        }
+        context.packageManager.getLaunchIntentForPackage(packageName)?.let { context.launch(it) }
     }
 }

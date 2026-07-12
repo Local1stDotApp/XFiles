@@ -3,8 +3,6 @@ package com.xfiles.core.fs
 import com.github.junrar.Archive
 import com.xfiles.core.util.FileTypes
 import java.io.BufferedInputStream
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
 import java.io.FileInputStream
@@ -366,47 +364,49 @@ class ArchiveFileSystem : XFileSystem {
     }
 
     private fun openSevenZEntry(archiveFile: File, rawName: String, knownSize: Long): InputStream {
-        checkPreviewSize(knownSize)
+        // Stream the entry (SevenZFile.read serves the current entry's bytes) instead of
+        // buffering it whole, so large members can be copied/extracted out of the archive.
+        // Viewers apply their own preview caps.
+        val sevenZ = try {
+            SevenZFile.builder().setFile(archiveFile).get()
+        } catch (e: Exception) {
+            throw e.asCannotOpen(archiveFile)
+        }
         try {
-            SevenZFile.builder().setFile(archiveFile).get().use { sevenZ ->
-                var e = sevenZ.nextEntry
-                while (e != null) {
-                    if (!e.isDirectory && sevenZEntryName(e, archiveFile) == rawName) {
-                        checkPreviewSize(e.size)
-                        return ByteArrayInputStream(readCurrentSevenZEntry(sevenZ, e.size))
-                    }
-                    e = sevenZ.nextEntry
+            var e = sevenZ.nextEntry
+            while (e != null) {
+                if (!e.isDirectory && sevenZEntryName(e, archiveFile) == rawName) {
+                    return ResourceClosingInputStream(SevenZEntryInputStream(sevenZ), sevenZ)
                 }
+                e = sevenZ.nextEntry
             }
             throw IOException("Entry not found in ${archiveFile.name}: $rawName")
         } catch (e: Exception) {
+            closeQuietly(sevenZ)
             throw e.asCannotOpen(archiveFile)
         }
     }
 
-    private fun readCurrentSevenZEntry(sevenZ: SevenZFile, expectedSize: Long): ByteArray {
-        val out = ByteArrayOutputStream(expectedSize.coerceIn(64L, MAX_PREVIEW_BYTES).toInt())
-        val buf = ByteArray(STREAM_BUFFER_SIZE)
-        while (true) {
-            val n = sevenZ.read(buf)
-            if (n < 0) break
-            out.write(buf, 0, n)
-        }
-        return out.toByteArray()
+    /** Adapts a positioned [SevenZFile] to a pull [InputStream] over the current entry. */
+    private class SevenZEntryInputStream(private val sevenZ: SevenZFile) : InputStream() {
+        override fun read(): Int = sevenZ.read()
+        override fun read(b: ByteArray, off: Int, len: Int): Int = sevenZ.read(b, off, len)
+        override fun close() = sevenZ.close()
     }
 
     private fun openRarEntry(archiveFile: File, rawName: String, knownSize: Long): InputStream {
-        checkPreviewSize(knownSize)
-        try {
-            Archive(archiveFile).use { rar ->
-                val header = rar.fileHeaders.firstOrNull { !it.isDirectory && it.fileName == rawName }
-                    ?: throw IOException("Entry not found in ${archiveFile.name}: $rawName")
-                checkPreviewSize(header.fullUnpackSize)
-                val out = ByteArrayOutputStream(header.fullUnpackSize.coerceIn(64L, MAX_PREVIEW_BYTES).toInt())
-                rar.extractFile(header, out)
-                return ByteArrayInputStream(out.toByteArray())
-            }
+        val rar = try {
+            Archive(archiveFile)
         } catch (e: Exception) {
+            throw e.asCannotOpen(archiveFile)
+        }
+        try {
+            val header = rar.fileHeaders.firstOrNull { !it.isDirectory && it.fileName == rawName }
+                ?: throw IOException("Entry not found in ${archiveFile.name}: $rawName")
+            // getInputStream streams via a background thread; no full-file buffering.
+            return ResourceClosingInputStream(rar.getInputStream(header), rar)
+        } catch (e: Exception) {
+            closeQuietly(rar)
             throw e.asCannotOpen(archiveFile)
         }
     }
@@ -490,10 +490,6 @@ class ArchiveFileSystem : XFileSystem {
     private fun sevenZEntryName(entry: SevenZArchiveEntry, archiveFile: File): String =
         entry.name ?: archiveFile.name.substringBeforeLast('.').ifEmpty { archiveFile.name }
 
-    private fun checkPreviewSize(size: Long) {
-        if (size > MAX_PREVIEW_BYTES) throw IOException("Too large to preview")
-    }
-
     private fun readOnly(): IOException = IOException("Archives are read-only")
 
     private fun Exception.asCannotOpen(archiveFile: File): IOException =
@@ -523,7 +519,6 @@ class ArchiveFileSystem : XFileSystem {
 
     private companion object {
         const val MAX_CACHED_ARCHIVES = 8
-        const val MAX_PREVIEW_BYTES = 64L * 1024L * 1024L
         const val STREAM_BUFFER_SIZE = 64 * 1024
 
         /** Normalizes separators and strips empty/`.`/`..` segments. */

@@ -29,8 +29,10 @@ class AppsFileSystem(private val context: Context) : XFileSystem {
             throw IOException("'${dir.name}' is not a listable app container")
         }
         val pm = context.packageManager
-        return installedApplications(pm)
-            .mapNotNull { app -> toEntry(pm, app) }
+        // One binder pass: getInstalledPackages returns applicationInfo + versionName +
+        // lastUpdateTime together, avoiding a per-app getPackageInfo round trip.
+        return installedPackages(pm)
+            .mapNotNull { pkg -> toEntry(pm, pkg) }
             .sortedWith(
                 // User apps (hidden=false) before system apps, each group sorted by label.
                 compareBy<XEntry> { it.hidden }
@@ -44,12 +46,12 @@ class AppsFileSystem(private val context: Context) : XFileSystem {
         val packageName = id.substringAfter("://")
         if (packageName.isEmpty()) return rootEntry()
         val pm = context.packageManager
-        val app = try {
-            applicationInfo(pm, packageName)
+        val pkg = try {
+            packageInfo(pm, packageName)
         } catch (_: PackageManager.NameNotFoundException) {
             return null
         }
-        return toEntry(pm, app)
+        return toEntry(pm, pkg)
     }
 
     override fun openIn(entry: XEntry): InputStream {
@@ -81,46 +83,43 @@ class AppsFileSystem(private val context: Context) : XFileSystem {
 
     override fun canWrite(entry: XEntry): Boolean = false
 
-    private fun toEntry(pm: PackageManager, app: ApplicationInfo): XEntry? {
+    /** Builds an entry from a full [PackageInfo] (list path — no extra binder call). */
+    private fun toEntry(pm: PackageManager, pkg: PackageInfo): XEntry? {
+        val app = pkg.applicationInfo ?: return null
+        return toEntry(pm, app, pkg.versionName, pkg.lastUpdateTime)
+    }
+
+    /** Builds an entry from an [ApplicationInfo] plus its version/update metadata (stat path). */
+    private fun toEntry(
+        pm: PackageManager,
+        app: ApplicationInfo,
+        versionName: String?,
+        lastUpdateTime: Long,
+    ): XEntry? {
         val sourceDir = app.sourceDir ?: return null
-        val pkg = try {
-            packageInfo(pm, app.packageName)
-        } catch (_: PackageManager.NameNotFoundException) {
-            return null // uninstalled between enumeration and resolution
-        }
         val isSystem = app.flags and ApplicationInfo.FLAG_SYSTEM != 0
-        val versionName = pkg.versionName ?: "?"
         return XEntry(
             id = "$scheme://${app.packageName}",
             name = app.loadLabel(pm).toString(),
             isDir = false,
             size = File(sourceDir).length(),
-            mtime = pkg.lastUpdateTime,
+            mtime = lastUpdateTime,
             mime = APK_MIME,
             hidden = isSystem,
             canRead = true,
             canWrite = false,
             kind = EntryKind.APP,
-            badge = "$versionName · ${app.packageName}",
+            badge = "${versionName ?: "?"} · ${app.packageName}",
             localPath = sourceDir,
         )
     }
 
-    private fun installedApplications(pm: PackageManager): List<ApplicationInfo> =
+    private fun installedPackages(pm: PackageManager): List<PackageInfo> =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
+            pm.getInstalledPackages(PackageManager.PackageInfoFlags.of(0))
         } else {
             @Suppress("DEPRECATION")
-            pm.getInstalledApplications(0)
-        }
-
-    @Throws(PackageManager.NameNotFoundException::class)
-    private fun applicationInfo(pm: PackageManager, packageName: String): ApplicationInfo =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            pm.getApplicationInfo(packageName, PackageManager.ApplicationInfoFlags.of(0))
-        } else {
-            @Suppress("DEPRECATION")
-            pm.getApplicationInfo(packageName, 0)
+            pm.getInstalledPackages(0)
         }
 
     @Throws(PackageManager.NameNotFoundException::class)

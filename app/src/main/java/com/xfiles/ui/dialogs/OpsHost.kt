@@ -21,6 +21,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -47,9 +48,10 @@ fun OpsHost(vm: MainViewModel) {
             .padding(horizontal = 16.dp, vertical = 96.dp),
     ) {
         ops.forEach { op ->
+            key(op.id) {
             val progress by op.progress.collectAsState()
-            if (progress.state == OpState.DONE || progress.state == OpState.CANCELLED) return@forEach
-
+            val finished = progress.state == OpState.DONE || progress.state == OpState.CANCELLED
+            if (!finished) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -110,6 +112,8 @@ fun OpsHost(vm: MainViewModel) {
                         }
                     },
                 )
+            }
+            }
             }
         }
     }

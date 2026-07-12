@@ -39,6 +39,7 @@ class LocalFileSystem : XFileSystem {
     }
 
     override fun openOut(parentDir: XEntry, name: String): OutputStream {
+        requireSafeName(name)
         val parent = File(parentDir.path)
         if (!parent.isDirectory && !parent.mkdirs()) {
             throw IOException("Cannot create folder ${parent.absolutePath}")
@@ -51,6 +52,7 @@ class LocalFileSystem : XFileSystem {
     }
 
     override fun mkdir(parentDir: XEntry, name: String): XEntry {
+        requireSafeName(name)
         val dir = File(parentDir.path, name)
         // Idempotent: copy ops re-create destination subfolders that may already exist.
         if (dir.isDirectory) return toEntry(dir)
@@ -65,11 +67,15 @@ class LocalFileSystem : XFileSystem {
     }
 
     override fun rename(entry: XEntry, newName: String): XEntry {
+        requireSafeName(newName)
         val file = File(entry.path)
         val parent = file.parentFile
             ?: throw IOException("Cannot rename ${entry.name}")
         val target = File(parent, newName)
-        if (target.exists()) {
+        // A case-only rename ("photo.jpg" -> "Photo.jpg") points at the same file on
+        // case-insensitive storage; allow it instead of tripping the exists() guard.
+        val caseOnly = target.absolutePath.equals(file.absolutePath, ignoreCase = true)
+        if (!caseOnly && target.exists()) {
             throw IOException("$newName already exists")
         }
         if (!file.renameTo(target)) {
@@ -79,6 +85,15 @@ class LocalFileSystem : XFileSystem {
     }
 
     override fun canWrite(entry: XEntry): Boolean = File(entry.path).canWrite()
+
+    /** Reject names that would escape the parent directory (path traversal / injection). */
+    private fun requireSafeName(name: String) {
+        if (name.isEmpty() || name == "." || name == ".." ||
+            name.contains('/') || name.contains('\\')
+        ) {
+            throw IOException("Invalid name: $name")
+        }
+    }
 
     private fun deleteRecursively(file: File) {
         // Never descend through symlinks; delete only the link itself.

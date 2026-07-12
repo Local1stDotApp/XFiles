@@ -104,13 +104,22 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val fs = Graph.fsRegistry.forId(entry.id)
-                    val parentId = XId.parent(entry.id)
-                        ?: throw IOException("${entry.name} has no parent directory")
-                    val parentDir = fs.stat(parentId)
-                        ?: throw IOException("Cannot resolve directory of ${entry.name}")
-                    fs.openOut(parentDir, entry.name).use {
-                        it.write(editText.toByteArray(Charsets.UTF_8))
+                    // Write to a temp sibling then atomically move over the original, so a
+                    // failed/interrupted write never destroys the file's existing contents.
+                    // canEdit guarantees the file scheme, so java.io/java.nio is valid here.
+                    val target = java.io.File(entry.localPath ?: entry.path)
+                    val tmp = java.io.File(target.parentFile, ".${entry.name}.xfiles-tmp")
+                    try {
+                        tmp.outputStream().use { it.write(editText.toByteArray(Charsets.UTF_8)) }
+                        java.nio.file.Files.move(
+                            tmp.toPath(),
+                            target.toPath(),
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        )
+                    } catch (e: Throwable) {
+                        tmp.delete()
+                        throw e
                     }
                 }
             }

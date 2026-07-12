@@ -135,6 +135,37 @@ class MainViewModel : ViewModel() {
         activeCtrl.clearSelection()
     }
 
+    /** Extract an archive into a new folder (named after it) in the other pane. */
+    fun extractArchive(archive: XEntry) {
+        val dest = inactiveCtrl.focusedDirEntry() ?: return
+        if (!isValidDest(dest)) {
+            snackbar.tryEmit("Cannot write to ${dest.name}")
+            return
+        }
+        viewModelScope.launch {
+            val prepared = withContext(Dispatchers.IO) {
+                runCatching {
+                    val archiveRoot = archive.copy(kind = EntryKind.ARCHIVE)
+                    val children = Graph.fsRegistry.forEntry(archiveRoot).list(archiveRoot)
+                    val folderName = archive.name.substringBeforeLast('.').ifBlank { archive.name }
+                    val folder = Graph.fsRegistry.forEntry(dest).mkdir(dest, folderName)
+                    folder to children
+                }
+            }
+            prepared.fold(
+                onSuccess = { (folder, children) ->
+                    if (children.isEmpty()) {
+                        snackbar.tryEmit("${archive.name} is empty")
+                    } else {
+                        inactiveCtrl.expand(folder)
+                        Graph.opEngine.submit(FileOp.Copy(children, folder, move = false))
+                    }
+                },
+                onFailure = { snackbar.tryEmit(it.message ?: "Cannot extract ${archive.name}") },
+            )
+        }
+    }
+
     fun requestNewFolder() {
         val parent = activeCtrl.focusedDirEntry() ?: return
         if (!isValidDest(parent)) {

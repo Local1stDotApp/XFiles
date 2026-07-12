@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -55,18 +57,24 @@ class PaneController(
     ) { by, desc, dirsFirst, hidden -> SortSpec(by, desc, dirsFirst, hidden) }
         .stateIn(scope, SharingStarted.Eagerly, SortSpec())
 
-    val state: StateFlow<PaneUiState> = combine(
+    // Flattening (filter + per-dir sort) depends only on tree state, not on selection/focus,
+    // so it lives in its own flow computed off the main thread. Selection toggles then only
+    // re-run the cheap outer combine instead of re-sorting the whole visible tree.
+    private val nodes: StateFlow<List<TreeNode>> = combine(
         combine(roots, expanded, children) { r, e, c -> Triple(r, e, c) },
-        combine(loading, errors, loadingRoots) { l, err, lr -> Triple(l, err, lr) },
-        combine(selection, focusedDirId) { s, f -> s to f },
+        combine(loading, errors) { l, err -> l to err },
         sortSpec,
-    ) { (r, e, c), (l, err, lr), (sel, focus), sort ->
-        PaneUiState(
-            nodes = flatten(r, e, c, l, err, sort),
-            selection = sel,
-            focusedDirId = focus,
-            loadingRoots = lr,
-        )
+    ) { (r, e, c), (l, err), sort -> flatten(r, e, c, l, err, sort) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    val state: StateFlow<PaneUiState> = combine(
+        nodes,
+        selection,
+        focusedDirId,
+        loadingRoots,
+    ) { n, sel, focus, lr ->
+        PaneUiState(nodes = n, selection = sel, focusedDirId = focus, loadingRoots = lr)
     }.stateIn(scope, SharingStarted.Eagerly, PaneUiState())
 
     init {
@@ -92,8 +100,15 @@ class PaneController(
         }
     }
 
+    /** Ids whose reload was requested while a load was already in flight; re-run on completion. */
+    private val reloadRequested = HashSet<String>()
+
     private fun load(entry: XEntry) {
-        if (entry.id in loading.value) return
+        if (entry.id in loading.value) {
+            // Don't drop the request: a refresh during an in-flight load must re-list.
+            reloadRequested += entry.id
+            return
+        }
         loading.update { it + entry.id }
         errors.update { it - entry.id }
         scope.launch {
@@ -108,7 +123,21 @@ class PaneController(
                 },
             )
             loading.update { it - entry.id }
+            if (reloadRequested.remove(entry.id)) load(entry)
         }
+    }
+
+    /**
+     * Drops all cached listings/errors and re-expands the first root. Call after storage
+     * permission is granted so a pre-grant "Cannot read" failure is retried instead of
+     * sticking around as a cached empty listing.
+     */
+    fun reset() {
+        errors.value = emptyMap()
+        children.value = emptyMap()
+        expanded.value = emptySet()
+        focusedDirId.value = null
+        reloadRoots(expandFirst = true)
     }
 
     // ---- navigation / expansion ----
@@ -122,7 +151,8 @@ class PaneController(
         if (!entry.isContainer) return
         expanded.update { it + entry.id }
         focusedDirId.value = entry.id
-        if (children.value[entry.id] == null) load(entry)
+        // Reload when uncached or when the last attempt failed (e.g. before permission grant).
+        if (children.value[entry.id] == null || entry.id in errors.value) load(entry)
     }
 
     fun collapse(entry: XEntry) {
@@ -178,9 +208,18 @@ class PaneController(
 
     fun refreshDirty(ids: Set<String>) {
         ids.forEach { refresh(it) }
-        // A rename/delete may invalidate the focused dir; fall back to its parent.
-        focusedDirId.value?.let { focus ->
-            if (ids.any { focus == it }) return@let
+        // A delete/move may have removed the focused dir. Once the triggered reloads settle,
+        // if the focused id no longer exists, fall back to the nearest surviving ancestor.
+        scope.launch {
+            loading.first { it.isEmpty() }
+            val focus = focusedDirId.value ?: return@launch
+            if (findEntry(focus) == null) {
+                var candidate: String? = XId.parent(focus)
+                while (candidate != null && findEntry(candidate) == null) {
+                    candidate = XId.parent(candidate)
+                }
+                focusedDirId.value = candidate
+            }
         }
     }
 
@@ -254,12 +293,14 @@ class PaneController(
     ): List<TreeNode> {
         val out = ArrayList<TreeNode>(256)
 
-        fun visit(entries: List<XEntry>, depth: Int, guides: List<Boolean>) {
+        fun visit(entries: List<XEntry>, depth: Int, guides: List<Boolean>, parentKey: String) {
             entries.forEachIndexed { index, e ->
                 val isLast = index == entries.lastIndex
                 val isExpanded = e.isContainer && e.id in expanded
+                val nodeKey = "$parentKey|${e.id}"
                 out += TreeNode(
                     entry = e,
+                    key = nodeKey,
                     depth = depth,
                     expanded = isExpanded,
                     loading = e.id in loading,
@@ -270,12 +311,12 @@ class PaneController(
                 if (isExpanded) {
                     children[e.id]?.let { kids ->
                         val visible = kids.filter { sort.showHidden || !it.hidden }
-                        visit(sortEntries(visible, sort), depth + 1, guides + !isLast)
+                        visit(sortEntries(visible, sort), depth + 1, guides + !isLast, nodeKey)
                     }
                 }
             }
         }
-        visit(roots, 0, emptyList())
+        visit(roots, 0, emptyList(), "")
         return out
     }
 

@@ -108,15 +108,22 @@ class DefaultOperationEngine(
         val destFs = registry.forEntry(destDir)
         // Destination names listed once; names we write are added to the set as we go,
         // which is equivalent to re-listing after each write for conflict purposes.
-        val destNames = destFs.list(destDir).map { it.name }.toMutableSet()
+        // Case-insensitive for local storage (FAT/emulated) so conflicts aren't missed.
+        val destNames = nameSetFor(destDir)
+        destNames += destFs.list(destDir).map { it.name }
         dirty += destDir.id
+
+        // Guard: never copy/move a container into itself or one of its own descendants;
+        // that recurses on a live listing and fills the disk with nested copies.
+        val validSources = op.sources.filterNot { isSelfOrInside(destDir, it) }
+        val rejected = op.sources.size - validSources.size
 
         // Move fast path: same-scheme local rename covers instant same-volume moves.
         // Only attempted when the target name is free; conflicts take the slow path
         // so the user still gets the conflict dialog.
         var movedFast = 0
-        val pending = ArrayList<XEntry>(op.sources.size)
-        for (src in op.sources) {
+        val pending = ArrayList<XEntry>(validSources.size)
+        for (src in validSources) {
             if (op.move && tryFastRename(src, destDir, destNames)) {
                 movedFast++
                 XId.parent(src.id)?.let(dirty::add)
@@ -150,9 +157,11 @@ class DefaultOperationEngine(
                     }
                     ConflictChoice.OVERWRITE -> {
                         // Overwriting a dir replaces it wholesale (delete + re-copy);
-                        // no per-child merge. Overwriting the source itself (copy into
-                        // its own parent) would destroy the data, so skip instead.
-                        if (XId.child(destDir, name) == src.id) {
+                        // no per-child merge. Overwriting the source itself, or a dir that
+                        // *contains* the source, would destroy the data we are about to
+                        // read, so skip instead.
+                        val destChildId = XId.child(destDir, name)
+                        if (destChildId == src.id || src.id.startsWith("$destChildId/")) {
                             t.skipItems(perSource[i])
                             continue
                         }
@@ -169,7 +178,11 @@ class DefaultOperationEngine(
             }
             processed++
         }
-        return "${if (op.move) "Moved" else "Copied"} ${countLabel(processed)}"
+        return when {
+            rejected > 0 && processed == 0 -> "Cannot copy a folder into itself"
+            rejected > 0 -> "${if (op.move) "Moved" else "Copied"} ${countLabel(processed)} ($rejected skipped)"
+            else -> "${if (op.move) "Moved" else "Copied"} ${countLabel(processed)}"
+        }
     }
 
     private fun tryFastRename(
@@ -267,7 +280,8 @@ class DefaultOperationEngine(
     ): String {
         val destDir = op.destDir
         val destFs = registry.forEntry(destDir)
-        val destNames = destFs.list(destDir).map { it.name }.toMutableSet()
+        val destNames = nameSetFor(destDir)
+        destNames += destFs.list(destDir).map { it.name }
         dirty += destDir.id
 
         val perSource = op.sources.map { scanTree(it, t) }
@@ -290,12 +304,16 @@ class DefaultOperationEngine(
         }
         t.setState(OpState.RUNNING)
 
+        // The output archive lives in destDir; if a source folder contains destDir we must
+        // not zip the archive into itself (read-while-write loop until the disk fills).
+        val outputId = XId.child(destDir, archiveName)
+
         var completed = false
         try {
             ZipOutputStream(BufferedOutputStream(destFs.openOut(destDir, archiveName))).use { zip ->
                 zip.setMethod(ZipOutputStream.DEFLATED)
                 for (src in op.sources) {
-                    addToZip(zip, src, src.name, t)
+                    addToZip(zip, src, src.name, outputId, t)
                 }
             }
             completed = true
@@ -305,7 +323,14 @@ class DefaultOperationEngine(
         return "Created $archiveName"
     }
 
-    private fun addToZip(zip: ZipOutputStream, src: XEntry, relPath: String, t: RunningOpImpl) {
+    private fun addToZip(
+        zip: ZipOutputStream,
+        src: XEntry,
+        relPath: String,
+        outputId: String,
+        t: RunningOpImpl,
+    ) {
+        if (src.id == outputId) return
         t.ensureActive()
         t.current(src.name)
         if (src.isDir) {
@@ -315,7 +340,7 @@ class DefaultOperationEngine(
             zip.closeEntry()
             t.itemsDone(1)
             for (child in registry.forEntry(src).list(src)) {
-                addToZip(zip, child, "$relPath/${child.name}", t)
+                addToZip(zip, child, "$relPath/${child.name}", outputId, t)
             }
         } else {
             val fileEntry = ZipEntry(relPath)
@@ -361,6 +386,21 @@ class DefaultOperationEngine(
         } else {
             totals.bytes += entry.size.coerceAtLeast(0L)
         }
+    }
+
+    /** Name set for a destination dir; case-insensitive for local storage. */
+    private fun nameSetFor(destDir: XEntry): MutableSet<String> =
+        if (destDir.scheme == XId.SCHEME_FILE) java.util.TreeSet(String.CASE_INSENSITIVE_ORDER)
+        else HashSet()
+
+    /** True when [ancestor] is [container] itself or an ancestor of it (scheme-aware). */
+    private fun isSelfOrInside(container: XEntry, ancestor: XEntry): Boolean {
+        var cur: String? = container.id
+        while (cur != null) {
+            if (cur == ancestor.id) return true
+            cur = XId.parent(cur)
+        }
+        return false
     }
 
     private fun deleteChildIfExists(parentDir: XEntry, name: String) {

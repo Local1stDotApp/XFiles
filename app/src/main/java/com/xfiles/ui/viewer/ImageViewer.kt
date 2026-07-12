@@ -54,12 +54,16 @@ import coil3.compose.AsyncImage
 import com.xfiles.core.fs.XEntry
 import com.xfiles.di.Graph
 import java.io.File
+import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private const val MIN_SCALE = 1f
 private const val MAX_SCALE = 6f
 private const val DOUBLE_TAP_SCALE = 2.5f
+
+/** Upper bound for buffering an archive-embedded image fully into memory. */
+private const val MAX_IMAGE_BYTES = 64L * 1024 * 1024
 
 /**
  * X-plore style full-screen image browser: swipe between sibling images,
@@ -230,7 +234,22 @@ private fun ZoomableImagePage(
             val loaded by produceState<Result<ByteArray>?>(initialValue = null, entry.id) {
                 value = withContext(Dispatchers.IO) {
                     runCatching {
-                        Graph.fsRegistry.forId(entry.id).openIn(entry).use { it.readBytes() }
+                        // Cap in-memory decode: an archive member has no localPath, so it is
+                        // buffered whole. Refuse absurd sizes instead of OOM-crashing.
+                        if (entry.size > MAX_IMAGE_BYTES) throw IOException("Image too large to preview")
+                        Graph.fsRegistry.forId(entry.id).openIn(entry).use { input ->
+                            val out = java.io.ByteArrayOutputStream()
+                            val chunk = ByteArray(64 * 1024)
+                            var total = 0L
+                            while (true) {
+                                val n = input.read(chunk)
+                                if (n < 0) break
+                                total += n
+                                if (total > MAX_IMAGE_BYTES) throw IOException("Image too large to preview")
+                                out.write(chunk, 0, n)
+                            }
+                            out.toByteArray()
+                        }
                     }
                 }
             }
