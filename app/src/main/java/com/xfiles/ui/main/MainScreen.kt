@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.xfiles.ui.browser.PaneView
+import com.xfiles.ui.dialogs.DestinationPicker
 import com.xfiles.ui.dialogs.DialogRequest
 import com.xfiles.ui.dialogs.MainDialogs
 import com.xfiles.ui.dialogs.OpsHost
@@ -173,10 +174,10 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                                     modifier = Modifier.align(Alignment.CenterVertically),
                                 )
                                 IconButton(onClick = { vm.copySelection(move = false) }) {
-                                    Icon(Icons.Outlined.ContentCopy, "Copy to other pane")
+                                    Icon(Icons.Outlined.ContentCopy, "Copy to…")
                                 }
                                 IconButton(onClick = { vm.copySelection(move = true) }) {
-                                    Icon(Icons.AutoMirrored.Outlined.DriveFileMove, "Move to other pane")
+                                    Icon(Icons.AutoMirrored.Outlined.DriveFileMove, "Move to…")
                                 }
                                 IconButton(onClick = { vm.requestDelete() }) {
                                     Icon(Icons.Outlined.Delete, "Delete")
@@ -219,6 +220,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     }
 
     MainDialogs(vm)
+    DestinationPicker(vm)
     ViewerHost(vm)
     SearchOverlay(vm)
     SettingsOverlay(vm)

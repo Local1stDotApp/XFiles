@@ -219,6 +219,9 @@ private fun EntryMenuContent(
             MenuItem("Open as hex") { vm.openAsHex(entry); dismiss() }
             MenuItem("Share") { vm.shareSelection(listOf(entry)); dismiss() }
         }
+        // Explicit copy/move to a chosen folder (works from a single item too).
+        MenuItem("Copy to…") { vm.copySelection(move = false, sources = listOf(entry)); dismiss() }
+        MenuItem("Move to…") { vm.copySelection(move = true, sources = listOf(entry)); dismiss() }
         if (entry.kind == EntryKind.ARCHIVE) {
             MenuItem("Extract to other pane") {
                 vm.extractArchive(entry)

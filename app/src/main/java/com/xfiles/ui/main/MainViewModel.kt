@@ -97,17 +97,38 @@ class MainViewModel : ViewModel() {
         viewer.value = ViewerRequest.Text(entry)
     }
 
-    // ---- file operations (active pane -> inactive pane) ----
+    // ---- file operations ----
 
-    fun copySelection(move: Boolean) {
-        val sources = activeCtrl.selectionEntries()
-        val dest = inactiveCtrl.focusedDirEntry() ?: return
+    /** A copy/move awaiting a destination folder chosen in the [DestinationPicker]. */
+    val pendingTransfer = MutableStateFlow<PendingTransfer?>(null)
+
+    /**
+     * Opens the destination picker for the current selection. The picker starts at the
+     * other pane's folder (the X-plore dual-pane default) but lets the user browse anywhere,
+     * so the destination is explicit instead of silently landing in the hidden pane.
+     */
+    fun copySelection(move: Boolean, sources: List<XEntry> = activeCtrl.selectionEntries()) {
         if (sources.isEmpty()) return
-        if (!isValidDest(dest)) {
-            snackbar.tryEmit("Cannot write to ${dest.name}")
+        pendingTransfer.value = PendingTransfer(
+            sources = sources,
+            move = move,
+            startDirId = inactiveCtrl.focusedDirEntry()?.id,
+        )
+    }
+
+    fun cancelTransfer() {
+        pendingTransfer.value = null
+    }
+
+    /** Called by the picker once the user confirms a destination folder. */
+    fun confirmTransfer(destDir: XEntry) {
+        val transfer = pendingTransfer.value ?: return
+        pendingTransfer.value = null
+        if (!isValidDest(destDir)) {
+            snackbar.tryEmit("Cannot write to ${destDir.name}")
             return
         }
-        Graph.opEngine.submit(FileOp.Copy(sources, dest, move))
+        Graph.opEngine.submit(FileOp.Copy(transfer.sources, destDir, transfer.move))
         activeCtrl.clearSelection()
     }
 
@@ -227,3 +248,10 @@ class MainViewModel : ViewModel() {
     private fun isValidDest(dest: XEntry): Boolean =
         dest.canWrite && dest.kind != EntryKind.APPS_ROOT && dest.kind != EntryKind.APP
 }
+
+/** A copy or move whose destination folder is being chosen. */
+data class PendingTransfer(
+    val sources: List<XEntry>,
+    val move: Boolean,
+    val startDirId: String?,
+)
