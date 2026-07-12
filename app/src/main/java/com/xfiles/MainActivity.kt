@@ -4,14 +4,16 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.xfiles.core.prefs.ThemeMode
+import com.xfiles.di.Graph
+import com.xfiles.ui.main.MainScreen
+import com.xfiles.ui.main.MainViewModel
+import com.xfiles.ui.main.PermissionGate
 import com.xfiles.ui.theme.XFilesTheme
 
 class MainActivity : ComponentActivity() {
@@ -20,22 +22,28 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
-            XFilesTheme {
-                BootScreen()
-            }
+            Root()
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun BootScreen() {
-    Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center,
+private fun Root() {
+    val themeMode by Graph.settings.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+    val dynamicColor by Graph.settings.dynamicColor.collectAsStateWithLifecycle(initialValue = true)
+
+    val darkTheme = when (themeMode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+
+    XFilesTheme(darkTheme = darkTheme, dynamicColor = dynamicColor) {
+        val vm: MainViewModel = viewModel()
+        PermissionGate(
+            onGranted = { vm.panes.forEach { it.reloadRoots(expandFirst = true) } },
         ) {
-            LoadingIndicator()
+            MainScreen(vm)
         }
     }
 }
