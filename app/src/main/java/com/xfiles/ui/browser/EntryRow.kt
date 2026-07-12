@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.xfiles.core.fs.EntryKind
+import com.xfiles.core.thumb.AppIcon
 import com.xfiles.core.util.Format
 import java.io.File
 
@@ -118,7 +119,13 @@ fun EntryRow(
 
         // Icon or thumbnail.
         Box(Modifier.padding(start = 2.dp, end = 10.dp), contentAlignment = Alignment.Center) {
-            if (EntryIcons.wantsThumbnail(entry)) {
+            if (entry.kind == EntryKind.APP) {
+                AsyncImage(
+                    model = AppIcon(entry.path),
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp),
+                )
+            } else if (EntryIcons.wantsThumbnail(entry)) {
                 AsyncImage(
                     model = File(entry.localPath!!),
                     contentDescription = null,

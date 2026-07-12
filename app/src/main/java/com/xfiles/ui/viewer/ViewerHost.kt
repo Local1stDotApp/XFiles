@@ -1,41 +1,37 @@
 package com.xfiles.ui.viewer
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.xfiles.ui.main.MainViewModel
 
 /**
  * Hosts the full-screen viewer requested via [MainViewModel.viewer].
- * Individual viewers live in ui/viewer/ (image, text, hex, media).
+ * Composed above the rest of MainScreen; back press or a viewer's close action dismisses it.
  */
 @Composable
 fun ViewerHost(vm: MainViewModel) {
-    val request by vm.viewer.collectAsState()
+    val request by vm.viewer.collectAsStateWithLifecycle()
     val req = request ?: return
-    val close = { vm.viewer.value = null }
+    val close: () -> Unit = { vm.viewer.value = null }
 
     BackHandler(onBack = close)
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            // Placeholder host — replaced by dedicated viewers.
-            Text(
-                when (req) {
-                    is ViewerRequest.Image -> "Image viewer: ${req.items[req.startIndex].name}"
-                    is ViewerRequest.Text -> "Text viewer: ${req.entry.name}"
-                    is ViewerRequest.Hex -> "Hex viewer: ${req.entry.name}"
-                    is ViewerRequest.Media -> "Media player: ${req.entry.name}"
-                },
-            )
+        // key() drops all viewer state when a different request replaces the current one.
+        key(req) {
+            when (req) {
+                is ViewerRequest.Image -> ImageViewer(req.items, req.startIndex, close)
+                is ViewerRequest.Text -> TextViewer(req.entry, close)
+                is ViewerRequest.Hex -> HexViewer(req.entry, close)
+                is ViewerRequest.Media -> MediaViewer(req.entry, req.playlist, close)
+            }
         }
     }
 }

@@ -1,13 +1,19 @@
 package com.xfiles.di
 
-/**
- * Wires concrete implementations into [Graph].
- * Filled in as feature implementations land; keep all `Graph.x = ...` assignments here.
- */
+import com.xfiles.core.fs.AppsFileSystem
+import com.xfiles.core.fs.ArchiveFileSystem
+import com.xfiles.core.fs.DefaultRootsRepository
+import com.xfiles.core.fs.LocalFileSystem
+import com.xfiles.core.ops.DefaultOperationEngine
+import com.xfiles.core.search.DefaultSearchEngine
+
+/** Wires concrete implementations into [Graph]. */
 fun initGraph(graph: Graph) {
-    // Implementations are registered during integration:
-    //  - graph.fsRegistry.register(LocalFileSystem(...)) etc.
-    //  - graph.roots = DefaultRootsRepository(...)
-    //  - graph.opEngine = DefaultOperationEngine(...)
-    //  - graph.searchEngine = DefaultSearchEngine(...)
+    graph.fsRegistry.register(LocalFileSystem())
+    graph.fsRegistry.register(ArchiveFileSystem())
+    graph.fsRegistry.register(AppsFileSystem(Graph.appContext))
+
+    graph.roots = DefaultRootsRepository(Graph.appContext)
+    graph.opEngine = DefaultOperationEngine(Graph.appScope, graph.fsRegistry)
+    graph.searchEngine = DefaultSearchEngine(graph.fsRegistry)
 }

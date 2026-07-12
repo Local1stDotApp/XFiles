@@ -1,19 +1,56 @@
 package com.xfiles.ui.settings
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
+import com.xfiles.core.prefs.SortBy
+import com.xfiles.core.prefs.ThemeMode
+import com.xfiles.di.Graph
 import com.xfiles.ui.main.MainViewModel
+import kotlinx.coroutines.launch
 
-/** Settings screen overlay. Replaced by the real implementation. */
+/** Full-screen settings overlay, visible while [MainViewModel.showSettings] is true. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SettingsOverlay(vm: MainViewModel) {
     val show by vm.showSettings.collectAsState()
@@ -22,9 +59,193 @@ fun SettingsOverlay(vm: MainViewModel) {
 
     BackHandler(onBack = close)
 
+    val settings = Graph.settings
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val themeMode by settings.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
+    val dynamicColor by settings.dynamicColor.collectAsState(initial = true)
+    val showHidden by settings.showHidden.collectAsState(initial = false)
+    val dirsFirst by settings.dirsFirst.collectAsState(initial = true)
+    val sortBy by settings.sortBy.collectAsState(initial = SortBy.NAME)
+    val sortDescending by settings.sortDescending.collectAsState(initial = false)
+
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Settings", style = MaterialTheme.typography.headlineSmall)
+        Scaffold(
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(scrollBehavior.nestedScrollConnection),
+            topBar = {
+                LargeFlexibleTopAppBar(
+                    title = { Text("Settings") },
+                    navigationIcon = {
+                        IconButton(onClick = close) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Back")
+                        }
+                    },
+                    scrollBehavior = scrollBehavior,
+                )
+            },
+        ) { padding ->
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(padding)
+                    .padding(horizontal = 16.dp),
+            ) {
+                SectionHeader("Appearance")
+                RadioOptionsRow(
+                    title = "Theme",
+                    options = listOf(
+                        ThemeMode.SYSTEM to "System",
+                        ThemeMode.LIGHT to "Light",
+                        ThemeMode.DARK to "Dark",
+                    ),
+                    selected = themeMode,
+                    onSelect = { scope.launch { settings.setThemeMode(it) } },
+                )
+                SwitchRow(
+                    title = "Dynamic color",
+                    subtitle = "Colors from your wallpaper (Android 12+)",
+                    checked = dynamicColor,
+                    onCheckedChange = { scope.launch { settings.setDynamicColor(it) } },
+                )
+
+                SectionHeader("Browsing")
+                SwitchRow(
+                    title = "Show hidden files",
+                    subtitle = "Include dot-files and hidden folders",
+                    checked = showHidden,
+                    onCheckedChange = { scope.launch { settings.setShowHidden(it) } },
+                )
+                SwitchRow(
+                    title = "Folders first",
+                    subtitle = "List folders before files",
+                    checked = dirsFirst,
+                    onCheckedChange = { scope.launch { settings.setDirsFirst(it) } },
+                )
+                RadioOptionsRow(
+                    title = "Sort by",
+                    options = listOf(
+                        SortBy.NAME to "Name",
+                        SortBy.SIZE to "Size",
+                        SortBy.DATE to "Date",
+                        SortBy.TYPE to "Type",
+                    ),
+                    selected = sortBy,
+                    onSelect = { scope.launch { settings.setSortBy(it) } },
+                )
+                SwitchRow(
+                    title = "Descending",
+                    subtitle = "Reverse the sort order",
+                    checked = sortDescending,
+                    onCheckedChange = { scope.launch { settings.setSortDescending(it) } },
+                )
+
+                SectionHeader("About")
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("XFiles", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "XFiles — an X-plore-style dual-pane file manager " +
+                                "built with Material 3 Expressive.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = {
+                                Toast.makeText(
+                                    context,
+                                    "Cheers! The devs raise three imaginary beers to you.",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            },
+                        ) {
+                            Text("Buy the devs 3 beers 🍺🍺🍺")
+                        }
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 8.dp, top = 20.dp, bottom = 4.dp),
+    )
+}
+
+@Composable
+private fun SwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    subtitle: String? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Switch(checked = checked, onCheckedChange = null)
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun <T> RadioOptionsRow(
+    title: String,
+    options: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+    ) {
+        Text(title, style = MaterialTheme.typography.bodyLarge)
+        FlowRow(Modifier.fillMaxWidth().selectableGroup()) {
+            options.forEach { (value, label) ->
+                Row(
+                    modifier = Modifier
+                        .clip(MaterialTheme.shapes.small)
+                        .selectable(
+                            selected = value == selected,
+                            role = Role.RadioButton,
+                            onClick = { onSelect(value) },
+                        )
+                        .padding(end = 16.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = value == selected, onClick = null)
+                    Text(label, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
         }
     }
 }
