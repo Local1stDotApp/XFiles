@@ -17,7 +17,8 @@ permissions:
 
 jobs:
   release:
-    runs-on: self-hosted
+    # Pin to the Linux self-hosted runner that has the Android SDK + gh CLI.
+    runs-on: [self-hosted, xfiles-linux]
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
