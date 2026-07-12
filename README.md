@@ -11,10 +11,18 @@ rebuilt on the latest Android stack with a **Material 3 Expressive** UI.
   *in place* as a tree with indent guide lines; breadcrumb bar per pane.
 - **Storage roots** — internal storage / SD / USB volumes with free-space usage
   bars, plus the App manager root.
-- **File operations** — multi-select via right-edge checkmarks; copy/move
-  from the active pane into the other pane, delete, rename, new folder,
-  zip compression; background engine with progress (wavy Expressive
-  indicator), cancellation, and Skip/Overwrite/Keep-both conflict resolution.
+- **File operations** — multi-select via right-edge checkmarks; **copy/move/extract
+  to an explicit destination** chosen in a full-screen folder picker (defaults to the
+  other pane, browse anywhere, make new folders), or `Copy to…`/`Move to…` from the
+  long-press menu; delete, rename, new folder. Background engine with progress (wavy
+  Expressive indicator), cancellation, and Skip/Overwrite/Keep-both conflict resolution.
+- **High-performance zip** — creation deflates every entry across all CPU cores
+  (commons-compress `ParallelScatterZipCreator`, STORE for already-compressed media),
+  extraction runs one `ZipFile` handle per worker off a shared queue. Zip-Slip guarded;
+  falls back to single-threaded streaming when temp space is tight.
+- **Foreground service** — long copy/move/zip/extract operations keep running when the
+  app is backgrounded, shown in an ongoing notification with a Cancel action and a wake
+  lock; the service self-stops when idle.
 - **Archives as folders** — browse zip/jar/apk, 7z, tar(.gz/.bz2/.xz), rar
   read-only; extract by copying out; APK install shortcut.
 - **App manager** — installed apps with real icons, version/package badges;
