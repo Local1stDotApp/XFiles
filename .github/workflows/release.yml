@@ -17,10 +17,8 @@ permissions:
 
 jobs:
   release:
-    # Pin to the Linux self-hosted runner that has the Android SDK + gh CLI.
-    runs-on: [self-hosted, xfiles-linux]
-    env:
-      GH_TOKEN: ${{ github.token }}
+    # Persistent self-hosted Mac mini (has the Android SDK).
+    runs-on: [self-hosted, macOS]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,51 +33,46 @@ jobs:
           XFILES_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           XFILES_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           XFILES_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          ./gradlew :app:assembleRelease -PbuildNumber=${{ github.run_number }} --no-daemon
+        run: ./gradlew :app:assembleRelease -PbuildNumber=${{ github.run_number }} --no-daemon
 
-      - name: Prepare artifact
-        id: artifact
+      - name: Decide release (stable vs rolling prerelease)
+        id: decide
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
+          set -eu
           VERSION=$(sed -n 's/^versionName=//p' version.properties | tr -d '[:space:]')
           BUILD=${{ github.run_number }}
-          SRC=app/build/outputs/apk/release/app-release.apk
-          APK="XFiles-${VERSION}-build${BUILD}.apk"
-          cp "$SRC" "$APK"
+          # Stable release for this versionName already exists? (HTTP 200 vs 404)
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/v${VERSION}")
+          if [ "$CODE" = "200" ]; then
+            echo "tag=nightly"                                        >> "$GITHUB_OUTPUT"
+            echo "name=XFiles ${VERSION} — nightly (build ${BUILD})"  >> "$GITHUB_OUTPUT"
+            echo "prerelease=true"                                    >> "$GITHUB_OUTPUT"
+            echo "apk=XFiles-nightly.apk"                             >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=v${VERSION}"                                    >> "$GITHUB_OUTPUT"
+            echo "name=XFiles ${VERSION}"                             >> "$GITHUB_OUTPUT"
+            echo "prerelease=false"                                   >> "$GITHUB_OUTPUT"
+            echo "apk=XFiles-${VERSION}.apk"                          >> "$GITHUB_OUTPUT"
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
-          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD"     >> "$GITHUB_OUTPUT"
+
+      - name: Rename artifact
+        run: cp app/build/outputs/apk/release/app-release.apk "${{ steps.decide.outputs.apk }}"
 
       - name: Publish release
-        env:
-          VERSION: ${{ steps.artifact.outputs.version }}
-          BUILD: ${{ steps.artifact.outputs.build }}
-          APK: ${{ steps.artifact.outputs.apk }}
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          STABLE_TAG="v${VERSION}"
-
-          if gh release view "$STABLE_TAG" >/dev/null 2>&1; then
-            # versionName already released -> keep refreshing the single rolling prerelease.
-            PRE_TAG="nightly"
-            NOTES="Rolling build off \`main\`. Version ${VERSION}, build ${BUILD} (${SHA:0:7})."
-            if gh release view "$PRE_TAG" >/dev/null 2>&1; then
-              # drop old APKs so the prerelease always carries just the latest build
-              for a in $(gh release view "$PRE_TAG" --json assets --jq '.assets[].name'); do
-                gh release delete-asset "$PRE_TAG" "$a" -y || true
-              done
-              gh release edit "$PRE_TAG" --prerelease \
-                --title "XFiles ${VERSION} — nightly (build ${BUILD})" --notes "$NOTES"
-              gh release upload "$PRE_TAG" "$APK" --clobber
-            else
-              gh release create "$PRE_TAG" --prerelease --target "$SHA" \
-                --title "XFiles ${VERSION} — nightly (build ${BUILD})" --notes "$NOTES" "$APK"
-            fi
-          else
-            # new versionName -> cut a stable release.
-            gh release create "$STABLE_TAG" --target "$SHA" \
-              --title "XFiles ${VERSION}" \
-              --notes "XFiles ${VERSION} (build ${BUILD}). Offline, open-source file manager." \
-              "$APK"
-          fi
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ github.token }}
+          tag_name: ${{ steps.decide.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.decide.outputs.name }}
+          prerelease: ${{ steps.decide.outputs.prerelease }}
+          body: >-
+            XFiles ${{ steps.decide.outputs.version }} · build ${{ steps.decide.outputs.build }}
+            (${{ github.sha }}). Offline, open-source file manager — no network, no telemetry.
+          files: ${{ steps.decide.outputs.apk }}
