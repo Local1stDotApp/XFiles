@@ -119,7 +119,13 @@ fun DestinationPicker(vm: MainViewModel) {
             TopAppBar(
                 title = {
                     Column {
-                        Text(if (t.move) "Move to" else "Copy to")
+                        Text(
+                            when {
+                                t.extractArchiveName != null -> "Extract to"
+                                t.move -> "Move to"
+                                else -> "Copy to"
+                            },
+                        )
                         Text(
                             "${t.sources.size} item${if (t.sources.size == 1) "" else "s"}",
                             style = MaterialTheme.typography.labelSmall,
@@ -197,7 +203,13 @@ fun DestinationPicker(vm: MainViewModel) {
                     onClick = { current?.let { vm.confirmTransfer(it) } },
                     enabled = canConfirm,
                 ) {
-                    Text(if (t.move) "Move here" else "Copy here")
+                    Text(
+                        when {
+                            t.extractArchiveName != null -> "Extract here"
+                            t.move -> "Move here"
+                            else -> "Copy here"
+                        },
+                    )
                 }
             }
         }

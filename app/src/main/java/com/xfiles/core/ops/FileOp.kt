@@ -21,6 +21,14 @@ sealed interface FileOp {
         val destDir: XEntry,
         val archiveName: String,
     ) : FileOp
+
+    /** Extract [archive]'s contents into [destDir] (parallel fast path for zip/apk/jar). */
+    data class Extract(
+        val archive: XEntry,
+        val destDir: XEntry,
+    ) : FileOp {
+        override val sources: List<XEntry> get() = listOf(archive)
+    }
 }
 
 enum class OpState { SCANNING, RUNNING, AWAITING_CONFLICT, DONE, FAILED, CANCELLED }

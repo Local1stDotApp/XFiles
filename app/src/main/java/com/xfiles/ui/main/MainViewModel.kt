@@ -128,7 +128,21 @@ class MainViewModel : ViewModel() {
             snackbar.tryEmit("Cannot write to ${destDir.name}")
             return
         }
-        Graph.opEngine.submit(FileOp.Copy(transfer.sources, destDir, transfer.move))
+        val extractName = transfer.extractArchiveName
+        if (extractName != null) {
+            val archive = transfer.sources.first()
+            viewModelScope.launch {
+                val folder = withContext(Dispatchers.IO) {
+                    runCatching { Graph.fsRegistry.forEntry(destDir).mkdir(destDir, extractName) }
+                }
+                folder.fold(
+                    onSuccess = { Graph.opEngine.submit(FileOp.Extract(archive, it)) },
+                    onFailure = { snackbar.tryEmit(it.message ?: "Cannot create folder") },
+                )
+            }
+        } else {
+            Graph.opEngine.submit(FileOp.Copy(transfer.sources, destDir, transfer.move))
+        }
         activeCtrl.clearSelection()
     }
 
@@ -156,35 +170,14 @@ class MainViewModel : ViewModel() {
         activeCtrl.clearSelection()
     }
 
-    /** Extract an archive into a new folder (named after it) in the other pane. */
+    /** Choose a folder to extract [archive] into (a new subfolder named after it). */
     fun extractArchive(archive: XEntry) {
-        val dest = inactiveCtrl.focusedDirEntry() ?: return
-        if (!isValidDest(dest)) {
-            snackbar.tryEmit("Cannot write to ${dest.name}")
-            return
-        }
-        viewModelScope.launch {
-            val prepared = withContext(Dispatchers.IO) {
-                runCatching {
-                    val archiveRoot = archive.copy(kind = EntryKind.ARCHIVE)
-                    val children = Graph.fsRegistry.forEntry(archiveRoot).list(archiveRoot)
-                    val folderName = archive.name.substringBeforeLast('.').ifBlank { archive.name }
-                    val folder = Graph.fsRegistry.forEntry(dest).mkdir(dest, folderName)
-                    folder to children
-                }
-            }
-            prepared.fold(
-                onSuccess = { (folder, children) ->
-                    if (children.isEmpty()) {
-                        snackbar.tryEmit("${archive.name} is empty")
-                    } else {
-                        inactiveCtrl.expand(folder)
-                        Graph.opEngine.submit(FileOp.Copy(children, folder, move = false))
-                    }
-                },
-                onFailure = { snackbar.tryEmit(it.message ?: "Cannot extract ${archive.name}") },
-            )
-        }
+        pendingTransfer.value = PendingTransfer(
+            sources = listOf(archive),
+            move = false,
+            startDirId = inactiveCtrl.focusedDirEntry()?.id,
+            extractArchiveName = archive.name.substringBeforeLast('.').ifBlank { archive.name },
+        )
     }
 
     fun requestNewFolder() {
@@ -249,9 +242,11 @@ class MainViewModel : ViewModel() {
         dest.canWrite && dest.kind != EntryKind.APPS_ROOT && dest.kind != EntryKind.APP
 }
 
-/** A copy or move whose destination folder is being chosen. */
+/** A copy/move/extract whose destination folder is being chosen. */
 data class PendingTransfer(
     val sources: List<XEntry>,
     val move: Boolean,
     val startDirId: String?,
+    /** Non-null for an extract: the subfolder name to create at the destination. */
+    val extractArchiveName: String? = null,
 )

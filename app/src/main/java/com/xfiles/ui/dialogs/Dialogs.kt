@@ -223,7 +223,7 @@ private fun EntryMenuContent(
         MenuItem("Copy to…") { vm.copySelection(move = false, sources = listOf(entry)); dismiss() }
         MenuItem("Move to…") { vm.copySelection(move = true, sources = listOf(entry)); dismiss() }
         if (entry.kind == EntryKind.ARCHIVE) {
-            MenuItem("Extract to other pane") {
+            MenuItem("Extract to…") {
                 vm.extractArchive(entry)
                 dismiss()
             }

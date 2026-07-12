@@ -4,20 +4,20 @@ import com.xfiles.core.fs.EntryKind
 import com.xfiles.core.fs.FsRegistry
 import com.xfiles.core.fs.XEntry
 import com.xfiles.core.fs.XId
-import java.io.BufferedOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -29,6 +29,11 @@ private const val COPY_BUFFER_SIZE = 128 * 1024
 
 /** Minimum interval between StateFlow progress publications (~10 updates/s). */
 private const val PUBLISH_INTERVAL_NANOS = 100_000_000L
+
+/** Shared empty stream for zip directory entries. */
+private val EMPTY_INPUT: InputStream get() = object : InputStream() {
+    override fun read(): Int = -1
+}
 
 /**
  * Executes [FileOp]s, one coroutine per op on [Dispatchers.IO].
@@ -44,6 +49,7 @@ private const val PUBLISH_INTERVAL_NANOS = 100_000_000L
 class DefaultOperationEngine(
     private val scope: CoroutineScope,
     private val registry: FsRegistry,
+    private val cacheDir: File,
 ) : OperationEngine {
 
     private val nextId = AtomicLong(1L)
@@ -73,6 +79,7 @@ class DefaultOperationEngine(
                 is FileOp.Copy -> runCopy(op, running, dirty)
                 is FileOp.Delete -> runDelete(op, running, dirty)
                 is FileOp.Compress -> runCompress(op, running, dirty)
+                is FileOp.Extract -> runExtract(op, running, dirty)
             }
             running.finish(OpState.DONE)
             _events.tryEmit(OpEvent(message, success = true, dirtyDirIds = dirty.toSet()))
@@ -303,62 +310,111 @@ class DefaultOperationEngine(
             }
         }
         t.setState(OpState.RUNNING)
+        t.current(archiveName)
 
         // The output archive lives in destDir; if a source folder contains destDir we must
         // not zip the archive into itself (read-while-write loop until the disk fills).
         val outputId = XId.child(destDir, archiveName)
+        val sources = ArrayList<ZipTurbo.ZipSource>()
+        for (src in op.sources) collectZipSources(src, src.name, outputId, sources)
 
+        val done = java.util.concurrent.atomic.AtomicLong(0)
+        val publisher = scope.launch { while (isActive) { t.setBytesDone(done.get()); delay(120) } }
         var completed = false
         try {
-            ZipOutputStream(BufferedOutputStream(destFs.openOut(destDir, archiveName))).use { zip ->
-                zip.setMethod(ZipOutputStream.DEFLATED)
-                for (src in op.sources) {
-                    addToZip(zip, src, src.name, outputId, t)
-                }
+            destFs.openOut(destDir, archiveName).use { rawOut ->
+                ZipTurbo.createZip(
+                    sources = sources,
+                    out = rawOut,
+                    cacheDir = cacheDir,
+                    onBytes = { done.set(it) },
+                    isCancelled = { !t.isActive() },
+                )
             }
             completed = true
+        } catch (e: Exception) {
+            if (!t.isActive()) throw CancellationException("cancelled")
+            throw e
         } finally {
+            publisher.cancel()
             if (!completed) runCatching { deleteChildIfExists(destDir, archiveName) }
         }
+        t.setBytesDone(done.get())
         return "Created $archiveName"
     }
 
-    private fun addToZip(
-        zip: ZipOutputStream,
-        src: XEntry,
+    /** Flattens a source subtree into [ZipTurbo.ZipSource]s with archive-relative paths. */
+    private fun collectZipSources(
+        entry: XEntry,
         relPath: String,
         outputId: String,
-        t: RunningOpImpl,
+        out: MutableList<ZipTurbo.ZipSource>,
     ) {
-        if (src.id == outputId) return
-        t.ensureActive()
-        t.current(src.name)
-        if (src.isDir) {
-            val dirEntry = ZipEntry("$relPath/")
-            if (src.mtime > 0) dirEntry.time = src.mtime
-            zip.putNextEntry(dirEntry)
-            zip.closeEntry()
-            t.itemsDone(1)
-            for (child in registry.forEntry(src).list(src)) {
-                addToZip(zip, child, "$relPath/${child.name}", outputId, t)
+        if (entry.id == outputId) return
+        if (entry.isDir) {
+            out += ZipTurbo.ZipSource(relPath, isDir = true, entry.mtime) { EMPTY_INPUT }
+            for (child in registry.forEntry(entry).list(entry)) {
+                collectZipSources(child, "$relPath/${child.name}", outputId, out)
             }
         } else {
-            val fileEntry = ZipEntry(relPath)
-            if (src.mtime > 0) fileEntry.time = src.mtime
-            zip.putNextEntry(fileEntry)
-            registry.forScheme(src.scheme).openIn(src).use { input ->
-                val buffer = ByteArray(COPY_BUFFER_SIZE)
-                while (true) {
-                    t.ensureActive()
-                    val n = input.read(buffer)
-                    if (n < 0) break
-                    zip.write(buffer, 0, n)
-                    t.bytesDone(n.toLong())
-                }
-            }
-            zip.closeEntry()
-            t.itemsDone(1)
+            val fs = registry.forScheme(entry.scheme)
+            out += ZipTurbo.ZipSource(relPath, isDir = false, entry.mtime) { fs.openIn(entry) }
         }
+    }
+
+    // ----------------------------------------------------------------- Extract
+
+    private suspend fun runExtract(
+        op: FileOp.Extract,
+        t: RunningOpImpl,
+        dirty: MutableSet<String>,
+    ): String {
+        val archive = op.archive
+        val destDir = op.destDir
+        dirty += destDir.id
+
+        val archiveFile = archive.localPath?.let(::File)
+        val zipFamily = archive.extension in setOf("zip", "jar", "apk", "apks")
+
+        // Fast path: parallel multi-handle extraction to a local directory.
+        if (zipFamily && archiveFile != null && archiveFile.isFile &&
+            destDir.scheme == XId.SCHEME_FILE
+        ) {
+            val destFile = File(destDir.path)
+            if (!destFile.isDirectory && !destFile.mkdirs()) {
+                throw IOException("Cannot create ${destDir.name}")
+            }
+            t.current(archive.name)
+            t.setTotals(totalBytes = ZipTurbo.totalUncompressed(archiveFile), totalItems = 0)
+            t.setState(OpState.RUNNING)
+
+            val done = java.util.concurrent.atomic.AtomicLong(0)
+            val publisher = scope.launch { while (isActive) { t.setBytesDone(done.get()); delay(120) } }
+            try {
+                ZipTurbo.extractZip(
+                    archiveFile = archiveFile,
+                    destDir = destFile,
+                    onBytes = { done.set(it) },
+                    isCancelled = { !t.isActive() },
+                )
+            } catch (e: Exception) {
+                if (!t.isActive()) throw CancellationException("cancelled")
+                throw e
+            } finally {
+                publisher.cancel()
+            }
+            t.setBytesDone(done.get())
+            return "Extracted ${archive.name}"
+        }
+
+        // Fallback: sequential extraction (7z/tar/rar, or non-local destination).
+        val archiveRoot = archive.copy(kind = EntryKind.ARCHIVE)
+        val children = registry.forEntry(archiveRoot).list(archiveRoot)
+        val perSource = children.map { scanTree(it, t) }
+        t.setTotals(perSource.sumOf { it.bytes }, perSource.sumOf { it.items })
+        t.setState(OpState.RUNNING)
+        for (child in children) copyTree(child, destDir, child.name, t)
+        return "Extracted ${archive.name}"
     }
 
     // ----------------------------------------------------------------- Shared helpers
@@ -426,12 +482,14 @@ class DefaultOperationEngine(
             "${if (op.move) "Moving" else "Copying"} ${countLabel(op.sources.size)}"
         is FileOp.Delete -> "Deleting ${countLabel(op.sources.size)}"
         is FileOp.Compress -> "Creating ${op.archiveName}"
+        is FileOp.Extract -> "Extracting ${op.archive.name}"
     }
 
     private fun verbFor(op: FileOp): String = when (op) {
         is FileOp.Copy -> if (op.move) "Move" else "Copy"
         is FileOp.Delete -> "Delete"
         is FileOp.Compress -> "Compress"
+        is FileOp.Extract -> "Extract"
     }
 
     private fun countLabel(n: Int): String = if (n == 1) "1 item" else "$n items"
@@ -475,6 +533,15 @@ private class RunningOpImpl(
     }
 
     fun ensureActive() = job.ensureActive()
+
+    fun isActive(): Boolean = job.isActive
+
+    /** Absolute progress setter used by parallel zip workers (via a single publisher). */
+    @Synchronized
+    fun setBytesDone(total: Long) {
+        doneBytes = total
+        publish(force = true)
+    }
 
     fun setTotals(totalBytes: Long, totalItems: Int) {
         this.totalBytes = totalBytes
