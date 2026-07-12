@@ -78,10 +78,11 @@ object ZipTurbo {
     ) {
         val executor = Executors.newFixedThreadPool(WORKERS)
         val tempCounter = AtomicInteger()
+        val tempFiles = java.util.Collections.synchronizedList(ArrayList<File>())
         val backing = ScatterGatherBackingStoreSupplier {
-            FileBasedScatterGatherBackingStore(
-                File(cacheDir, "xf-scatter-${tempCounter.incrementAndGet()}-${System.nanoTime()}.tmp"),
-            )
+            val f = File(cacheDir, "xf-scatter-${tempCounter.incrementAndGet()}-${System.nanoTime()}.tmp")
+            tempFiles += f
+            FileBasedScatterGatherBackingStore(f)
         }
         val creator = ParallelScatterZipCreator(executor, backing, level)
         val readTotal = AtomicLong(0)
@@ -105,6 +106,48 @@ object ZipTurbo {
             zos.close()
         } finally {
             executor.shutdownNow()
+            // writeTo cleans its own scatter files, but if we bail before it runs (cancel during
+            // the add loop) the worker-created temp files are orphaned; sweep them here.
+            tempFiles.forEach { runCatching { if (it.exists()) it.delete() } }
+        }
+    }
+
+    /**
+     * Single-threaded streaming zip. Falls back here when the parallel scatter approach would
+     * need more temp space in [cacheDir] than is available (it buffers compressed data on disk).
+     */
+    @Throws(IOException::class)
+    fun createZipSequential(
+        sources: List<ZipSource>,
+        out: OutputStream,
+        level: Int = Deflater.DEFAULT_COMPRESSION,
+        onBytes: (Long) -> Unit,
+        isCancelled: () -> Boolean,
+    ) {
+        val readTotal = AtomicLong(0)
+        val buffer = ByteArray(EXTRACT_BUFFER)
+        ZipArchiveOutputStream(out).use { zos ->
+            zos.setLevel(level)
+            for (src in sources) {
+                if (isCancelled()) throw InterruptedException("cancelled")
+                val entry = ZipArchiveEntry(if (src.isDir) src.name.trimEnd('/') + "/" else src.name)
+                if (src.mtime > 0) entry.time = src.mtime
+                // Sequential path always deflates (STORED would need a pre-computed CRC/size).
+                entry.method = ZipEntry.DEFLATED
+                zos.putArchiveEntry(entry)
+                if (!src.isDir) {
+                    src.open().use { input ->
+                        while (true) {
+                            if (isCancelled()) throw InterruptedException("cancelled")
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            zos.write(buffer, 0, n)
+                            onBytes(readTotal.addAndGet(n.toLong()))
+                        }
+                    }
+                }
+                zos.closeArchiveEntry()
+            }
         }
     }
 
@@ -136,7 +179,7 @@ object ZipTurbo {
         val destRoot = destDir.canonicalPath
         val fileEntries = ArrayList<ZipEntry>()
 
-        ZipFile(archiveFile).use { zip ->
+        openZipFile(archiveFile).use { zip ->
             val entries = zip.entries()
             while (entries.hasMoreElements()) {
                 val entry = entries.nextElement()
@@ -163,7 +206,7 @@ object ZipTurbo {
 
         try {
             val futures = (0 until WORKERS).map {
-                val handle = ZipFile(archiveFile)
+                val handle = openZipFile(archiveFile)
                 handles += handle
                 pool.submit {
                     val buffer = ByteArray(EXTRACT_BUFFER)
@@ -174,7 +217,7 @@ object ZipTurbo {
                             handle.getInputStream(entry).use { input ->
                                 FileOutputStream(target).use { fos ->
                                     while (true) {
-                                        if (isCancelled()) return@submit
+                                        if (isCancelled()) break
                                         val n = input.read(buffer)
                                         if (n < 0) break
                                         fos.write(buffer, 0, n)
@@ -182,8 +225,13 @@ object ZipTurbo {
                                     }
                                 }
                             }
+                            if (isCancelled()) {
+                                runCatching { target.delete() } // drop the partial file
+                                return@submit
+                            }
                             if (entry.time >= 0) target.setLastModified(entry.time)
                         } catch (t: Throwable) {
+                            runCatching { target.delete() }
                             synchronized(errorLock) { if (firstError == null) firstError = t }
                             return@submit
                         }
@@ -195,13 +243,23 @@ object ZipTurbo {
             pool.shutdownNow()
             handles.forEach { runCatching { it.close() } }
         }
+        // Surface cancellation to the caller so the op is reported CANCELLED, not DONE.
+        if (isCancelled()) throw InterruptedException("Extract cancelled")
         firstError?.let { throw IOException("Extract failed: ${it.message}", it) }
     }
+
+    /** Opens a zip, falling back to ISO-8859-1 for legacy archives with non-UTF-8 entry names. */
+    private fun openZipFile(file: File): ZipFile =
+        try {
+            ZipFile(file)
+        } catch (e: IllegalArgumentException) {
+            ZipFile(file, Charsets.ISO_8859_1)
+        }
 
     /** Sum of uncompressed sizes across all file entries (for progress totals). */
     fun totalUncompressed(archiveFile: File): Long {
         var total = 0L
-        ZipFile(archiveFile).use { zip ->
+        openZipFile(archiveFile).use { zip ->
             val entries = zip.entries()
             while (entries.hasMoreElements()) {
                 val entry = entries.nextElement()

@@ -292,8 +292,9 @@ class DefaultOperationEngine(
         dirty += destDir.id
 
         val perSource = op.sources.map { scanTree(it, t) }
+        val totalBytes = perSource.sumOf { it.bytes }
         t.setTotals(
-            totalBytes = perSource.sumOf { it.bytes },
+            totalBytes = totalBytes,
             totalItems = perSource.sumOf { it.items },
         )
 
@@ -318,18 +319,31 @@ class DefaultOperationEngine(
         val sources = ArrayList<ZipTurbo.ZipSource>()
         for (src in op.sources) collectZipSources(src, src.name, outputId, sources)
 
+        // The parallel scatter creator buffers compressed data in cacheDir; when there isn't
+        // enough temp space, stream sequentially instead of risking a full internal disk.
+        val useParallel = totalBytes < cacheDir.usableSpace
+
         val done = java.util.concurrent.atomic.AtomicLong(0)
         val publisher = scope.launch { while (isActive) { t.setBytesDone(done.get()); delay(120) } }
         var completed = false
         try {
             destFs.openOut(destDir, archiveName).use { rawOut ->
-                ZipTurbo.createZip(
-                    sources = sources,
-                    out = rawOut,
-                    cacheDir = cacheDir,
-                    onBytes = { done.set(it) },
-                    isCancelled = { !t.isActive() },
-                )
+                if (useParallel) {
+                    ZipTurbo.createZip(
+                        sources = sources,
+                        out = rawOut,
+                        cacheDir = cacheDir,
+                        onBytes = { done.set(it) },
+                        isCancelled = { !t.isActive() },
+                    )
+                } else {
+                    ZipTurbo.createZipSequential(
+                        sources = sources,
+                        out = rawOut,
+                        onBytes = { done.set(it) },
+                        isCancelled = { !t.isActive() },
+                    )
+                }
             }
             completed = true
         } catch (e: Exception) {

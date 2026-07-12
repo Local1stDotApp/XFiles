@@ -133,7 +133,15 @@ class MainViewModel : ViewModel() {
             val archive = transfer.sources.first()
             viewModelScope.launch {
                 val folder = withContext(Dispatchers.IO) {
-                    runCatching { Graph.fsRegistry.forEntry(destDir).mkdir(destDir, extractName) }
+                    runCatching {
+                        // Never merge into a pre-existing folder: pick a free name.
+                        val fs = Graph.fsRegistry.forEntry(destDir)
+                        val taken = fs.list(destDir).map { it.name }.toSet()
+                        var name = extractName
+                        var i = 1
+                        while (name in taken) name = "$extractName ($i)".also { i++ }
+                        fs.mkdir(destDir, name)
+                    }
                 }
                 folder.fold(
                     onSuccess = { Graph.opEngine.submit(FileOp.Extract(archive, it)) },

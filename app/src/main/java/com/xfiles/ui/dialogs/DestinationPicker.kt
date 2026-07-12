@@ -227,7 +227,10 @@ fun DestinationPicker(vm: MainViewModel) {
                     }
                     result.fold(
                         onSuccess = { current = it },
-                        onFailure = { reloadTick++ },
+                        onFailure = {
+                            vm.snackbar.tryEmit(it.message ?: "Cannot create folder")
+                            reloadTick++
+                        },
                     )
                 }
             },
@@ -280,9 +283,11 @@ private fun NewFolderNameDialog(onDismiss: () -> Unit, onConfirm: (String) -> Un
             )
         },
         confirmButton = {
+            val trimmed = text.trim()
             Button(
-                enabled = text.isNotBlank() && !text.contains('/'),
-                onClick = { onConfirm(text.trim()) },
+                enabled = trimmed.isNotEmpty() && trimmed != "." && trimmed != ".." &&
+                    !trimmed.contains('/') && !trimmed.contains('\\'),
+                onClick = { onConfirm(trimmed) },
             ) { Text("Create") }
         },
         dismissButton = {

@@ -54,8 +54,11 @@ class OpsService : Service() {
             Graph.opEngine.active.value.forEach { it.cancel() }
         }
 
-        // Must call startForeground promptly after being started as a foreground service.
-        startForeground(NOTIF_ID, buildNotification(Graph.opEngine.active.value.size, null))
+        // Must call startForeground promptly. Guard the rare race where the app is no longer
+        // foreground-eligible (the op keeps running on the app scope regardless).
+        runCatching {
+            startForeground(NOTIF_ID, buildNotification(Graph.opEngine.active.value.size, null))
+        }
 
         if (!collecting) {
             collecting = true
@@ -70,12 +73,21 @@ class OpsService : Service() {
                         if (count == 0) {
                             stop()
                         } else {
+                            // Renew the wake lock each tick so ops longer than the timeout keep going.
+                            wakeLock?.acquire(WAKELOCK_TIMEOUT_MS)
                             notificationManager().notify(NOTIF_ID, buildNotification(count, progress))
                         }
                     }
             }
         }
-        return START_STICKY
+        // No in-memory op state survives a process restart, so don't re-deliver.
+        return START_NOT_STICKY
+    }
+
+    /** Android 14+ dataSync FGS time limit: cancel outstanding ops and stop cleanly. */
+    override fun onTimeout(startId: Int) {
+        Graph.opEngine.active.value.forEach { it.cancel() }
+        stop()
     }
 
     private fun stop() {
@@ -148,10 +160,15 @@ class OpsService : Service() {
         /** Starts (or refreshes) the foreground service to cover currently-running ops. */
         fun start(context: Context) {
             val intent = Intent(context, OpsService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            // Ops are submitted from the foreground, so this is normally allowed; guard the
+            // rare background-start race (ForegroundServiceStartNotAllowedException) — the op
+            // still runs on the app-lifetime scope even without the service.
+            runCatching {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
             }
         }
     }
