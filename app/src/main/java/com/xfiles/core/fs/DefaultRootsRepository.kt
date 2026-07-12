@@ -39,16 +39,22 @@ class DefaultRootsRepository(private val context: Context) : RootsRepository {
             kind = EntryKind.APPS_ROOT,
             canWrite = false,
         )
-        val fsRoot = File("/")
-        if (fsRoot.canRead()) {
-            roots += XEntry(
-                id = XId.file("/"),
-                name = "Root",
-                isDir = true,
-                kind = EntryKind.DIR,
-                canWrite = fsRoot.canWrite(),
-                localPath = "/",
-            )
+        // Superuser access to "/" (X-plore's "Root"). Prefer real root via `su`; fall back
+        // to a plain non-privileged view only if "/" happens to be readable without it.
+        if (RootShell.isAvailable()) {
+            roots += RootFileSystem.rootEntry()
+        } else {
+            val fsRoot = File("/")
+            if (fsRoot.canRead()) {
+                roots += XEntry(
+                    id = XId.file("/"),
+                    name = "Root (read-only)",
+                    isDir = true,
+                    kind = EntryKind.DIR,
+                    canWrite = fsRoot.canWrite(),
+                    localPath = "/",
+                )
+            }
         }
         return roots
     }

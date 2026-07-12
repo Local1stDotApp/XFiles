@@ -19,6 +19,11 @@ rebuilt on the latest Android stack with a **Material 3 Expressive** UI.
   read-only; extract by copying out; APK install shortcut.
 - **App manager** — installed apps with real icons, version/package badges;
   launch, app info, uninstall, copy APK out (share an app as file).
+- **Root access** — on rooted devices a **Root** entry (`/`) appears and browses
+  the whole filesystem as superuser via `su`: list/read/write/mkdir/rename/delete
+  under `/data`, `/system`, … Files stream through `su cat`/`cat >`, so the app's
+  own viewers can open protected files. Falls back to a read-only `/` view when
+  `su` is unavailable.
 - **Viewers** — image viewer (pager + pinch zoom), text viewer with edit/save,
   hex viewer with on-demand paging, audio/video player (Media3/ExoPlayer).
 - **Search** — live streaming recursive search with `*`/`?` wildcards,
@@ -47,7 +52,7 @@ Note: material3 is pinned to `1.5.0-alpha23` because the Expressive APIs are
 app/src/main/java/com/xfiles/
 ├── core/
 │   ├── fs/        XEntry model, XId id scheme, XFileSystem + FsRegistry,
-│   │              Local/Archive/Apps filesystems, storage roots
+│   │              Local/Archive/Apps/Root filesystems, RootShell (su), storage roots
 │   ├── ops/       OperationEngine (copy/move/delete/compress + conflicts)
 │   ├── search/    recursive SearchEngine
 │   ├── prefs/     DataStore settings
@@ -65,7 +70,7 @@ app/src/main/java/com/xfiles/
 ```
 
 Entry ids are URI-like strings: `file:///abs/path`,
-`zip:///abs/archive.zip!/inner/path`, `apps://package.name`.
+`zip:///abs/archive.zip!/inner/path`, `apps://package.name`, `root:///abs/path`.
 
 ## Build & run
 

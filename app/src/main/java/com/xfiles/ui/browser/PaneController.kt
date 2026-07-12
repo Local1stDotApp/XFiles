@@ -236,7 +236,8 @@ class PaneController(
         if (entry.kind == com.xfiles.core.fs.EntryKind.VOLUME_INTERNAL ||
             entry.kind == com.xfiles.core.fs.EntryKind.VOLUME_SD ||
             entry.kind == com.xfiles.core.fs.EntryKind.VOLUME_USB ||
-            entry.kind == com.xfiles.core.fs.EntryKind.APPS_ROOT
+            entry.kind == com.xfiles.core.fs.EntryKind.APPS_ROOT ||
+            entry.kind == com.xfiles.core.fs.EntryKind.ROOT
         ) return
         selection.update { if (entry.id in it) it - entry.id else it + entry.id }
     }

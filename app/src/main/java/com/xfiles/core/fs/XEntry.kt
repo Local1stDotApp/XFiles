@@ -52,15 +52,21 @@ enum class EntryKind {
     ARCHIVE,
     APPS_ROOT,
     APP,
+    /** The superuser filesystem root ("/") browsed via `su`. */
+    ROOT,
 }
 
 object XId {
     const val SCHEME_FILE = "file"
     const val SCHEME_ZIP = "zip"
     const val SCHEME_APPS = "apps"
+    const val SCHEME_ROOT = "root"
     const val ARCHIVE_SEP = "!/"
 
     fun file(absolutePath: String): String = "$SCHEME_FILE://$absolutePath"
+
+    /** Superuser path id, e.g. root:///data/local. */
+    fun root(absolutePath: String): String = "$SCHEME_ROOT://$absolutePath"
 
     fun zip(archiveAbsolutePath: String, innerPath: String = ""): String =
         "$SCHEME_ZIP://$archiveAbsolutePath$ARCHIVE_SEP$innerPath"
@@ -75,11 +81,12 @@ object XId {
     fun zipInnerPath(id: String): String =
         id.substringAfter("://").substringAfter(ARCHIVE_SEP, "").trimEnd('/')
 
-    /** Child id under a parent container id (handles file/ and zip/ schemes). */
+    /** Child id under a parent container id (handles file/ root/ zip/ apps schemes). */
     fun child(parent: XEntry, childName: String): String = when (parent.scheme) {
         SCHEME_FILE ->
             if (parent.kind == EntryKind.ARCHIVE) zip(parent.path, childName)
-            else file(parent.path.trimEnd('/') + "/" + childName)
+            else file(joinPath(parent.path, childName))
+        SCHEME_ROOT -> root(joinPath(parent.path, childName))
         SCHEME_ZIP -> {
             val inner = zipInnerPath(parent.id)
             zip(zipArchivePath(parent.id), if (inner.isEmpty()) childName else "$inner/$childName")
@@ -87,6 +94,11 @@ object XId {
         SCHEME_APPS -> "$SCHEME_APPS://$childName"
         else -> parent.id.trimEnd('/') + "/" + childName
     }
+
+    /** Joins a POSIX directory path with a child name, handling the "/" root. */
+    fun joinPath(dirPath: String, childName: String): String =
+        if (dirPath == "/" || dirPath.isEmpty()) "/$childName"
+        else dirPath.trimEnd('/') + "/" + childName
 
     /** Parent id, or null at a root. */
     fun parent(id: String): String? {
@@ -96,6 +108,12 @@ object XId {
                 if (p == "/" || p.isEmpty()) return null
                 val parentPath = p.trimEnd('/').substringBeforeLast('/', "")
                 return if (parentPath.isEmpty()) file("/") else file(parentPath)
+            }
+            SCHEME_ROOT -> {
+                val p = id.substringAfter("://")
+                if (p == "/" || p.isEmpty()) return null
+                val parentPath = p.trimEnd('/').substringBeforeLast('/', "")
+                return if (parentPath.isEmpty()) root("/") else root(parentPath)
             }
             SCHEME_ZIP -> {
                 val inner = zipInnerPath(id)

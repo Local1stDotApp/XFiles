@@ -13,6 +13,7 @@ import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.SdCard
+import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Smartphone
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Usb
@@ -30,6 +31,7 @@ object EntryIcons {
         EntryKind.VOLUME_USB -> Icons.Outlined.Usb
         EntryKind.APPS_ROOT -> Icons.Outlined.Apps
         EntryKind.APP -> Icons.Outlined.Android
+        EntryKind.ROOT -> Icons.Outlined.Security
         EntryKind.ARCHIVE -> Icons.Outlined.FolderZip
         EntryKind.DIR -> if (expanded) Icons.Outlined.FolderOpen else Icons.Outlined.Folder
         EntryKind.FILE -> forCategory(FileTypes.categoryOf(entry.name, entry.mime))

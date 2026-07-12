@@ -62,7 +62,9 @@ fun EntryRow(
     val isVolume = entry.kind == EntryKind.VOLUME_INTERNAL ||
         entry.kind == EntryKind.VOLUME_SD ||
         entry.kind == EntryKind.VOLUME_USB
-    val selectable = !isVolume && entry.kind != EntryKind.APPS_ROOT
+    val selectable = !isVolume &&
+        entry.kind != EntryKind.APPS_ROOT &&
+        entry.kind != EntryKind.ROOT
 
     val background = when {
         selected -> MaterialTheme.colorScheme.secondaryContainer
