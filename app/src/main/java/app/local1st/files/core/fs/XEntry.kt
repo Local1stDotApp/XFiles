@@ -37,9 +37,9 @@ data class XEntry(
     val path: String get() = id.substringAfter("://")
     val extension: String get() = name.substringAfterLast('.', "").lowercase()
 
-    /** True when this entry can be entered like a folder (dirs, archives, app root). */
+    /** True when this entry can be entered like a folder (dirs, archives, app root, an app). */
     val isContainer: Boolean
-        get() = isDir || kind == EntryKind.ARCHIVE
+        get() = isDir || kind == EntryKind.ARCHIVE || kind == EntryKind.APP
 }
 
 enum class EntryKind {

@@ -3,6 +3,7 @@ package app.local1st.files.ui.main
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.local1st.files.core.fs.EntryKind
+import app.local1st.files.core.fs.RootAccess
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.ops.FileOp
@@ -33,6 +34,9 @@ class MainViewModel : ViewModel() {
     val viewer = MutableStateFlow<ViewerRequest?>(null)
     val showSettings = MutableStateFlow(false)
 
+    /** Package name whose rich app-details screen is showing, or null when closed. */
+    val appDetails = MutableStateFlow<String?>(null)
+
     /** Root container for the search overlay, or null when search is closed. */
     val searchRoot = MutableStateFlow<XEntry?>(null)
 
@@ -48,6 +52,14 @@ class MainViewModel : ViewModel() {
                 snackbar.tryEmit(event.message)
             }
         }
+        // Root browsing is a Settings switch: mirror it into the fs gate (set before reloading,
+        // so paneRoots sees the new value) and rebuild pane roots when it flips.
+        viewModelScope.launch {
+            Graph.settings.rootEnabled.collect { enabled ->
+                RootAccess.enabled = enabled
+                panes.forEach { it.reloadRoots() }
+            }
+        }
     }
 
     fun setActivePane(index: Int) {
@@ -58,11 +70,8 @@ class MainViewModel : ViewModel() {
 
     fun openEntry(pane: PaneController, entry: XEntry) {
         if (entry.isContainer) {
+            // Apps and archives (incl. APKs) expand in place; long-press opens their menu.
             pane.toggleExpand(entry)
-            return
-        }
-        if (entry.kind == EntryKind.APP) {
-            dialog.value = DialogRequest.EntryMenu(entry)
             return
         }
         when (FileTypes.categoryOf(entry.name, entry.mime)) {
@@ -91,6 +100,16 @@ class MainViewModel : ViewModel() {
 
     fun openAsHex(entry: XEntry) {
         viewer.value = ViewerRequest.Hex(entry)
+    }
+
+    /** Expand an app and its base APK so the APK's zip contents show inline. */
+    fun openAppAsZip(app: XEntry) {
+        activeCtrl.revealAppApk(app)
+    }
+
+    /** Open the rich in-app details screen for an installed app. */
+    fun showAppDetails(packageName: String) {
+        appDetails.value = packageName
     }
 
     fun openAsText(entry: XEntry) {
@@ -126,6 +145,12 @@ class MainViewModel : ViewModel() {
         pendingTransfer.value = null
         if (!isValidDest(destDir)) {
             snackbar.tryEmit("Cannot write to ${destDir.name}")
+            return
+        }
+        if (transfer.compress) {
+            // Destination now chosen explicitly in the picker; ask for the archive name next.
+            dialog.value = DialogRequest.CompressTo(transfer.sources, destDir)
+            activeCtrl.clearSelection()
             return
         }
         val extractName = transfer.extractArchiveName
@@ -165,11 +190,15 @@ class MainViewModel : ViewModel() {
         activeCtrl.clearSelection()
     }
 
-    fun requestCompress() {
-        val sources = activeCtrl.selectionEntries()
-        val dest = inactiveCtrl.focusedDirEntry() ?: return
+    /** Pick a destination folder for a new zip (like copy/move), then ask for its name. */
+    fun requestCompress(sources: List<XEntry> = activeCtrl.selectionEntries()) {
         if (sources.isEmpty()) return
-        dialog.value = DialogRequest.CompressTo(sources, dest)
+        pendingTransfer.value = PendingTransfer(
+            sources = sources,
+            move = false,
+            startDirId = activeCtrl.focusedDirEntry()?.id,
+            compress = true,
+        )
     }
 
     fun performCompress(sources: List<XEntry>, destDir: XEntry, archiveName: String) {
@@ -250,11 +279,13 @@ class MainViewModel : ViewModel() {
         dest.canWrite && dest.kind != EntryKind.APPS_ROOT && dest.kind != EntryKind.APP
 }
 
-/** A copy/move/extract whose destination folder is being chosen. */
+/** A copy/move/extract/compress whose destination folder is being chosen. */
 data class PendingTransfer(
     val sources: List<XEntry>,
     val move: Boolean,
     val startDirId: String?,
     /** Non-null for an extract: the subfolder name to create at the destination. */
     val extractArchiveName: String? = null,
+    /** True when picking where to create a new zip; the name is asked afterwards. */
+    val compress: Boolean = false,
 )

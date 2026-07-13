@@ -34,8 +34,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -45,7 +48,7 @@ import app.local1st.files.core.util.Format
 import java.io.File
 
 private val IndentWidth = 14.dp
-private val RowHeight = 52.dp
+private val RowHeight = 56.dp
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -57,6 +60,10 @@ fun EntryRow(
     onLongClick: () -> Unit,
     onToggleSelect: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Draw the tree guide lines for this row (only the focused branch does, to cut clutter). */
+    drawGuides: Boolean = true,
+    /** Deepest indent level to suppress guides above, so the focused folder reads as the root. */
+    guideBaseDepth: Int = 0,
 ) {
     val entry = node.entry
     val isVolume = entry.kind == EntryKind.VOLUME_INTERNAL ||
@@ -82,8 +89,9 @@ fun EntryRow(
             .background(background)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
-        // Tree guide lines + connector elbow.
-        if (node.depth > 0) {
+        // Tree guide lines + connector elbow — only for rows on the focused branch (drawGuides),
+        // so lines from unrelated branches don't clutter the view.
+        if (node.depth > 0 && drawGuides) {
             Canvas(
                 Modifier
                     .width(IndentWidth * node.depth)
@@ -91,16 +99,42 @@ fun EntryRow(
             ) {
                 val unit = IndentWidth.toPx()
                 val stroke = 1.dp.toPx()
-                node.guides.forEachIndexed { d, draw ->
-                    if (draw) {
-                        val x = unit * d + unit / 2
-                        drawLine(guideColor, Offset(x, 0f), Offset(x, size.height), stroke)
+                // Ancestor continuation spines: guides[i] tells whether the ancestor at depth i
+                // has a following sibling; that ancestor's sibling-spine sits one indent to the
+                // left, at level i-1. (guides[0] is the root, which has no spine.) The spine at
+                // this row's OWN level (depth-1) is the connector below — never drawn here, so a
+                // last child doesn't get a second, non-closing line over its "└".
+                node.guides.forEachIndexed { i, draw ->
+                    // Spine at level i-1; suppressed above guideBaseDepth so ancestor-of-the-
+                    // focused-folder spines (unrelated to the current branch) don't show.
+                    if (draw && (i - 1) >= guideBaseDepth) {
+                        val gx = unit * (i - 1) + unit / 2
+                        drawLine(guideColor, Offset(gx, 0f), Offset(gx, size.height), stroke)
                     }
                 }
                 val x = unit * (node.depth - 1) + unit / 2
                 val midY = size.height / 2
-                drawLine(guideColor, Offset(x, 0f), Offset(x, if (node.isLastChild) midY else size.height), stroke)
-                drawLine(guideColor, Offset(x, midY), Offset(x + unit / 2, midY), stroke)
+                val endX = x + unit / 2
+                if (node.isLastChild) {
+                    // Rounded "└": the vertical stops here and curves into the branch — the arc
+                    // alone marks the last item, so it uses the same tone/weight as other guides.
+                    val r = unit * 0.4f
+                    val path = Path().apply {
+                        moveTo(x, 0f)
+                        lineTo(x, midY - r)
+                        quadraticBezierTo(x, midY, x + r, midY)
+                        lineTo(endX, midY)
+                    }
+                    drawPath(
+                        path,
+                        guideColor,
+                        style = Stroke(width = stroke, cap = StrokeCap.Round),
+                    )
+                } else {
+                    // "├": the spine continues past this item to its following siblings.
+                    drawLine(guideColor, Offset(x, 0f), Offset(x, size.height), stroke)
+                    drawLine(guideColor, Offset(x, midY), Offset(endX, midY), stroke, cap = StrokeCap.Round)
+                }
             }
         }
 
@@ -119,7 +153,7 @@ fun EntryRow(
             Box(Modifier.size(20.dp))
         }
 
-        // Icon or thumbnail.
+        // Icon or thumbnail (selection is the trailing control, to avoid mis-taps here).
         Box(Modifier.padding(start = 2.dp, end = 10.dp), contentAlignment = Alignment.Center) {
             if (entry.kind == EntryKind.APP) {
                 AsyncImage(
@@ -147,12 +181,18 @@ fun EntryRow(
             }
         }
 
-        // Name + details.
+        // Name + details. Weight expresses hierarchy: navigable containers read heavier than
+        // plain files, volumes heaviest — the M3 Expressive variable-weight cue.
         Column(Modifier.weight(1f).animateContentSize()) {
             Text(
                 entry.name,
-                style = if (isVolume) MaterialTheme.typography.titleSmall
-                else MaterialTheme.typography.bodyMedium,
+                style = if (isVolume) MaterialTheme.typography.titleMedium
+                else MaterialTheme.typography.bodyLarge,
+                fontWeight = when {
+                    isVolume -> FontWeight.SemiBold
+                    entry.isContainer -> FontWeight.Medium
+                    else -> FontWeight.Normal
+                },
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 color = if (node.error != null) MaterialTheme.colorScheme.error
@@ -208,6 +248,7 @@ private fun entryDetails(node: TreeNode): String {
             if (date.isEmpty()) Format.bytes(entry.size) else "${Format.bytes(entry.size)} · $date"
         }
         entry.isDir && entry.childCountHint >= 0 -> "${entry.childCountHint} items"
-        else -> Format.dateTime(entry.mtime)
+        // Folders otherwise show just their name — dropping the bare timestamp declutters the tree.
+        else -> ""
     }
 }

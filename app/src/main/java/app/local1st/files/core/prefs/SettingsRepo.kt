@@ -24,6 +24,8 @@ class SettingsRepo(private val context: Context) {
     private val keyDirsFirst = booleanPreferencesKey("dirs_first")
     private val keyThemeMode = stringPreferencesKey("theme_mode")
     private val keyDynamicColor = booleanPreferencesKey("dynamic_color")
+    private val keyRootEnabled = booleanPreferencesKey("root_enabled")
+    private val keyRootReadOnly = booleanPreferencesKey("root_read_only")
 
     // A corrupted preferences file surfaces as an IOException on every read; recover with
     // defaults instead of crash-looping the app at startup.
@@ -40,10 +42,18 @@ class SettingsRepo(private val context: Context) {
         data.map { runCatching { ThemeMode.valueOf(it[keyThemeMode] ?: "") }.getOrDefault(ThemeMode.SYSTEM) }
     val dynamicColor: Flow<Boolean> = data.map { it[keyDynamicColor] ?: true }
 
+    /** Root browsing is off until the user opts in (dangerous, so default false). */
+    val rootEnabled: Flow<Boolean> = data.map { it[keyRootEnabled] ?: false }
+
+    /** Read-only root mode is the safe default: block writes that need root. */
+    val rootReadOnly: Flow<Boolean> = data.map { it[keyRootReadOnly] ?: true }
+
     suspend fun setShowHidden(value: Boolean) = context.dataStore.edit { it[keyShowHidden] = value }
     suspend fun setSortBy(value: SortBy) = context.dataStore.edit { it[keySortBy] = value.name }
     suspend fun setSortDescending(value: Boolean) = context.dataStore.edit { it[keySortDescending] = value }
     suspend fun setDirsFirst(value: Boolean) = context.dataStore.edit { it[keyDirsFirst] = value }
     suspend fun setThemeMode(value: ThemeMode) = context.dataStore.edit { it[keyThemeMode] = value.name }
     suspend fun setDynamicColor(value: Boolean) = context.dataStore.edit { it[keyDynamicColor] = value }
+    suspend fun setRootEnabled(value: Boolean) = context.dataStore.edit { it[keyRootEnabled] = value }
+    suspend fun setRootReadOnly(value: Boolean) = context.dataStore.edit { it[keyRootReadOnly] = value }
 }

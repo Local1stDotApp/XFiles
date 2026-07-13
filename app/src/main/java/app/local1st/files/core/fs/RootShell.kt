@@ -14,20 +14,45 @@ object RootShell {
     @Volatile
     private var availableCache: Boolean? = null
 
+    // Prefer the global mount namespace: a su requested by an app inherits the app's restricted
+    // namespace, so even as uid 0 it cannot reach other apps' /data/data. `--mount-master` runs
+    // in the init/global namespace where the whole filesystem is visible. Detected once, since
+    // not every su build supports the flag (fall back to plain su then).
+    @Volatile
+    private var mountMaster: Boolean = true
+
     /** Whether `su` exists and grants uid 0. Result is cached after the first probe. */
     fun isAvailable(): Boolean {
         availableCache?.let { return it }
-        val ok = runCatching {
-            val process = ProcessBuilder("su", "-c", "id")
-                .redirectErrorStream(true)
-                .start()
-            val output = process.inputStream.bufferedReader().readText()
-            process.waitFor()
-            output.contains("uid=0")
-        }.getOrDefault(false)
-        availableCache = ok
-        return ok
+        if (probe(useMountMaster = true)) {
+            mountMaster = true
+            availableCache = true
+            return true
+        }
+        if (probe(useMountMaster = false)) {
+            mountMaster = false
+            availableCache = true
+            return true
+        }
+        availableCache = false
+        return false
     }
+
+    private fun probe(useMountMaster: Boolean): Boolean = runCatching {
+        val process = ProcessBuilder(suArgv(useMountMaster, "id"))
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.bufferedReader().readText()
+        process.waitFor()
+        output.contains("uid=0")
+    }.getOrDefault(false)
+
+    /** Argv for `su` running [command], with `--mount-master` when it is supported. */
+    private fun suArgv(useMountMaster: Boolean, command: String): List<String> =
+        if (useMountMaster) listOf("su", "--mount-master", "-c", command)
+        else listOf("su", "-c", command)
+
+    private fun suArgv(command: String): List<String> = suArgv(mountMaster, command)
 
     /** Forget the cached availability (e.g. after the user grants/revokes superuser). */
     fun resetCache() {
@@ -37,7 +62,7 @@ object RootShell {
     /** Runs [script] via `su -c`, returning stdout. Throws [IOException] on non-zero exit. */
     @Throws(IOException::class)
     fun exec(script: String): String {
-        val process = ProcessBuilder("su", "-c", script).start()
+        val process = ProcessBuilder(suArgv(script)).start()
         val stdout = process.inputStream.bufferedReader().readText()
         val stderr = process.errorStream.bufferedReader().readText()
         val code = process.waitFor()
@@ -50,14 +75,14 @@ object RootShell {
     /** Streams the bytes of [path] out of `cat`. Caller must close the stream. */
     @Throws(IOException::class)
     fun openRead(path: String): InputStream {
-        val process = ProcessBuilder("su", "-c", "cat ${quote(path)}").start()
+        val process = ProcessBuilder(suArgv("cat ${quote(path)}")).start()
         return RootInputStream(process)
     }
 
     /** Streams bytes into `cat > path` (creates/truncates). Caller must close to commit. */
     @Throws(IOException::class)
     fun openWrite(path: String): OutputStream {
-        val process = ProcessBuilder("su", "-c", "cat > ${quote(path)}").start()
+        val process = ProcessBuilder(suArgv("cat > ${quote(path)}")).start()
         return RootOutputStream(process)
     }
 

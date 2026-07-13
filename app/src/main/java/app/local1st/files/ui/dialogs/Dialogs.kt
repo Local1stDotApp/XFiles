@@ -196,12 +196,11 @@ private fun EntryMenuContent(
             style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         )
-        MenuItem("Details") { vm.dialog.value = DialogRequest.Details(entry) }
-
         if (entry.kind == EntryKind.APP) {
             MenuItem("Launch") { IntentUtils.launchApp(context, entry.path); dismiss() }
-            MenuItem("App info") { IntentUtils.appInfo(context, entry.path); dismiss() }
-            MenuItem("Uninstall") { IntentUtils.uninstall(context, entry.path); dismiss() }
+            MenuItem("Open as zip") { vm.openAppAsZip(entry); dismiss() }
+            MenuItem("Details") { vm.showAppDetails(entry.path); dismiss() }
+            MenuItem("System info") { IntentUtils.appInfo(context, entry.path); dismiss() }
             entry.localPath?.let {
                 MenuItem("Copy APK to other pane") {
                     vm.inactiveCtrl.focusedDirEntry()?.let { dest ->
@@ -210,8 +209,11 @@ private fun EntryMenuContent(
                     dismiss()
                 }
             }
+            MenuItem("Uninstall") { IntentUtils.uninstall(context, entry.path); dismiss() }
             return@Column
         }
+
+        MenuItem("Details") { vm.dialog.value = DialogRequest.Details(entry) }
 
         if (!entry.isDir) {
             MenuItem("Open with…") { IntentUtils.openWith(context, entry); dismiss() }
@@ -221,7 +223,12 @@ private fun EntryMenuContent(
         }
         // Explicit copy/move to a chosen folder (works from a single item too).
         MenuItem("Copy to…") { vm.copySelection(move = false, sources = listOf(entry)); dismiss() }
-        MenuItem("Move to…") { vm.copySelection(move = true, sources = listOf(entry)); dismiss() }
+        // Move deletes the source, so only when the source itself is writable (not a read-only
+        // root entry or an archive member).
+        if (entry.canWrite) {
+            MenuItem("Move to…") { vm.copySelection(move = true, sources = listOf(entry)); dismiss() }
+        }
+        MenuItem("Zip…") { vm.requestCompress(listOf(entry)); dismiss() }
         if (entry.kind == EntryKind.ARCHIVE) {
             MenuItem("Extract to…") {
                 vm.extractArchive(entry)

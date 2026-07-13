@@ -1,5 +1,6 @@
 package app.local1st.files.ui.browser
 
+import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.prefs.SortBy
@@ -197,6 +198,42 @@ class PaneController(
             focusedDirId.value = findEntry(id)?.takeIf { it.isContainer }?.id ?: XId.parent(id)
             scrollTo.tryEmit(id)
         }
+    }
+
+    /**
+     * Expand [app] and then its base APK child so the APK's zip contents show inline
+     * (the explicit "Open as zip" action). No-op if the app exposes no browsable APK.
+     */
+    fun revealAppApk(app: XEntry) {
+        scope.launch {
+            expanded.update { it + app.id }
+            focusedDirId.value = app.id
+            val kids = loadNow(app)
+            val apk = kids.firstOrNull {
+                it.kind == EntryKind.ARCHIVE && it.name == "base.apk"
+            } ?: kids.firstOrNull { it.kind == EntryKind.ARCHIVE }
+                ?: return@launch
+            expanded.update { it + apk.id }
+            loadNow(apk)
+            focusedDirId.value = apk.id
+            scrollTo.tryEmit(apk.id)
+        }
+    }
+
+    /** Lists [entry]'s children synchronously (awaiting IO) and caches them; returns the list. */
+    private suspend fun loadNow(entry: XEntry): List<XEntry> {
+        children.value[entry.id]?.let { if (entry.id !in errors.value) return it }
+        loading.update { it + entry.id }
+        val result = withContext(Dispatchers.IO) {
+            runCatching { registry.forEntry(entry).list(entry) }
+        }
+        val kids = result.getOrDefault(emptyList())
+        children.update { it + (entry.id to kids) }
+        result.exceptionOrNull()
+            ?.let { e -> errors.update { it + (entry.id to (e.message ?: "Cannot read")) } }
+            ?: errors.update { it - entry.id }
+        loading.update { it - entry.id }
+        return kids
     }
 
     // ---- refresh ----

@@ -3,7 +3,6 @@ package app.local1st.files.ui.settings
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -46,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import app.local1st.files.core.prefs.SortBy
 import app.local1st.files.core.prefs.ThemeMode
 import app.local1st.files.di.Graph
+import app.local1st.files.ui.components.PredictiveBackContainer
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.main.MainViewModel
 import kotlinx.coroutines.launch
@@ -58,8 +58,6 @@ fun SettingsOverlay(vm: MainViewModel) {
     if (!show) return
     val close = { vm.showSettings.value = false }
 
-    BackHandler(onBack = close)
-
     val settings = Graph.settings
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -70,9 +68,12 @@ fun SettingsOverlay(vm: MainViewModel) {
     val dirsFirst by settings.dirsFirst.collectAsState(initial = true)
     val sortBy by settings.sortBy.collectAsState(initial = SortBy.NAME)
     val sortDescending by settings.sortDescending.collectAsState(initial = false)
+    val rootEnabled by settings.rootEnabled.collectAsState(initial = false)
+    val rootReadOnly by settings.rootReadOnly.collectAsState(initial = true)
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
+    PredictiveBackContainer(onBack = close) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Scaffold(
             modifier = Modifier
@@ -144,6 +145,22 @@ fun SettingsOverlay(vm: MainViewModel) {
                     onCheckedChange = { scope.launch { settings.setSortDescending(it) } },
                 )
 
+                SectionHeader("Root")
+                SwitchRow(
+                    title = "Root access",
+                    subtitle = "Browse the whole system as superuser (needs su)",
+                    checked = rootEnabled,
+                    onCheckedChange = { scope.launch { settings.setRootEnabled(it) } },
+                )
+                if (rootEnabled) {
+                    SwitchRow(
+                        title = "Read-only",
+                        subtitle = "Block changes that need root",
+                        checked = rootReadOnly,
+                        onCheckedChange = { scope.launch { settings.setRootReadOnly(it) } },
+                    )
+                }
+
                 SectionHeader("About")
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
@@ -180,6 +197,7 @@ fun SettingsOverlay(vm: MainViewModel) {
                 Spacer(Modifier.height(24.dp))
             }
         }
+    }
     }
 }
 

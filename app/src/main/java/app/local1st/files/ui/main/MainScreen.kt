@@ -1,6 +1,11 @@
 package app.local1st.files.ui.main
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -30,13 +35,12 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MediumFlexibleTopAppBar
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,9 +49,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.local1st.files.ui.appinfo.AppInfoOverlay
 import app.local1st.files.ui.browser.PaneView
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.dialogs.DestinationPicker
@@ -73,15 +81,23 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         vm.snackbar.collect { snackbarHostState.showSnackbar(it) }
     }
 
+    // Without POST_NOTIFICATIONS the foreground-service progress notification is silently
+    // hidden on Android 13+, so ask for it once.
+    RequestNotificationPermission()
+
     BackHandler(enabled = selectionCount > 0) {
         vm.activeCtrl.clearSelection()
     }
 
+    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
+            MediumFlexibleTopAppBar(
                 title = { Text("XFiles") },
                 actions = {
                     TooltipIconButton("Search", Icons.Outlined.Search) { vm.openSearch() }
@@ -92,8 +108,10 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                         vm.showSettings.value = true
                     }
                 },
+                scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
             )
         },
@@ -211,4 +229,22 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     ViewerHost(vm)
     SearchOverlay(vm)
     SettingsOverlay(vm)
+    AppInfoOverlay(vm)
+}
+
+/** Requests POST_NOTIFICATIONS once on Android 13+ so file-op progress is actually visible. */
+@Composable
+private fun RequestNotificationPermission() {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { /* result ignored: denial just means no progress notification */ }
+    LaunchedEffect(Unit) {
+        val granted = ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
 }

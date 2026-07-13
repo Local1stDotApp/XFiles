@@ -121,6 +121,7 @@ fun DestinationPicker(vm: MainViewModel) {
                     Column {
                         Text(
                             when {
+                                t.compress -> "Compress to"
                                 t.extractArchiveName != null -> "Extract to"
                                 t.move -> "Move to"
                                 else -> "Copy to"
@@ -207,6 +208,7 @@ fun DestinationPicker(vm: MainViewModel) {
                 ) {
                     Text(
                         when {
+                            t.compress -> "Zip here"
                             t.extractArchiveName != null -> "Extract here"
                             t.move -> "Move here"
                             else -> "Copy here"

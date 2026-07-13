@@ -19,17 +19,21 @@ class RootFileSystem : XFileSystem {
 
     override fun list(dir: XEntry): List<XEntry> {
         val path = dir.path
-        // One `su` process per directory: classify (dir-follow), size and mtime per child.
-        // stat's `-d` test follows symlinks so a link to a directory browses as a folder.
+        // Glob absolute paths instead of `cd`-ing in: on some devices (Magisk su + SELinux)
+        // the shell can read an app's private data dir but cannot chdir into it — `cd` then
+        // fails *silently* (rc=0, cwd stays `/`), which would list `/` under every folder.
+        // `${d%/}` drops a trailing slash so the root `/` globs as `/*`, not `//*`.
         val script = buildString {
             append("d=").append(RootShell.quote(path)).append('\n')
-            append("cd \"\$d\" 2>/dev/null || { echo __XF_ERR__; exit 0; }\n")
-            append("for f in * .*; do\n")
+            append("[ -d \"\$d\" ] || { echo __XF_ERR__; exit 0; }\n")
+            append("b=\${d%/}\n")
+            append("for p in \"\$b\"/* \"\$b\"/.*; do\n")
+            append("  [ -e \"\$p\" ] || [ -L \"\$p\" ] || continue\n")
+            append("  f=\${p##*/}\n")
             append("  [ \"\$f\" = . ] && continue\n")
             append("  [ \"\$f\" = .. ] && continue\n")
-            append("  [ -e \"\$f\" ] || [ -L \"\$f\" ] || continue\n")
-            append("  if [ -d \"\$f\" ]; then t=d; else t=f; fi\n")
-            append("  sm=\$(stat -c '%s|%Y' \"\$f\" 2>/dev/null || echo '0|0')\n")
+            append("  if [ -d \"\$p\" ]; then t=d; else t=f; fi\n")
+            append("  sm=\$(stat -c '%s|%Y' \"\$p\" 2>/dev/null || echo '0|0')\n")
             append("  printf '%s|%s|%s\\n' \"\$t\" \"\$sm\" \"\$f\"\n")
             append("done\n")
         }
@@ -74,27 +78,37 @@ class RootFileSystem : XFileSystem {
 
     override fun openIn(entry: XEntry): InputStream = RootShell.openRead(entry.path)
 
-    override fun openOut(parentDir: XEntry, name: String): OutputStream =
-        RootShell.openWrite(XId.joinPath(parentDir.path, name))
+    override fun openOut(parentDir: XEntry, name: String): OutputStream {
+        requireWritable()
+        return RootShell.openWrite(XId.joinPath(parentDir.path, name))
+    }
 
     override fun mkdir(parentDir: XEntry, name: String): XEntry {
+        requireWritable()
         val childPath = XId.joinPath(parentDir.path, name)
         RootShell.exec("mkdir -p ${RootShell.quote(childPath)}")
         return toEntry(parentDir.path, name, isDir = true, size = -1L, mtime = 0L)
     }
 
     override fun delete(entry: XEntry) {
+        requireWritable()
         RootShell.exec("rm -rf ${RootShell.quote(entry.path)}")
     }
 
     override fun rename(entry: XEntry, newName: String): XEntry {
+        requireWritable()
         val parentPath = entry.path.trimEnd('/').substringBeforeLast('/', "").ifEmpty { "/" }
         val dst = XId.joinPath(parentPath, newName)
         RootShell.exec("mv -f ${RootShell.quote(entry.path)} ${RootShell.quote(dst)}")
         return toEntry(parentPath, newName, entry.isDir, entry.size, entry.mtime)
     }
 
-    override fun canWrite(entry: XEntry): Boolean = true
+    override fun canWrite(entry: XEntry): Boolean = !RootAccess.readOnly
+
+    /** In read-only root mode, any write that would need superuser is refused up front. */
+    private fun requireWritable() {
+        if (RootAccess.readOnly) throw IOException("Read-only root mode — enable writes in Settings")
+    }
 
     private fun toEntry(
         parentPath: String,
@@ -113,7 +127,7 @@ class RootFileSystem : XFileSystem {
             mime = if (isDir) null else FileTypes.mimeOf(name),
             hidden = name.startsWith("."),
             canRead = true,
-            canWrite = true,
+            canWrite = !RootAccess.readOnly,
             kind = if (isDir) EntryKind.DIR else EntryKind.FILE,
             localPath = null,
         )
@@ -129,8 +143,8 @@ class RootFileSystem : XFileSystem {
             isDir = true,
             kind = EntryKind.ROOT,
             canRead = true,
-            canWrite = true,
-            badge = "Superuser · /",
+            canWrite = !RootAccess.readOnly,
+            badge = if (RootAccess.readOnly) "Superuser · read-only" else "Superuser · /",
             localPath = null,
         )
     }
