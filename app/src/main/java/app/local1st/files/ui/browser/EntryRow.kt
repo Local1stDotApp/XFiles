@@ -60,10 +60,6 @@ fun EntryRow(
     onLongClick: () -> Unit,
     onToggleSelect: () -> Unit,
     modifier: Modifier = Modifier,
-    /** Draw the tree guide lines for this row (only the focused branch does, to cut clutter). */
-    drawGuides: Boolean = true,
-    /** Deepest indent level to suppress guides above, so the focused folder reads as the root. */
-    guideBaseDepth: Int = 0,
 ) {
     val entry = node.entry
     val isVolume = entry.kind == EntryKind.VOLUME_INTERNAL ||
@@ -89,9 +85,9 @@ fun EntryRow(
             .background(background)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
-        // Tree guide lines + connector elbow — only for rows on the focused branch (drawGuides),
-        // so lines from unrelated branches don't clutter the view.
-        if (node.depth > 0 && drawGuides) {
+        // Tree guide lines + connector elbow. The ancestor spines show the full nesting path —
+        // parent, grandparent, and so on up to the root.
+        if (node.depth > 0) {
             Canvas(
                 Modifier
                     .width(IndentWidth * node.depth)
@@ -99,15 +95,13 @@ fun EntryRow(
             ) {
                 val unit = IndentWidth.toPx()
                 val stroke = 1.dp.toPx()
-                // Ancestor continuation spines: guides[i] tells whether the ancestor at depth i
-                // has a following sibling; that ancestor's sibling-spine sits one indent to the
-                // left, at level i-1. (guides[0] is the root, which has no spine.) The spine at
-                // this row's OWN level (depth-1) is the connector below — never drawn here, so a
-                // last child doesn't get a second, non-closing line over its "└".
+                // guides[i] tells whether the ancestor at depth i has a following sibling; that
+                // ancestor's sibling-spine sits one indent to the left, at level i-1. (guides[0]
+                // is the root — no spine.) The spine at this row's OWN level (depth-1) is the
+                // connector below — never drawn here, so a last child doesn't get a second,
+                // non-closing line over its "└".
                 node.guides.forEachIndexed { i, draw ->
-                    // Spine at level i-1; suppressed above guideBaseDepth so ancestor-of-the-
-                    // focused-folder spines (unrelated to the current branch) don't show.
-                    if (draw && (i - 1) >= guideBaseDepth) {
+                    if (draw && i >= 1) {
                         val gx = unit * (i - 1) + unit / 2
                         drawLine(guideColor, Offset(gx, 0f), Offset(gx, size.height), stroke)
                     }

@@ -51,15 +51,6 @@ fun PaneView(
     val state by controller.state.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
 
-    // The focused directory's node key + depth: guide lines are drawn only within its subtree,
-    // relative to it (so ancestor spines of unrelated branches don't clutter the view).
-    // Keys encode the full tree path ("|a|b|c"), so ancestor/descendant is a prefix test.
-    val focusedNode = remember(state.nodes, state.focusedDirId) {
-        state.focusedDirId?.let { id -> state.nodes.firstOrNull { it.entry.id == id } }
-    }
-    val focusedKey = focusedNode?.key
-    val focusedDepth = focusedNode?.depth ?: 0
-
     LaunchedEffect(controller) {
         controller.scrollTo.collect { id ->
             val index = controller.state.value.nodes.indexOfFirst { it.entry.id == id }
@@ -98,10 +89,6 @@ fun PaneView(
                         key = { state.nodes[it].key },
                     ) { index ->
                         val node = state.nodes[index]
-                        // Guides only for rows strictly inside the focused folder's subtree,
-                        // drawn relative to that folder (guideBaseDepth). No focus → full tree.
-                        val showGuides = focusedKey == null ||
-                            (node.depth > focusedDepth && node.key.startsWith("$focusedKey|"))
                         EntryRow(
                             node = node,
                             selected = node.entry.id in state.selection,
@@ -121,8 +108,6 @@ fun PaneView(
                             modifier = Modifier
                                 .padding(horizontal = 4.dp)
                                 .animateItem(),
-                            drawGuides = showGuides,
-                            guideBaseDepth = focusedDepth,
                         )
                     }
                 }
