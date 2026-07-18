@@ -17,7 +17,10 @@ Package `app.local1st.files`. **No network permission, no telemetry.**
 
 - **Dual-pane tree browser** — X-plore's signature: two independent panes
   (side-by-side on wide screens, swipeable pager on phones); folders expand
-  *in place* as a tree with indent guide lines; breadcrumb bar per pane.
+  *in place* as a tree with indent guide lines; floating breadcrumb pill per pane.
+- **Thumbnails in the tree** — images and video poster frames inline; video frames
+  are extracted once at thumbnail size and disk-cached (instant after restarts),
+  with a play badge and icon fallback while loading.
 - **Storage roots** — internal storage / SD / USB volumes with free-space usage
   bars, plus the App manager root.
 - **File operations** — multi-select via right-edge checkmarks; **copy/move/extract
@@ -34,30 +37,38 @@ Package `app.local1st.files`. **No network permission, no telemetry.**
   lock; the service self-stops when idle.
 - **Archives as folders** — browse zip/jar/apk, 7z, tar(.gz/.bz2/.xz), rar
   read-only; extract by copying out; APK install shortcut.
-- **App manager** — installed apps with real icons, version/package badges;
-  launch, app info, uninstall, copy APK out (share an app as file).
+- **App manager** — installed apps with real icons, version/package badges and
+  rich app details; activities/services/receivers/providers browsable as a tree
+  (launch activities, create shortcuts, enable/disable components where possible);
+  APK install, launch, uninstall, copy APK out (share an app as file).
 - **Root access** — on rooted devices a **Root** entry (`/`) appears and browses
   the whole filesystem as superuser via `su`: list/read/write/mkdir/rename/delete
   under `/data`, `/system`, … Files stream through `su cat`/`cat >`, so the app's
   own viewers can open protected files. Falls back to a read-only `/` view when
   `su` is unavailable.
 - **Viewers** — image viewer (pager + pinch zoom), text viewer with edit/save,
-  hex viewer with on-demand paging, audio/video player (Media3/ExoPlayer).
+  hex viewer with on-demand paging, audio player, and a custom video player
+  (Media3/ExoPlayer) with **frame-accurate stepping**: tap the time readout for a
+  frame counter, step ±1 frame, swipe on the picture to scrub by time or frames
+  with live preview, drag the compact control card out of the way, fullscreen
+  immersive playback.
 - **Search** — live streaming recursive search with `*`/`?` wildcards,
   descends into archives, reveal-in-tree on tap.
 - **Material 3 Expressive** — `MaterialExpressiveTheme` + expressive motion,
   dynamic color (Android 12+), light/dark/system, floating toolbar,
-  `LoadingIndicator`/`LinearWavyProgressIndicator`, edge-to-edge.
+  `LoadingIndicator`/`LinearWavyProgressIndicator`. True edge-to-edge: no top
+  app bar — content scrolls under the status bar behind a gradient scrim, with
+  floating breadcrumb and settings buttons.
 
 ## Tech stack
 
 | Layer | Choice |
 |---|---|
 | Language / UI | Kotlin, Jetpack Compose (BOM 2026.06.01), material3 **1.5.0-alpha23** (Expressive APIs) |
-| Build | AGP 9.2.1 (built-in Kotlin, no KGP), Gradle 9.4.1, compileSdk 37 / target 36 / min 26 |
+| Build | AGP 9.2.1 (built-in Kotlin, no KGP), Gradle 9.4.1, compileSdk 37 / target 37 / min 26 |
 | Architecture | Single module, MVVM + StateFlow, manual DI composition root (`di/Graph`) |
 | Persistence | DataStore Preferences |
-| Media/Images | Coil 3 (+ video frames, GIF, custom app-icon fetcher), Media3 ExoPlayer |
+| Media/Images | Coil 3 (GIF, custom fetchers: app icons, disk-cached video thumbnails), Media3 ExoPlayer |
 | Archives | java.util.zip, commons-compress (+xz), junrar |
 
 Note: material3 is pinned to `1.5.0-alpha23` because the Expressive APIs are
@@ -66,23 +77,24 @@ Note: material3 is pinned to `1.5.0-alpha23` because the Expressive APIs are
 ## Project layout
 
 ```
-app/src/main/java/com/xfiles/
+app/src/main/java/app/local1st/files/
 ├── core/
 │   ├── fs/        XEntry model, XId id scheme, XFileSystem + FsRegistry,
 │   │              Local/Archive/Apps/Root filesystems, RootShell (su), storage roots
 │   ├── ops/       OperationEngine (copy/move/delete/compress + conflicts)
 │   ├── search/    recursive SearchEngine
 │   ├── prefs/     DataStore settings
-│   ├── thumb/     Coil app-icon fetcher
-│   └── util/      formatters, mime/category mapping, intents
+│   ├── thumb/     Coil fetchers: app icons, disk-cached video thumbnails
+│   └── util/      formatters, mime/category mapping, intents, APK install/inspect
 ├── di/            Graph (composition root) + GraphInit wiring
 └── ui/
     ├── browser/   PaneController (tree state machine), PaneView, EntryRow
     ├── main/      MainViewModel, MainScreen (dual pane + floating toolbar), PermissionGate
-    ├── dialogs/   rename/new-folder/delete/zip/details/sort, ops progress + conflicts
-    ├── viewer/    image / text / hex / media viewers
+    ├── dialogs/   rename/new-folder/delete/zip/details, ops progress + conflicts
+    ├── viewer/    image / text / hex viewers, audio player, frame-accurate video player
     ├── search/    search overlay
     ├── settings/  settings screen
+    ├── appinfo/   app details overlay
     └── theme/     MaterialExpressiveTheme setup
 ```
 

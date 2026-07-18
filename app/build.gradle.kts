@@ -22,7 +22,7 @@ android {
     defaultConfig {
         applicationId = "app.local1st.files"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 37
         versionCode = appBuildNumber
         versionName = appVersionName
     }
