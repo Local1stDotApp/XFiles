@@ -3,12 +3,15 @@ package app.local1st.files.ui.browser
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -24,9 +27,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,7 +44,7 @@ import app.local1st.files.core.fs.XId
  * One browser pane: breadcrumb bar + flattened tree list.
  * The whole X-plore signature view.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun PaneView(
     controller: PaneController,
@@ -64,15 +71,16 @@ fun PaneView(
         else MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(16.dp),
     ) {
-        Column(Modifier.fillMaxSize()) {
-            BreadcrumbBar(
-                focusedDirId = state.focusedDirId,
-                active = active,
-                onCrumbClick = { id ->
-                    onActivate()
-                    controller.revealPath(id)
-                },
-            )
+        Box(Modifier.fillMaxSize()) {
+            // Rows scroll edge-to-edge under the status bar and the floating breadcrumb;
+            // the top inset only keeps row 0 initially clear of both. The pill's height
+            // is measured, not assumed — it scales with the user's font size.
+            // IgnoringVisibility: the video player hides the system bars, and reacting
+            // to that would reflow (and permanently shift) this list on every return.
+            val statusPad = WindowInsets.statusBarsIgnoringVisibility
+                .asPaddingValues().calculateTopPadding()
+            var pillHeightPx by remember { mutableIntStateOf(0) }
+            val pillHeight = with(LocalDensity.current) { pillHeightPx.toDp() }
 
             if (state.loadingRoots && state.nodes.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -81,7 +89,10 @@ fun PaneView(
             } else {
                 LazyColumn(
                     state = listState,
-                    contentPadding = contentPadding,
+                    contentPadding = PaddingValues(
+                        top = statusPad + 8.dp + pillHeight,
+                        bottom = contentPadding.calculateBottomPadding(),
+                    ),
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     items(
@@ -112,54 +123,76 @@ fun PaneView(
                     }
                 }
             }
+
+            BreadcrumbBar(
+                focusedDirId = state.focusedDirId,
+                active = active,
+                onCrumbClick = { id ->
+                    onActivate()
+                    controller.revealPath(id)
+                },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
+                    // The end inset keeps a long trail clear of the floating settings button.
+                    .padding(start = 6.dp, top = 4.dp, end = 60.dp)
+                    .onSizeChanged { pillHeightPx = it.height },
+            )
         }
     }
 }
 
+/** Floating breadcrumb pill; the list scrolls underneath it. */
 @Composable
 private fun BreadcrumbBar(
     focusedDirId: String?,
     active: Boolean,
     onCrumbClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val crumbs = remember(focusedDirId) { crumbsFor(focusedDirId) }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState(), reverseScrolling = true)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+        modifier = modifier,
     ) {
-        if (crumbs.isEmpty()) {
-            Text(
-                "XFiles",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        crumbs.forEachIndexed { index, (id, name) ->
-            if (index > 0) {
-                Icon(
-                    Icons.Outlined.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.padding(horizontal = 2.dp),
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState(), reverseScrolling = true)
+                .padding(horizontal = 12.dp, vertical = 4.dp),
+        ) {
+            if (crumbs.isEmpty()) {
+                Text(
+                    "XFiles",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                name,
-                style = MaterialTheme.typography.labelLarge,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                color = when {
-                    index == crumbs.lastIndex && active -> MaterialTheme.colorScheme.primary
-                    index == crumbs.lastIndex -> MaterialTheme.colorScheme.onSurface
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                modifier = Modifier
-                    .clickable { onCrumbClick(id) }
-                    .padding(vertical = 4.dp, horizontal = 2.dp),
-            )
+            crumbs.forEachIndexed { index, (id, name) ->
+                if (index > 0) {
+                    Icon(
+                        Icons.Outlined.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(horizontal = 2.dp),
+                    )
+                }
+                Text(
+                    name,
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = when {
+                        index == crumbs.lastIndex && active -> MaterialTheme.colorScheme.primary
+                        index == crumbs.lastIndex -> MaterialTheme.colorScheme.onSurface
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier
+                        .clickable { onCrumbClick(id) }
+                        .padding(vertical = 4.dp, horizontal = 2.dp),
+                )
+            }
         }
     }
 }

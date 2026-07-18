@@ -1,7 +1,5 @@
 package app.local1st.files.ui.viewer
 
-import android.view.ViewGroup
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
@@ -25,7 +22,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
@@ -46,13 +42,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -61,7 +54,6 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.util.FileCategory
 import app.local1st.files.core.util.FileTypes
@@ -147,14 +139,15 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
     val currentEntry = playable[currentIndex.coerceIn(0, playable.lastIndex)]
     val isVideo = FileTypes.categoryOf(currentEntry.name, currentEntry.mime) == FileCategory.VIDEO
 
-    val view = LocalView.current
-    DisposableEffect(view, isVideo, playing) {
-        view.keepScreenOn = isVideo && playing
-        onDispose { view.keepScreenOn = false }
-    }
-
     if (isVideo) {
-        VideoSurface(player, onClose)
+        VideoPlayerScreen(
+            player = player,
+            entry = currentEntry,
+            playing = playing,
+            hasPrevious = hasPrevious,
+            hasNext = hasNext,
+            onClose = onClose,
+        )
     } else {
         AudioPlayerScreen(
             player = player,
@@ -167,37 +160,6 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
             hasNext = hasNext,
             onClose = onClose,
         )
-    }
-}
-
-@androidx.annotation.OptIn(UnstableApi::class)
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun VideoSurface(player: Player, onClose: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                    )
-                    setUseController(true)
-                }
-            },
-            update = { it.player = player },
-            modifier = Modifier.fillMaxSize(),
-        )
-        TooltipBox(
-            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-            tooltip = { PlainTooltip { Text("Close") } },
-            state = rememberTooltipState(),
-            modifier = Modifier.align(Alignment.TopStart).statusBarsPadding(),
-        ) {
-            IconButton(onClick = onClose) {
-                Icon(Icons.Outlined.Close, contentDescription = "Close", tint = Color.White)
-            }
-        }
     }
 }
 
@@ -322,7 +284,7 @@ private fun AudioPlayerScreen(
     }
 }
 
-private fun formatPlayTime(ms: Long): String {
+internal fun formatPlayTime(ms: Long): String {
     if (ms <= 0) return "0:00"
     val totalSeconds = ms / 1000
     val hours = totalSeconds / 3600
