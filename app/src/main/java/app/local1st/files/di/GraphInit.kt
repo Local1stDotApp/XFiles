@@ -17,7 +17,11 @@ fun initGraph(graph: Graph) {
     graph.fsRegistry.register(AppsFileSystem(Graph.appContext))
     graph.fsRegistry.register(RootFileSystem())
 
-    graph.roots = DefaultRootsRepository(Graph.appContext)
+    graph.roots = DefaultRootsRepository(
+        Graph.appContext,
+        favorites = { Graph.favorites.value.orEmpty() },
+        statById = { id -> Graph.fsRegistry.forId(id).stat(id) },
+    )
     graph.opEngine = DefaultOperationEngine(Graph.appScope, graph.fsRegistry, Graph.appContext.cacheDir)
     graph.searchEngine = DefaultSearchEngine(graph.fsRegistry)
 

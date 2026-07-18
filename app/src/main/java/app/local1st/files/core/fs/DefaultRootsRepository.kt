@@ -6,14 +6,22 @@ import android.os.Environment
 import android.os.StatFs
 import android.os.storage.StorageManager
 import android.os.storage.StorageVolume
+import app.local1st.files.core.prefs.Favorite
 import app.local1st.files.core.util.Format
 import java.io.File
 
 /**
- * Pane roots from [StorageManager]: mounted storage volumes plus the
- * app-manager root and (when readable) the filesystem root `/`.
+ * Pane roots from [StorageManager]: mounted storage volumes, pinned favorites,
+ * plus the app-manager root and (when readable) the filesystem root `/`.
+ *
+ * Favorites and stat are injected as lambdas so this class stays free of the
+ * DI graph (wired in GraphInit).
  */
-class DefaultRootsRepository(private val context: Context) : RootsRepository {
+class DefaultRootsRepository(
+    private val context: Context,
+    private val favorites: () -> List<Favorite> = { emptyList() },
+    private val statById: (String) -> XEntry? = { null },
+) : RootsRepository {
 
     override fun volumes(): List<Volume> {
         val storageManager =
@@ -30,9 +38,9 @@ class DefaultRootsRepository(private val context: Context) : RootsRepository {
     }
 
     override fun paneRoots(): List<XEntry> {
-        val roots = ArrayList<XEntry>()
-        volumes().mapTo(roots) { it.entry }
-        roots += XEntry(
+        val volumeEntries = volumes().map { it.entry }
+        val specials = ArrayList<XEntry>()
+        specials += XEntry(
             id = "${XId.SCHEME_APPS}://",
             name = "App manager",
             isDir = true,
@@ -44,11 +52,11 @@ class DefaultRootsRepository(private val context: Context) : RootsRepository {
         // fall back to a plain non-privileged view only if "/" is readable without it.
         if (RootAccess.enabled) {
             if (RootShell.isAvailable()) {
-                roots += RootFileSystem.rootEntry()
+                specials += RootFileSystem.rootEntry()
             } else {
                 val fsRoot = File("/")
                 if (fsRoot.canRead()) {
-                    roots += XEntry(
+                    specials += XEntry(
                         id = XId.file("/"),
                         name = "Root (read-only)",
                         isDir = true,
@@ -59,7 +67,39 @@ class DefaultRootsRepository(private val context: Context) : RootsRepository {
                 }
             }
         }
+        // Favorites are collision-checked against EVERY other root (volumes and specials
+        // alike, whichever side of them it renders on) — a duplicate id at the top level
+        // would break the tree's position keys (see TreeNode.key).
+        val taken = HashSet<String>()
+        volumeEntries.mapTo(taken) { it.id }
+        specials.mapTo(taken) { it.id }
+        val roots = ArrayList<XEntry>(volumeEntries.size + specials.size + 4)
+        roots += volumeEntries
+        addFavorites(roots, taken)
+        roots += specials
         return roots
+    }
+
+    /**
+     * Appends pinned favorites as top-level shortcut roots. A favorite keeps its real
+     * entry id, so expanding it browses the actual location. A favorite whose target
+     * is currently missing (deleted, volume unmounted) still shows, marked unavailable,
+     * so the shortcut isn't silently lost.
+     */
+    private fun addFavorites(roots: MutableList<XEntry>, taken: MutableSet<String>) {
+        for (fav in favorites()) {
+            if (!taken.add(fav.id)) continue
+            val stat = runCatching { statById(fav.id) }.getOrNull()
+            val fallbackName = fav.id.substringAfter("://").trimEnd('/')
+                .substringAfterLast('/').substringAfterLast(XId.ARCHIVE_SEP).ifEmpty { "/" }
+            val entry = (stat ?: XEntry(id = fav.id, name = fallbackName, isDir = fav.isDir, canWrite = false))
+                .copy(
+                    pinned = true,
+                    badge = if (stat == null) "Not available" else fav.id.substringAfter("://"),
+                )
+            // A stat of "/" yields an empty name; a nameless pinned row is unusable.
+            roots += if (entry.name.isEmpty()) entry.copy(name = fallbackName) else entry
+        }
     }
 
     private fun directoryOf(volume: StorageVolume): File? {

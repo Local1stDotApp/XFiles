@@ -18,42 +18,56 @@ class RootFileSystem : XFileSystem {
     override val scheme: String = XId.SCHEME_ROOT
 
     override fun list(dir: XEntry): List<XEntry> {
+        requireEnabled()
         val path = dir.path
         // Glob absolute paths instead of `cd`-ing in: on some devices (Magisk su + SELinux)
         // the shell can read an app's private data dir but cannot chdir into it — `cd` then
         // fails *silently* (rc=0, cwd stays `/`), which would list `/` under every folder.
         // `${d%/}` drops a trailing slash so the root `/` globs as `/*`, not `//*`.
+        // Batched `stat` instead of the old per-file loop that forked a root `stat`
+        // process per entry (~30ms each — seconds for /data). The glob is fed through
+        // builtin printf + xargs -0 so huge directories never exceed the exec argv
+        // limit (a direct `stat "$b"/*` dies with E2BIG around ~20k entries — and
+        // silently, since stderr is suppressed). -L follows symlinks so a link to a
+        // dir stays browsable; dangling links error out of stat, so a builtin-only
+        // loop (zero extra forks) re-emits those, and `:` keeps exit 0.
         val script = buildString {
             append("d=").append(RootShell.quote(path)).append('\n')
             append("[ -d \"\$d\" ] || { echo __XF_ERR__; exit 0; }\n")
             append("b=\${d%/}\n")
+            append("printf '%s\\0' \"\$b\"/* \"\$b\"/.* | xargs -0 stat -L -c '%F|%s|%Y|%n' 2>/dev/null\n")
             append("for p in \"\$b\"/* \"\$b\"/.*; do\n")
-            append("  [ -e \"\$p\" ] || [ -L \"\$p\" ] || continue\n")
-            append("  f=\${p##*/}\n")
-            append("  [ \"\$f\" = . ] && continue\n")
-            append("  [ \"\$f\" = .. ] && continue\n")
-            append("  if [ -d \"\$p\" ]; then t=d; else t=f; fi\n")
-            append("  sm=\$(stat -c '%s|%Y' \"\$p\" 2>/dev/null || echo '0|0')\n")
-            append("  printf '%s|%s|%s\\n' \"\$t\" \"\$sm\" \"\$f\"\n")
+            append("  [ -L \"\$p\" ] && [ ! -e \"\$p\" ] && printf 'broken link|0|0|%s\\n' \"\$p\"\n")
             append("done\n")
+            append(":\n")
         }
         val output = RootShell.exec(script)
-        if (output.contains("__XF_ERR__")) throw IOException("Cannot read ${dir.name}")
+        // Exact-first-line match only: data lines carry full paths (stat %n), so a
+        // substring check would false-positive on any path containing the marker.
+        if (output.lineSequence().firstOrNull() == "__XF_ERR__") {
+            throw IOException("Cannot read ${dir.name}")
+        }
 
         val entries = ArrayList<XEntry>()
         output.lineSequence().forEach { line ->
             if (line.isEmpty()) return@forEach
             val parts = line.split("|", limit = 4)
             if (parts.size < 4) return@forEach
-            val isDir = parts[0] == "d"
+            val name = parts[3].substringAfterLast('/')
+            if (name.isEmpty() || name == "." || name == "..") return@forEach
+            val isDir = parts[0] == "directory"
             val size = parts[1].toLongOrNull() ?: 0L
             val mtimeSec = parts[2].toLongOrNull() ?: 0L
-            entries += toEntry(path, parts[3], isDir, size, mtimeSec * 1000L)
+            entries += toEntry(path, name, isDir, size, mtimeSec * 1000L)
         }
         return entries
     }
 
     override fun stat(id: String): XEntry? {
+        // Soft-fail when root browsing is off: a pinned/saved root:// id then reads as
+        // "gone" (favorites show Not available, session restore falls back) without
+        // spawning `su` behind the user's back.
+        if (!RootAccess.enabled) return null
         val path = id.substringAfter("://")
         if (path == "/" || path.isEmpty()) return rootEntry()
         val script = buildString {
@@ -76,7 +90,10 @@ class RootFileSystem : XFileSystem {
         return toEntry(parentPath, name, isDir, size, mtimeSec * 1000L)
     }
 
-    override fun openIn(entry: XEntry): InputStream = RootShell.openRead(entry.path)
+    override fun openIn(entry: XEntry): InputStream {
+        requireEnabled()
+        return RootShell.openRead(entry.path)
+    }
 
     override fun openOut(parentDir: XEntry, name: String): OutputStream {
         requireWritable()
@@ -92,7 +109,9 @@ class RootFileSystem : XFileSystem {
 
     override fun delete(entry: XEntry) {
         requireWritable()
-        RootShell.exec("rm -rf ${RootShell.quote(entry.path)}")
+        // Own process: a recursive delete can run for minutes and must not queue
+        // every root listing behind it on the persistent shell's lock.
+        RootShell.execOneShot("rm -rf ${RootShell.quote(entry.path)}")
     }
 
     override fun rename(entry: XEntry, newName: String): XEntry {
@@ -105,8 +124,18 @@ class RootFileSystem : XFileSystem {
 
     override fun canWrite(entry: XEntry): Boolean = !RootAccess.readOnly
 
+    /**
+     * The Settings switch must gate every `su` use, not just the Root pane's visibility:
+     * pinned root:// favorites and saved sessions keep valid root:// ids around after
+     * the user turns the feature off.
+     */
+    private fun requireEnabled() {
+        if (!RootAccess.enabled) throw IOException("Root browsing is disabled in Settings")
+    }
+
     /** In read-only root mode, any write that would need superuser is refused up front. */
     private fun requireWritable() {
+        requireEnabled()
         if (RootAccess.readOnly) throw IOException("Read-only root mode — enable writes in Settings")
     }
 

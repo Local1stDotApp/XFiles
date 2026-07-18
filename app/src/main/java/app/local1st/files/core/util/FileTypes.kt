@@ -47,6 +47,6 @@ object FileTypes {
     /** Archives we can browse into as folders. */
     fun isBrowsableArchive(name: String): Boolean {
         val ext = name.substringAfterLast('.', "").lowercase()
-        return ext in setOf("zip", "jar", "apk", "7z", "tar", "rar")
+        return ext in setOf("zip", "jar", "apk", "apks", "7z", "tar", "rar")
     }
 }

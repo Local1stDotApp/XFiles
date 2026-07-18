@@ -34,6 +34,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 
+/** True when the app can browse device storage (the same check [PermissionGate] gates on). */
+fun hasStorageAccess(context: android.content.Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        Environment.isExternalStorageManager()
+    } else {
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
 /**
  * Shows [content] when All Files Access is granted, otherwise an onboarding
  * screen that deep-links to the system permission page.
@@ -42,15 +53,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 fun PermissionGate(onGranted: () -> Unit, content: @Composable () -> Unit) {
     val context = LocalContext.current
 
-    fun check(): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            Environment.isExternalStorageManager()
-        } else {
-            ContextCompat.checkSelfPermission(
-                context,
-                Manifest.permission.WRITE_EXTERNAL_STORAGE,
-            ) == PackageManager.PERMISSION_GRANTED
-        }
+    fun check(): Boolean = hasStorageAccess(context)
 
     var granted by remember { mutableStateOf(check()) }
 

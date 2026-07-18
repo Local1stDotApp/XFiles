@@ -1,7 +1,6 @@
 package app.local1st.files.ui.dialogs
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
@@ -9,28 +8,30 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.ops.FileOp
-import app.local1st.files.core.prefs.SortBy
+import app.local1st.files.core.util.AppComponents
+import app.local1st.files.core.util.ComponentType
 import app.local1st.files.core.util.Format
 import app.local1st.files.core.util.IntentUtils
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.main.MainViewModel
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Renders the dialog requested via [MainViewModel.dialog].
@@ -97,8 +98,6 @@ fun MainDialogs(vm: MainViewModel) {
             confirmButton = { TextButton(onClick = dismiss) { Text("Close") } },
         )
 
-        DialogRequest.SortOptions -> SortDialog(onDismiss = dismiss)
-
         is DialogRequest.EntryMenu -> ModalBottomSheet(onDismissRequest = dismiss) {
             EntryMenuContent(vm, req, dismiss)
         }
@@ -136,53 +135,6 @@ private fun NameDialog(
 }
 
 @Composable
-private fun SortDialog(onDismiss: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    val sortBy by Graph.settings.sortBy.collectAsState(initial = SortBy.NAME)
-    val descending by Graph.settings.sortDescending.collectAsState(initial = false)
-    val dirsFirst by Graph.settings.dirsFirst.collectAsState(initial = true)
-    val showHidden by Graph.settings.showHidden.collectAsState(initial = false)
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Sort & view") },
-        text = {
-            Column {
-                SortBy.entries.forEach { option ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        RadioButton(
-                            selected = sortBy == option,
-                            onClick = { scope.launch { Graph.settings.setSortBy(option) } },
-                        )
-                        Text(option.name.lowercase().replaceFirstChar { it.uppercase() })
-                    }
-                }
-                ToggleRow("Descending", descending) { scope.launch { Graph.settings.setSortDescending(it) } }
-                ToggleRow("Folders first", dirsFirst) { scope.launch { Graph.settings.setDirsFirst(it) } }
-                ToggleRow("Show hidden", showHidden) { scope.launch { Graph.settings.setShowHidden(it) } }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-    )
-}
-
-@Composable
-private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
-    ) {
-        Switch(checked = checked, onCheckedChange = onChange)
-        Text(label, modifier = Modifier.padding(start = 12.dp))
-    }
-}
-
-@Composable
 private fun EntryMenuContent(
     vm: MainViewModel,
     req: DialogRequest.EntryMenu,
@@ -190,19 +142,59 @@ private fun EntryMenuContent(
 ) {
     val entry = req.entry
     val context = Graph.appContext
+    val clipboard = LocalClipboardManager.current
     Column(Modifier.padding(bottom = 24.dp)) {
         Text(
             entry.name,
             style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         )
+        if (entry.kind == EntryKind.APP_COMPONENT) {
+            val parsed = AppComponents.parseId(entry.id)
+            parsed?.let {
+                Text(
+                    it.className,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall
+                        .copy(fontFamily = FontFamily.Monospace),
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp).padding(bottom = 8.dp),
+                )
+            }
+            if (parsed?.type == ComponentType.ACTIVITY) {
+                MenuItem("Launch") { vm.launchComponent(entry); dismiss() }
+                MenuItem("Create shortcut") { vm.createComponentShortcut(entry); dismiss() }
+            }
+            // Non-null = the component's current enabled state, and we can actually flip it
+            // (own package, or working root). Resolved off the main thread: the root probe
+            // and PackageManager lookups both block.
+            val toggleEnabled by produceState<Boolean?>(null, entry.id) {
+                value = withContext(Dispatchers.IO) {
+                    parsed?.takeIf { AppComponents.canToggle(context, it.packageName) }
+                        ?.let { AppComponents.isEnabled(context, it) }
+                }
+            }
+            toggleEnabled?.let { enabled ->
+                MenuItem(if (enabled) "Disable" else "Enable") {
+                    vm.setComponentEnabled(entry, !enabled)
+                    dismiss()
+                }
+            }
+            MenuItem("Copy class name") {
+                clipboard.setText(AnnotatedString(parsed?.className ?: entry.name))
+                dismiss()
+            }
+            parsed?.let { p ->
+                MenuItem("App details") { vm.showAppDetails(p.packageName); dismiss() }
+            }
+            return@Column
+        }
         if (entry.kind == EntryKind.APP) {
             MenuItem("Launch") { IntentUtils.launchApp(context, entry.path); dismiss() }
             MenuItem("Open as zip") { vm.openAppAsZip(entry); dismiss() }
             MenuItem("Details") { vm.showAppDetails(entry.path); dismiss() }
             MenuItem("System info") { IntentUtils.appInfo(context, entry.path); dismiss() }
             entry.localPath?.let {
-                MenuItem("Copy APK to other pane") {
+                MenuItem("Copy to other pane") {
                     vm.inactiveCtrl.focusedDirEntry()?.let { dest ->
                         Graph.opEngine.submit(FileOp.Copy(listOf(entry), dest, move = false))
                     }
@@ -214,6 +206,26 @@ private fun EntryMenuContent(
         }
 
         MenuItem("Details") { vm.dialog.value = DialogRequest.Details(entry) }
+
+        // Pin files/folders/archives as top-level shortcuts. Anything already at the
+        // top level (volumes, App manager, Root — including the DIR-kinded read-only
+        // fallback) is excluded: pinning it again would be a silent no-op. Pinned rows
+        // themselves stay, for "Remove from favorites".
+        if ((entry.kind == EntryKind.DIR || entry.kind == EntryKind.FILE ||
+                entry.kind == EntryKind.ARCHIVE) &&
+            (entry.pinned || !vm.activeCtrl.isTopLevelRoot(entry.id))
+        ) {
+            // The Graph cache is warm from startup, so the item renders with the right
+            // label on the first frame (null only before the very first DataStore read).
+            val favorites by Graph.favorites.collectAsState()
+            favorites?.let { favs ->
+                val pinned = favs.any { it.id == entry.id }
+                MenuItem(if (pinned) "Remove from favorites" else "Add to favorites") {
+                    vm.toggleFavorite(entry)
+                    dismiss()
+                }
+            }
+        }
 
         if (!entry.isDir) {
             MenuItem("Open with…") { IntentUtils.openWith(context, entry); dismiss() }
@@ -234,8 +246,8 @@ private fun EntryMenuContent(
                 vm.extractArchive(entry)
                 dismiss()
             }
-            if (entry.extension == "apk") {
-                entry.localPath?.let { MenuItem("Install") { IntentUtils.installApk(context, it); dismiss() } }
+            if (entry.extension == "apk" || entry.extension == "apks") {
+                MenuItem("Install") { vm.installPackage(entry); dismiss() }
             }
         }
         if (entry.canWrite) {

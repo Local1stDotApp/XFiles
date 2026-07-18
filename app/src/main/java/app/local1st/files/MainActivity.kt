@@ -41,7 +41,7 @@ private fun Root() {
     XFilesTheme(darkTheme = darkTheme, dynamicColor = dynamicColor) {
         val vm: MainViewModel = viewModel()
         PermissionGate(
-            onGranted = { vm.panes.forEach { it.reset() } },
+            onGranted = { vm.onStorageAccessGranted() },
         ) {
             MainScreen(vm)
         }

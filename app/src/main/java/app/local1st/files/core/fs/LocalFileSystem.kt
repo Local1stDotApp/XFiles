@@ -8,6 +8,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.Files
+import java.nio.file.attribute.BasicFileAttributes
 
 /**
  * Local disk filesystem for `file://` ids, backed by [java.io.File].
@@ -24,12 +25,13 @@ class LocalFileSystem : XFileSystem {
                 if (file.exists()) "Cannot read ${dir.name}"
                 else "Folder not found: ${dir.name}"
             )
-        return children.map(::toEntry)
+        return children.map { toEntry(it, readAttrs(it)) }
     }
 
     override fun stat(id: String): XEntry? {
         val file = File(id.substringAfter("://"))
-        return if (file.exists()) toEntry(file) else null
+        val attrs = readAttrs(file) ?: return null
+        return toEntry(file, attrs)
     }
 
     override fun openIn(entry: XEntry): InputStream {
@@ -55,11 +57,11 @@ class LocalFileSystem : XFileSystem {
         requireSafeName(name)
         val dir = File(parentDir.path, name)
         // Idempotent: copy ops re-create destination subfolders that may already exist.
-        if (dir.isDirectory) return toEntry(dir)
+        if (dir.isDirectory) return toEntry(dir, readAttrs(dir))
         if (!dir.mkdirs()) {
             throw IOException("Cannot create folder $name in ${parentDir.name}")
         }
-        return toEntry(dir)
+        return toEntry(dir, readAttrs(dir))
     }
 
     override fun delete(entry: XEntry) {
@@ -81,7 +83,7 @@ class LocalFileSystem : XFileSystem {
         if (!file.renameTo(target)) {
             throw IOException("Cannot rename ${entry.name} to $newName")
         }
-        return toEntry(target)
+        return toEntry(target, readAttrs(target))
     }
 
     override fun canWrite(entry: XEntry): Boolean = File(entry.path).canWrite()
@@ -105,20 +107,30 @@ class LocalFileSystem : XFileSystem {
         }
     }
 
-    private fun toEntry(file: File): XEntry {
+    /**
+     * All of an entry's metadata from ONE stat. The old per-field java.io.File calls
+     * (isDirectory/length/lastModified/canRead/canWrite) were five separate syscalls,
+     * each a FUSE round trip on /sdcard — big directories paid it thousands of times.
+     * Access checks are deferred to the actual operation, which reports its own error.
+     */
+    private fun readAttrs(file: File): BasicFileAttributes? = try {
+        Files.readAttributes(file.toPath(), BasicFileAttributes::class.java)
+    } catch (e: IOException) {
+        null // vanished mid-listing or broken symlink
+    }
+
+    private fun toEntry(file: File, attrs: BasicFileAttributes?): XEntry {
         val abs = file.absolutePath
         val name = file.name
-        val isDir = file.isDirectory
+        val isDir = attrs?.isDirectory == true
         return XEntry(
             id = XId.file(abs),
             name = name,
             isDir = isDir,
-            size = if (isDir) -1L else file.length(),
-            mtime = file.lastModified(),
+            size = if (isDir || attrs == null) -1L else attrs.size(),
+            mtime = attrs?.lastModifiedTime()?.toMillis() ?: 0L,
             mime = if (isDir) null else FileTypes.mimeOf(name),
             hidden = name.startsWith("."),
-            canRead = file.canRead(),
-            canWrite = file.canWrite(),
             kind = when {
                 isDir -> EntryKind.DIR
                 FileTypes.isBrowsableArchive(name) -> EntryKind.ARCHIVE

@@ -155,7 +155,7 @@ fun SettingsOverlay(vm: MainViewModel) {
                 if (rootEnabled) {
                     SwitchRow(
                         title = "Read-only",
-                        subtitle = "Block changes that need root",
+                        subtitle = "Block file changes that need root",
                         checked = rootReadOnly,
                         onCheckedChange = { scope.launch { settings.setRootReadOnly(it) } },
                     )

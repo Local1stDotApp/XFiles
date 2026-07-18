@@ -9,7 +9,6 @@ sealed interface DialogRequest {
     data class NewFolder(val parent: XEntry) : DialogRequest
     data class CompressTo(val sources: List<XEntry>, val destDir: XEntry) : DialogRequest
     data class Details(val entry: XEntry) : DialogRequest
-    data object SortOptions : DialogRequest
 
     /** Long-press context menu for one entry (bottom sheet). */
     data class EntryMenu(val entry: XEntry) : DialogRequest

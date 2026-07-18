@@ -32,6 +32,8 @@ data class XEntry(
     val localPath: String? = null,
     /** Used fraction 0..1 for volumes (usage bar), else -1. */
     val progress: Float = -1f,
+    /** True for a favorite shown as a top-level shortcut root. */
+    val pinned: Boolean = false,
 ) {
     val scheme: String get() = id.substringBefore("://")
     val path: String get() = id.substringAfter("://")
@@ -52,6 +54,11 @@ enum class EntryKind {
     ARCHIVE,
     APPS_ROOT,
     APP,
+    /** Container grouping an app's manifest components (the "Components" node, and each of the
+     *  Activities/Services/Receivers/Providers buckets under it). */
+    APP_COMPONENT_GROUP,
+    /** A single manifest component (one activity/service/receiver/provider) of an app. */
+    APP_COMPONENT,
     /** The superuser filesystem root ("/") browsed via `su`. */
     ROOT,
 }
@@ -122,7 +129,11 @@ object XId {
             }
             SCHEME_APPS -> {
                 val p = id.substringAfter("://")
-                return if (p.isEmpty()) null else "$SCHEME_APPS://"
+                if (p.isEmpty()) return null
+                // Nested app sub-paths (e.g. <pkg>/@components/activity) climb one segment;
+                // a bare <pkg> (or @user/@system category) sits directly under the apps root.
+                return if (p.contains('/')) "$SCHEME_APPS://${p.substringBeforeLast('/')}"
+                else "$SCHEME_APPS://"
             }
             else -> return null
         }

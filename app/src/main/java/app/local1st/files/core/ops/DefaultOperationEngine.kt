@@ -5,8 +5,10 @@ import app.local1st.files.core.fs.FsRegistry
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import java.io.File
+import java.io.FileInputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
@@ -29,6 +31,9 @@ private const val COPY_BUFFER_SIZE = 128 * 1024
 
 /** Minimum interval between StateFlow progress publications (~10 updates/s). */
 private const val PUBLISH_INTERVAL_NANOS = 100_000_000L
+
+/** Characters not allowed in FAT/exFAT filenames; an app's label becomes the copied file's name. */
+private val ILLEGAL_FILENAME_CHARS = Regex("[\\\\/:*?\"<>|\\x00-\\x1F]")
 
 /** Shared empty stream for zip directory entries. */
 private val EMPTY_INPUT: InputStream get() = object : InputStream() {
@@ -139,7 +144,18 @@ class DefaultOperationEngine(
             }
         }
 
-        val perSource = pending.map { scanTree(it, t) }
+        // Installed apps copy out as an installable package: a single .apk, or every split
+        // bundled into one .apks. Resolve each app's APKs once here so the scan total, the
+        // output name, and the copy itself all agree on what's being written.
+        val appExports = HashMap<String, AppExport>()
+        val perSource = pending.map { src ->
+            if (src.kind == EntryKind.APP) {
+                val export = appExportFor(src).also { appExports[src.id] = it }
+                ScanTotals(export.totalBytes, 1)
+            } else {
+                scanTree(src, t)
+            }
+        }
         t.setTotals(
             totalBytes = perSource.sumOf { it.bytes },
             totalItems = perSource.sumOf { it.items } + movedFast,
@@ -151,7 +167,7 @@ class DefaultOperationEngine(
         var processed = movedFast
         for ((i, src) in pending.withIndex()) {
             t.ensureActive()
-            var name = src.name
+            var name = appExports[src.id]?.name ?: src.name
             if (name in destNames) {
                 val choice = remembered ?: t.awaitConflict(Conflict(src, name)).let { res ->
                     if (res.applyToAll) remembered = res.choice
@@ -177,9 +193,15 @@ class DefaultOperationEngine(
                     ConflictChoice.RENAME -> name = uniqueName(name, src.isDir, destNames)
                 }
             }
-            copyTree(src, destDir, name, t)
+            val export = appExports[src.id]
+            if (export != null) {
+                copyAppPackage(src, destDir, name, export, t)
+            } else {
+                copyTree(src, destDir, name, t)
+            }
             destNames += name
-            if (op.move) {
+            // An app isn't a real file on a writable fs — there's nothing to remove after a "move".
+            if (op.move && export == null) {
                 registry.forScheme(src.scheme).delete(src)
                 XId.parent(src.id)?.let(dirty::add)
             }
@@ -241,6 +263,94 @@ class DefaultOperationEngine(
             if (!completed) runCatching { deleteChildIfExists(destParent, name) }
         }
     }
+
+    // ----------------------------------------------------------------- App package
+
+    /**
+     * Copies an installed app out as an *installable* package: a single `.apk` when the app has
+     * no splits, or all of its APKs (base + splits) bundled into one `.apks` when it does — a
+     * lone base APK of a split app can't be installed on its own. To grab just one split, the
+     * user expands the app and copies that APK explicitly (an ordinary file copy).
+     */
+    private fun copyAppPackage(
+        app: XEntry,
+        destParent: XEntry,
+        name: String,
+        export: AppExport,
+        t: RunningOpImpl,
+    ) {
+        t.ensureActive()
+        t.current(app.name)
+        if (export.apks.isEmpty()) throw IOException("No APK found for '${app.name}'")
+        val destFs = registry.forEntry(destParent)
+        var completed = false
+        try {
+            destFs.openOut(destParent, name).use { out ->
+                if (export.bundled) writeApksBundle(export, out, t) else streamApk(export.apks.first(), out, t)
+            }
+            completed = true
+        } finally {
+            if (!completed) runCatching { deleteChildIfExists(destParent, name) }
+        }
+        t.itemsDone(1)
+    }
+
+    private fun streamApk(apk: File, out: OutputStream, t: RunningOpImpl) {
+        FileInputStream(apk).use { input ->
+            val buffer = ByteArray(COPY_BUFFER_SIZE)
+            while (true) {
+                t.ensureActive()
+                val n = input.read(buffer)
+                if (n < 0) break
+                out.write(buffer, 0, n)
+                t.bytesDone(n.toLong())
+            }
+        }
+    }
+
+    /** Bundles all of an app's APKs into one `.apks` zip (STORED — APKs don't recompress). */
+    private fun writeApksBundle(export: AppExport, out: OutputStream, t: RunningOpImpl) {
+        val offset = t.doneBytesSnapshot()
+        val sources = export.apks.map { apk ->
+            ZipTurbo.ZipSource(apk.name, isDir = false, apk.lastModified()) { FileInputStream(apk) }
+        }
+        val done = AtomicLong(0)
+        val publisher = scope.launch { while (isActive) { t.setBytesDone(offset + done.get()); delay(120) } }
+        // Parallel scatter buffers to cacheDir; fall back to sequential when temp space is tight.
+        val useParallel = export.totalBytes < cacheDir.usableSpace
+        try {
+            if (useParallel) {
+                ZipTurbo.createZip(sources, out, cacheDir, onBytes = { done.set(it) }, isCancelled = { !t.isActive() })
+            } else {
+                ZipTurbo.createZipSequential(sources, out, onBytes = { done.set(it) }, isCancelled = { !t.isActive() })
+            }
+        } catch (e: Exception) {
+            if (!t.isActive()) throw CancellationException("cancelled")
+            throw e
+        } finally {
+            publisher.cancel()
+        }
+        t.setBytesDone(offset + done.get())
+    }
+
+    /**
+     * Resolves how [app] copies out: the APK files backing it (base first, then splits) and the
+     * export filename. Names it after the app's label so copies don't all land as `base.apk`.
+     */
+    private fun appExportFor(app: XEntry): AppExport {
+        val apks = runCatching { registry.forEntry(app).list(app) }
+            .getOrDefault(emptyList())
+            .filter { !it.isDir && it.extension == "apk" }
+            .mapNotNull { it.localPath?.let(::File)?.takeIf(File::isFile) }
+            .ifEmpty { listOfNotNull(app.localPath?.let(::File)?.takeIf(File::isFile)) }
+        val label = sanitizeFileName(app.name)
+            .ifBlank { app.path.substringAfterLast('/').ifBlank { "app" } }
+        val ext = if (apks.size > 1) "apks" else "apk"
+        return AppExport("$label.$ext", apks, apks.sumOf { it.length() })
+    }
+
+    private fun sanitizeFileName(name: String): String =
+        ILLEGAL_FILENAME_CHARS.replace(name, "_").trim().trimEnd('.', ' ')
 
     // ----------------------------------------------------------------- Delete
 
@@ -511,6 +621,15 @@ class DefaultOperationEngine(
 
 private class ScanTotals(var bytes: Long = 0L, var items: Int = 0)
 
+/** An installed app resolved for copy-out: the APK files backing it and the name to write them as. */
+private class AppExport(
+    val name: String,
+    val apks: List<File>,
+    val totalBytes: Long,
+) {
+    val bundled: Boolean get() = apks.size > 1
+}
+
 /**
  * Per-op handle. All counter mutations happen on the op's own coroutine;
  * [resolveConflict]/[cancel] are the only cross-thread entry points.
@@ -556,6 +675,10 @@ private class RunningOpImpl(
         doneBytes = total
         publish(force = true)
     }
+
+    /** Bytes copied so far — the offset a bundled app's zip progress builds on. */
+    @Synchronized
+    fun doneBytesSnapshot(): Long = doneBytes
 
     fun setTotals(totalBytes: Long, totalItems: Int) {
         this.totalBytes = totalBytes

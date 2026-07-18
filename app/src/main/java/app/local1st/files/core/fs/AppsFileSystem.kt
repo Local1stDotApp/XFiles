@@ -6,6 +6,9 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
+import app.local1st.files.core.util.AppComponent
+import app.local1st.files.core.util.AppComponents
+import app.local1st.files.core.util.ComponentType
 import app.local1st.files.core.util.FileTypes
 import java.io.File
 import java.io.FileInputStream
@@ -17,9 +20,11 @@ import java.io.OutputStream
  * Read-only pseudo-filesystem exposing installed apps (X-plore's "App manager").
  *
  * - `apps://` is the root container listing one [EntryKind.APP] entry per installed package.
- * - `apps://<packageName>` identifies a single app. [openIn] streams its base APK (so the
- *   engine can copy an app out as an .apk), while [list] expands it into all of the app's
- *   files — APK splits, the private data dir (root), and its Android/{data,obb,media} dirs.
+ * - `apps://<packageName>` identifies a single app. Copying it out produces an installable
+ *   package — a single `.apk`, or every split bundled into one `.apks` when the app is split
+ *   (see the copy engine). [list] expands it into all of the app's files — APK splits, the
+ *   private data dir (root), and its Android/{data,obb,media} dirs; copying an individual split
+ *   from there is an ordinary file copy. [openIn] streams the base APK for direct opens.
  * - System apps are marked [XEntry.hidden] so the default hidden-entries filter shows
  *   user-installed apps only; enabling "show hidden" reveals system apps too.
  */
@@ -31,15 +36,30 @@ class AppsFileSystem(private val context: Context) : XFileSystem {
         if (dir.scheme != scheme) {
             throw IOException("'${dir.name}' is not a listable app container")
         }
-        // apps://          -> the Installed / System categories
-        // apps://@user     -> user-installed apps
-        // apps://@system   -> system apps
-        // apps://<pkg>     -> that app's files
+        // apps://                            -> the Installed / System categories
+        // apps://@user                       -> user-installed apps
+        // apps://@system                     -> system apps
+        // apps://<pkg>                       -> that app's files (+ a Components node)
+        // apps://<pkg>/@components           -> the Activities/Services/... buckets
+        // apps://<pkg>/@components/<type>     -> that bucket's components
         return when (dir.path) {
             "" -> listCategories()
             PATH_USER -> listApps(system = false)
             PATH_SYSTEM -> listApps(system = true)
-            else -> listAppFiles(dir.path)
+            else -> listAppPath(dir.path)
+        }
+    }
+
+    /** Routes an `apps://<pkg>[/@components[/<type>]]` path to the right lister. */
+    private fun listAppPath(path: String): List<XEntry> {
+        val pkg = path.substringBefore('/')
+        val sub = path.substringAfter('/', "")
+        return when {
+            sub.isEmpty() -> listAppFiles(pkg)
+            sub == AppComponents.COMPONENTS_SEGMENT -> listComponentGroups(pkg)
+            sub.startsWith(AppComponents.COMPONENTS_SEGMENT + "/") ->
+                listComponents(pkg, sub.substringAfter('/'))
+            else -> listAppFiles(pkg)
         }
     }
 
@@ -120,8 +140,69 @@ class AppsFileSystem(private val context: Context) : XFileSystem {
             addExternalDir(out, File(external, "Android/media/$packageName"), "Android/media")
         }
 
+        // Manifest components (activities/services/receivers/providers), gathered under one node
+        // so the common APK/data rows above stay uncluttered. Omitted when the app declares none.
+        val componentTotal = AppComponents.counts(context, packageName).values.sum()
+        if (componentTotal > 0) out += componentsRootEntry(packageName, componentTotal)
+
         if (out.isEmpty()) throw IOException("No accessible files for $packageName")
         return out
+    }
+
+    /** The "Components" node under an app: expands into the four component buckets. */
+    private fun componentsRootEntry(packageName: String, total: Int): XEntry = XEntry(
+        id = "$scheme://$packageName/${AppComponents.COMPONENTS_SEGMENT}",
+        name = "Components",
+        isDir = true,
+        canWrite = false,
+        kind = EntryKind.APP_COMPONENT_GROUP,
+        childCountHint = total,
+        badge = "$total components",
+    )
+
+    /** The Activities/Services/Receivers/Providers buckets for an app (empty buckets omitted). */
+    private fun listComponentGroups(packageName: String): List<XEntry> {
+        val counts = AppComponents.counts(context, packageName)
+        return ComponentType.entries.mapNotNull { type ->
+            val n = counts[type] ?: 0
+            if (n == 0) null else componentGroupEntry(packageName, type, n)
+        }
+    }
+
+    private fun componentGroupEntry(packageName: String, type: ComponentType, count: Int): XEntry =
+        XEntry(
+            id = "$scheme://$packageName/${AppComponents.COMPONENTS_SEGMENT}/${type.slug}",
+            name = type.label,
+            isDir = true,
+            canWrite = false,
+            kind = EntryKind.APP_COMPONENT_GROUP,
+            childCountHint = count,
+            badge = "$count",
+        )
+
+    /** The individual components of one bucket. */
+    private fun listComponents(packageName: String, slug: String): List<XEntry> {
+        val type = ComponentType.fromSlug(slug)
+            ?: throw IOException("Unknown component type: $slug")
+        return AppComponents.list(context, packageName, type)
+            .map { componentLeafEntry(packageName, it) }
+    }
+
+    private fun componentLeafEntry(packageName: String, c: AppComponent): XEntry {
+        val state = buildList {
+            add(if (c.exported) "exported" else "not exported")
+            if (!c.enabled) add("disabled")
+        }.joinToString(" · ")
+        return XEntry(
+            // The fully-qualified class name is the last id segment; the row shows the short name.
+            id = "$scheme://$packageName/${AppComponents.COMPONENTS_SEGMENT}/${c.type.slug}/${c.className}",
+            name = c.className.substringAfterLast('.'),
+            isDir = false,
+            canRead = true,
+            canWrite = false,
+            kind = EntryKind.APP_COMPONENT,
+            badge = state,
+        )
     }
 
     private fun addExternalDir(out: MutableList<XEntry>, dir: File, label: String) {

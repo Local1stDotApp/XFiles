@@ -47,6 +47,10 @@ class PaneController(
     private val focusedDirId = MutableStateFlow<String?>(null)
     private val loadingRoots = MutableStateFlow(true)
 
+    // Declared BEFORE `nodes`: its eager stateIn starts flatten() on another thread
+    // during construction, so everything flatten touches must already be initialized.
+    private val sortedListings = HashMap<String, SortedListing>()
+
     /** Entry id the pane list should scroll to (consumed by the UI). */
     val scrollTo = MutableSharedFlow<String>(extraBufferCapacity = 1)
 
@@ -78,9 +82,14 @@ class PaneController(
         PaneUiState(nodes = n, selection = sel, focusedDirId = focus, loadingRoots = lr)
     }.stateIn(scope, SharingStarted.Eagerly, PaneUiState())
 
-    init {
-        reloadRoots(expandFirst = true)
-    }
+    /** (expanded ids, focused dir id) as persisted for session restore. */
+    val sessionState = combine(expanded, focusedDirId) { e, f -> e to f }
+
+    /** Synchronous [sessionState] snapshot, for the final flush when the ViewModel is cleared. */
+    fun sessionSnapshot(): Pair<Set<String>, String?> = expanded.value to focusedDirId.value
+
+    // No initial load here: MainViewModel always drives startup through [restore],
+    // which falls back to the plain first-root expansion when nothing was saved.
 
     // ---- loading ----
 
@@ -92,14 +101,119 @@ class PaneController(
             }
             roots.value = list
             loadingRoots.value = false
-            if (expandFirst) list.firstOrNull()?.let { first ->
-                if (focusedDirId.value == null) {
-                    focusedDirId.value = first.id
-                    expand(first)
-                }
+            if (expandFirst) expandFirstRoot()
+        }
+    }
+
+    private fun expandFirstRoot() {
+        roots.value.firstOrNull()?.let { first ->
+            if (focusedDirId.value == null) {
+                focusedDirId.value = first.id
+                expand(first)
             }
         }
     }
+
+    // ---- session restore ----
+
+    /**
+     * Loads roots and restores the previous session's expansion and focus.
+     * Every step degrades gracefully: expanded dirs that vanished are simply not
+     * re-expanded, a dead focused dir falls back to its nearest surviving ancestor,
+     * and when nothing is restorable the pane starts fresh (first root expanded).
+     */
+    suspend fun restore(savedExpanded: Set<String>, savedFocused: String?) {
+        loadingRoots.value = true
+        val list = withContext(Dispatchers.IO) {
+            runCatching { Graph.roots.paneRoots() }.getOrDefault(emptyList())
+        }
+        roots.value = list
+        loadingRoots.value = false
+
+        if (savedFocused == null && savedExpanded.isEmpty()) {
+            expandFirstRoot()
+            return
+        }
+
+        // Adopt the whole saved set (sub-expansions under a collapsed parent stay
+        // remembered), then list only dirs actually reachable from a current root.
+        var restoredAny = false
+        if (savedExpanded.isNotEmpty()) {
+            expanded.value = savedExpanded
+            val queue = ArrayDeque(list.filter { it.isContainer && it.id in savedExpanded })
+            val visited = HashSet<String>()
+            while (queue.isNotEmpty()) {
+                val dir = queue.removeFirst()
+                if (!visited.add(dir.id)) continue
+                restoredAny = true
+                loadNow(dir).forEach { kid ->
+                    if (kid.isContainer && kid.id in savedExpanded) queue.add(kid)
+                }
+            }
+        }
+
+        val target = savedFocused?.let { nearestExisting(it) }?.takeIf { reachable(it) }
+        when {
+            target != null -> revealPath(target)
+            !restoredAny -> expandFirstRoot()
+            // else: tree restored but focus lost; focusedDirEntry() falls back to the first root.
+        }
+    }
+
+    /**
+     * Re-runs [restore] from the current in-memory state after storage access was granted
+     * mid-session. Pre-grant listings all failed (and were cached as errors), so drop the
+     * caches and replay the expansion/focus the user still has — unlike a blind [reset],
+     * this keeps the restored session instead of wiping it (and letting the auto-save
+     * persist the wipe).
+     */
+    suspend fun restoreAfterGrant() {
+        errors.value = emptyMap()
+        children.value = emptyMap()
+        restore(expanded.value, focusedDirId.value)
+    }
+
+    /** Walks [id] up its parent chain to the first entry that still exists, or null. */
+    private suspend fun nearestExisting(id: String): String? = withContext(Dispatchers.IO) {
+        var cur: String? = id
+        while (cur != null) {
+            val candidate = cur
+            if (runCatching { registry.forId(candidate).stat(candidate) }.getOrNull() != null) {
+                return@withContext candidate
+            }
+            cur = XId.parent(candidate)
+        }
+        null
+    }
+
+    /** True when [id]'s ancestor chain passes through one of the current pane roots. */
+    private fun reachable(id: String): Boolean {
+        val rootIds = roots.value.mapTo(HashSet()) { it.id }
+        var cur: String? = id
+        while (cur != null) {
+            if (cur in rootIds) return true
+            cur = XId.parent(cur)
+        }
+        return false
+    }
+
+    /**
+     * Drops cached listings/errors for every id under [scheme] and re-lists the dirs still
+     * expanded. Call when a filesystem-wide gate flips (root browsing toggled): without this,
+     * listings cached while the gate was open stay browsable after it closes, and gate-error
+     * rows cached while it was closed outlive re-opening it.
+     */
+    fun invalidateScheme(scheme: String) {
+        val prefix = "$scheme://"
+        val ids = children.value.keys.filter { it.startsWith(prefix) }.toSet()
+        if (ids.isEmpty()) return
+        children.update { it - ids }
+        errors.update { it - ids }
+        ids.filter { it in expanded.value }.forEach { id -> findEntry(id)?.let { load(it) } }
+    }
+
+    /** True when [id] is one of the pane's current top-level roots. */
+    fun isTopLevelRoot(id: String): Boolean = roots.value.any { it.id == id }
 
     /** Ids whose reload was requested while a load was already in flight; re-run on completion. */
     private val reloadRequested = HashSet<String>()
@@ -126,19 +240,6 @@ class PaneController(
             loading.update { it - entry.id }
             if (reloadRequested.remove(entry.id)) load(entry)
         }
-    }
-
-    /**
-     * Drops all cached listings/errors and re-expands the first root. Call after storage
-     * permission is granted so a pre-grant "Cannot read" failure is retried instead of
-     * sticking around as a cached empty listing.
-     */
-    fun reset() {
-        errors.value = emptyMap()
-        children.value = emptyMap()
-        expanded.value = emptySet()
-        focusedDirId.value = null
-        reloadRoots(expandFirst = true)
     }
 
     // ---- navigation / expansion ----
@@ -274,6 +375,8 @@ class PaneController(
             entry.kind == app.local1st.files.core.fs.EntryKind.VOLUME_SD ||
             entry.kind == app.local1st.files.core.fs.EntryKind.VOLUME_USB ||
             entry.kind == app.local1st.files.core.fs.EntryKind.APPS_ROOT ||
+            entry.kind == app.local1st.files.core.fs.EntryKind.APP_COMPONENT_GROUP ||
+            entry.kind == app.local1st.files.core.fs.EntryKind.APP_COMPONENT ||
             entry.kind == app.local1st.files.core.fs.EntryKind.ROOT
         ) return
         selection.update { if (entry.id in it) it - entry.id else it + entry.id }
@@ -321,6 +424,26 @@ class PaneController(
 
     // ---- tree flattening ----
 
+    /** Filtered+sorted children of one dir, valid while its source list and the sort stand. */
+    private class SortedListing(
+        val source: List<XEntry>,
+        val spec: SortSpec,
+        val visible: List<XEntry>,
+    )
+
+    // sortedListings is only touched from flatten(), which runs serially inside the
+    // `nodes` flow. Without the cache every tree state change (a loading flag flip, one
+    // dir's listing landing) re-sorted EVERY expanded directory's children — with a few
+    // large dirs open, that's most of the post-listing latency between tap and rows.
+    private fun sortedVisible(dirId: String, kids: List<XEntry>, sort: SortSpec): List<XEntry> {
+        sortedListings[dirId]?.let { cached ->
+            if (cached.source === kids && cached.spec == sort) return cached.visible
+        }
+        val visible = sortEntries(kids.filter { sort.showHidden || !it.hidden }, sort)
+        sortedListings[dirId] = SortedListing(kids, sort, visible)
+        return visible
+    }
+
     private fun flatten(
         roots: List<XEntry>,
         expanded: Set<String>,
@@ -329,6 +452,7 @@ class PaneController(
         errors: Map<String, String>,
         sort: SortSpec,
     ): List<TreeNode> {
+        sortedListings.keys.retainAll(children.keys)
         val out = ArrayList<TreeNode>(256)
 
         fun visit(entries: List<XEntry>, depth: Int, guides: List<Boolean>, parentKey: String) {
@@ -348,8 +472,7 @@ class PaneController(
                 )
                 if (isExpanded) {
                     children[e.id]?.let { kids ->
-                        val visible = kids.filter { sort.showHidden || !it.hidden }
-                        visit(sortEntries(visible, sort), depth + 1, guides + !isLast, nodeKey)
+                        visit(sortedVisible(e.id, kids, sort), depth + 1, guides + !isLast, nodeKey)
                     }
                 }
             }

@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
+import app.local1st.files.core.util.AxmlDecoder
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.components.TooltipIconButton
 import java.io.ByteArrayOutputStream
@@ -60,6 +61,7 @@ private const val TEXT_LIMIT_BYTES = 2 * 1024 * 1024
 fun TextViewer(entry: XEntry, onClose: () -> Unit) {
     var text by remember { mutableStateOf<String?>(null) }
     var truncated by remember { mutableStateOf(false) }
+    var isAxml by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var editing by remember { mutableStateOf(false) }
     var editText by remember { mutableStateOf("") }
@@ -74,15 +76,22 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
                     val bytes = input.readUpTo(TEXT_LIMIT_BYTES + 1)
                     val wasTruncated = bytes.size > TEXT_LIMIT_BYTES
                     val visible = if (wasTruncated) bytes.copyOf(TEXT_LIMIT_BYTES) else bytes
-                    // String(UTF_8) replaces malformed sequences with U+FFFD.
-                    String(visible, Charsets.UTF_8) to wasTruncated
+                    if (AxmlDecoder.isAxml(visible)) {
+                        // Compiled Android binary XML (e.g. AndroidManifest.xml inside an APK):
+                        // decode to readable XML instead of showing binary garbage. Read-only.
+                        DecodeResult(AxmlDecoder.decode(visible), truncated = false, axml = true)
+                    } else {
+                        // String(UTF_8) replaces malformed sequences with U+FFFD.
+                        DecodeResult(String(visible, Charsets.UTF_8), wasTruncated, axml = false)
+                    }
                 }
             }
         }
         result.fold(
-            onSuccess = { (content, wasTruncated) ->
-                text = content
-                truncated = wasTruncated
+            onSuccess = { r ->
+                text = r.content
+                truncated = r.truncated
+                isAxml = r.axml
             },
             onFailure = { loadError = it.message ?: "Cannot read ${entry.name}" },
         )
@@ -95,7 +104,7 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
         }
     }
 
-    val canEdit = entry.scheme == XId.SCHEME_FILE && entry.canWrite && !truncated
+    val canEdit = entry.scheme == XId.SCHEME_FILE && entry.canWrite && !truncated && !isAxml
 
     fun save() {
         if (saving) return
@@ -189,6 +198,16 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
             }
         }
 
+        if (isAxml) {
+            Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "Decoded from Android binary XML (read-only)",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
+        }
+
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 loadError != null -> Text(
@@ -242,6 +261,9 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
         }
     }
 }
+
+/** Outcome of reading a text/AXML entry: the text to show and how it was produced. */
+private data class DecodeResult(val content: String, val truncated: Boolean, val axml: Boolean)
 
 private fun countLines(s: String): Int {
     var lines = 1
