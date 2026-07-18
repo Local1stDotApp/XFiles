@@ -6,9 +6,11 @@ import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.gif.AnimatedImageDecoder
+import coil3.request.addLastModifiedToFileCacheKey
 import coil3.video.VideoFrameDecoder
 import app.local1st.files.core.ops.OpsService
 import app.local1st.files.core.thumb.AppIconFetcher
+import app.local1st.files.core.thumb.VideoThumbFetcher
 import app.local1st.files.di.Graph
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -35,8 +37,13 @@ class XFilesApp : Application(), SingletonImageLoader.Factory {
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
+            // File-model requests (image thumbnails, the viewer) key their memory-cache
+            // entries by path+mtime, so overwriting a file in place drops the stale image.
+            .addLastModifiedToFileCacheKey(true)
             .components {
                 add(VideoFrameDecoder.Factory())
+                add(VideoThumbFetcher.Factory(this@XFilesApp))
+                add(VideoThumbFetcher.Key())
                 add(AppIconFetcher.Factory(this@XFilesApp))
                 if (Build.VERSION.SDK_INT >= 28) {
                     add(AnimatedImageDecoder.Factory())

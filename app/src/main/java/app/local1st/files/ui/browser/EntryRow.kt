@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
@@ -28,6 +30,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,8 +47,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
 import app.local1st.files.core.fs.EntryKind
+import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.thumb.AppIcon
+import app.local1st.files.core.thumb.VideoThumb
+import app.local1st.files.core.util.FileCategory
+import app.local1st.files.core.util.FileTypes
 import app.local1st.files.core.util.Format
 import java.io.File
 
@@ -67,7 +77,9 @@ fun EntryRow(
         entry.kind == EntryKind.VOLUME_USB
     val selectable = !isVolume &&
         entry.kind != EntryKind.APPS_ROOT &&
-        entry.kind != EntryKind.ROOT
+        entry.kind != EntryKind.ROOT &&
+        entry.kind != EntryKind.APP_COMPONENT_GROUP &&
+        entry.kind != EntryKind.APP_COMPONENT
 
     val background = when {
         selected -> MaterialTheme.colorScheme.secondaryContainer
@@ -156,14 +168,7 @@ fun EntryRow(
                     modifier = Modifier.size(32.dp),
                 )
             } else if (EntryIcons.wantsThumbnail(entry)) {
-                AsyncImage(
-                    model = File(entry.localPath!!),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp)),
-                )
+                EntryThumbnail(entry)
             } else {
                 Icon(
                     EntryIcons.forEntry(entry, node.expanded),
@@ -227,6 +232,52 @@ fun EntryRow(
                     tint = if (selected) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.outlineVariant,
                     modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Thumbnail with a vector-icon fallback: the icon shows until the image actually arrives
+ * (video frame extraction can take seconds on a cold cache) and stays if loading fails,
+ * so the slot is never blank. Videos additionally get a small play badge.
+ */
+@Composable
+private fun EntryThumbnail(entry: XEntry) {
+    val isVideo = FileTypes.categoryOf(entry.name, entry.mime) == FileCategory.VIDEO
+    var loaded by remember(entry.id) { mutableStateOf(false) }
+    Box(contentAlignment = Alignment.Center) {
+        if (!loaded) {
+            Icon(
+                EntryIcons.forEntry(entry),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp),
+            )
+        }
+        AsyncImage(
+            model = if (isVideo) VideoThumb(entry.localPath!!, entry.mtime, entry.size)
+            else File(entry.localPath!!),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            onState = { loaded = it is AsyncImagePainter.State.Success },
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(10.dp)),
+        )
+        if (isVideo && loaded) {
+            Box(
+                Modifier
+                    .size(16.dp)
+                    .background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.PlayArrow,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(12.dp),
                 )
             }
         }
