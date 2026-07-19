@@ -1,5 +1,6 @@
 package app.local1st.files.ui.main
 
+import android.app.Activity
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -57,6 +58,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -78,6 +80,10 @@ import app.local1st.files.ui.dialogs.OpsHost
 import app.local1st.files.ui.search.SearchOverlay
 import app.local1st.files.ui.settings.SettingsOverlay
 import app.local1st.files.ui.viewer.ViewerHost
+import app.local1st.files.di.Graph
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -107,6 +113,10 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     // Without POST_NOTIFICATIONS the foreground-service progress notification is silently
     // hidden on Android 13+, so ask for it once.
     RequestNotificationPermission()
+
+    // This host is inert on API 30+. On API 26-29 it launches only after an actual direct
+    // File write to a secondary volume failed and LocalFileSystem requested that volume.
+    LegacySafGrantHost(vm)
 
     BackHandler(enabled = selectionCount > 0) {
         vm.activeCtrl.clearSelection()
@@ -311,5 +321,38 @@ private fun RequestNotificationPermission() {
             Manifest.permission.POST_NOTIFICATIONS,
         ) == PackageManager.PERMISSION_GRANTED
         if (!granted) launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+}
+
+/** Completes the one pending API 26-29 secondary-volume write, then lets it retry in place. */
+@Composable
+private fun LegacySafGrantHost(vm: MainViewModel) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return
+    val saf = Graph.legacySaf ?: return
+    val request by saf.pendingGrant.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val data = result.data
+        val uri = if (result.resultCode == Activity.RESULT_OK) data?.data else null
+        scope.launch {
+            val error = withContext(Dispatchers.IO) {
+                saf.completePendingGrant(uri, data?.flags ?: 0)
+            }
+            if (error != null) vm.snackbar.tryEmit(error)
+        }
+    }
+
+    LaunchedEffect(request?.requestId) {
+        val pending = request ?: return@LaunchedEffect
+        vm.snackbar.tryEmit("Grant access to ${pending.volume.label} to finish the write")
+        runCatching { launcher.launch(saf.pickerIntent(pending)) }
+            .onFailure { error ->
+                val message = withContext(Dispatchers.IO) {
+                    saf.completePendingGrant(null, 0)
+                }
+                vm.snackbar.tryEmit(message ?: error.message ?: "Cannot open storage picker")
+            }
     }
 }

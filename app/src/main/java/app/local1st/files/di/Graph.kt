@@ -1,7 +1,9 @@
 package app.local1st.files.di
 
 import android.content.Context
+import android.os.Build
 import app.local1st.files.core.fs.FsRegistry
+import app.local1st.files.core.fs.LegacySafAccess
 import app.local1st.files.core.fs.RootsRepository
 import app.local1st.files.core.ops.OperationEngine
 import app.local1st.files.core.prefs.Favorite
@@ -26,6 +28,11 @@ object Graph {
     val appScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val settings: SettingsRepo by lazy { SettingsRepo(appContext) }
+    /** Null on API 30+: those releases must never enter or initialize the SAF write path. */
+    val legacySaf: LegacySafAccess? by lazy {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) LegacySafAccess(appContext, settings)
+        else null
+    }
     val fsRegistry: FsRegistry = FsRegistry()
 
     /**

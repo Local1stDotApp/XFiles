@@ -2,6 +2,7 @@ package app.local1st.files.core.ops
 
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.FsRegistry
+import app.local1st.files.core.fs.LocalFileSystem
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import java.io.File
@@ -501,8 +502,10 @@ class DefaultOperationEngine(
         val zipFamily = archive.extension in setOf("zip", "jar", "apk", "apks")
 
         // Fast path: parallel multi-handle extraction to a local directory.
+        val directLocalWrites = (registry.forScheme(XId.SCHEME_FILE) as? LocalFileSystem)
+            ?.supportsDirectBulkWrites(destDir) ?: true
         if (zipFamily && archiveFile != null && archiveFile.isFile &&
-            destDir.scheme == XId.SCHEME_FILE
+            destDir.scheme == XId.SCHEME_FILE && directLocalWrites
         ) {
             val destFile = File(destDir.path)
             if (!destFile.isDirectory && !destFile.mkdirs()) {

@@ -54,6 +54,7 @@ class SettingsRepo(private val context: Context) {
     private val keyRootEnabled = booleanPreferencesKey("root_enabled")
     private val keyRootReadOnly = booleanPreferencesKey("root_read_only")
     private val keyPrivilegedTransport = stringPreferencesKey("privileged_transport")
+    private val keySafVolumeTrees = stringPreferencesKey("saf_volume_trees")
     // JSON array, not a string set: favorites keep their user-defined order.
     private val keyFavorites = stringPreferencesKey("favorites")
     private val keySessionActivePane = intPreferencesKey("session_active_pane")
@@ -96,6 +97,21 @@ class SettingsRepo(private val context: Context) {
         TransportPref.fromStoredValue(it[keyPrivilegedTransport] ?: "auto")
     }
 
+    /** Persisted SAF tree URI per secondary-volume id (API 26-29 only). */
+    val safVolumeTrees: Flow<Map<String, String>> = setting { prefs ->
+        val json = prefs[keySafVolumeTrees] ?: return@setting emptyMap()
+        runCatching {
+            val objectValue = JSONObject(json)
+            buildMap {
+                val keys = objectValue.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    put(key, objectValue.getString(key))
+                }
+            }
+        }.getOrDefault(emptyMap())
+    }
+
     /** Entries pinned as top-level favorites, in display order. */
     val favorites: Flow<List<Favorite>> = setting { prefs ->
         val json = prefs[keyFavorites] ?: return@setting emptyList()
@@ -113,6 +129,16 @@ class SettingsRepo(private val context: Context) {
         favorites.forEach { arr.put(JSONObject().put("id", it.id).put("dir", it.isDir)) }
         prefs[keyFavorites] = arr.toString()
     }
+
+    suspend fun setSafVolumeTree(volumeId: String, treeUri: String?) =
+        context.dataStore.edit { prefs ->
+            val trees = runCatching {
+                JSONObject(prefs[keySafVolumeTrees] ?: "{}")
+            }.getOrElse { JSONObject() }
+            if (treeUri == null) trees.remove(volumeId) else trees.put(volumeId, treeUri)
+            if (trees.length() == 0) prefs.remove(keySafVolumeTrees)
+            else prefs[keySafVolumeTrees] = trees.toString()
+        }
 
     /** One-shot read of the persisted session (last browsing position). */
     suspend fun loadSession(): SessionState {

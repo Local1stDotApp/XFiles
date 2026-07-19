@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.local1st.files.core.fs.LocalFileSystem
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.util.AxmlDecoder
@@ -112,23 +113,10 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    // Write to a temp sibling then atomically move over the original, so a
-                    // failed/interrupted write never destroys the file's existing contents.
-                    // canEdit guarantees the file scheme, so java.io/java.nio is valid here.
-                    val target = java.io.File(entry.localPath ?: entry.path)
-                    val tmp = java.io.File(target.parentFile, ".${entry.name}.xfiles-tmp")
-                    try {
-                        tmp.outputStream().use { it.write(editText.toByteArray(Charsets.UTF_8)) }
-                        java.nio.file.Files.move(
-                            tmp.toPath(),
-                            target.toPath(),
-                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-                        )
-                    } catch (e: Throwable) {
-                        tmp.delete()
-                        throw e
-                    }
+                    // LocalFileSystem preserves this editor's atomic File replacement where
+                    // permitted and owns the narrow API 26-29 secondary-volume SAF fallback.
+                    val fs = Graph.fsRegistry.forId(entry.id) as LocalFileSystem
+                    fs.replaceContents(entry, editText.toByteArray(Charsets.UTF_8))
                 }
             }
             saving = false

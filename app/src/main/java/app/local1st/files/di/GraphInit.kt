@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 fun initGraph(graph: Graph) {
     ShizukuGate.initialize(Graph.appContext)
 
-    graph.fsRegistry.register(LocalFileSystem())
+    graph.fsRegistry.register(LocalFileSystem(graph.legacySaf))
     graph.fsRegistry.register(ArchiveFileSystem())
     graph.fsRegistry.register(AppsFileSystem(Graph.appContext))
     graph.fsRegistry.register(RootFileSystem())
