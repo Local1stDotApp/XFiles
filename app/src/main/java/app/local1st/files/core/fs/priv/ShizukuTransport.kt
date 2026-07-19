@@ -1,7 +1,13 @@
 package app.local1st.files.core.fs.priv
 
+import android.content.ComponentName
+import android.content.ServiceConnection
 import android.content.pm.PackageManager
+import android.os.IBinder
+import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.os.RemoteException
+import app.local1st.files.BuildConfig
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.ByteArrayOutputStream
@@ -9,6 +15,8 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import moe.shizuku.server.IRemoteProcess
 import moe.shizuku.server.IShizukuService
 import rikka.shizuku.Shizuku
@@ -45,14 +53,104 @@ object ShizukuTransport : PrivilegedTransport {
 
     private var shell: RemoteShell? = null
 
+    private const val SERVICE_BIND_TIMEOUT_SECONDS = 15L
+    private val serviceLock = Any()
+
+    @Volatile
+    private var userService: IPrivFileService? = null
+    private var userServiceBinder: IBinder? = null
+    private var userServiceDeathRecipient: IBinder.DeathRecipient? = null
+    private var bindingLatch: CountDownLatch? = null
+    private var acceptingUserService = false
+
+    // Every identity field is explicit and stable: daemon defaults to true, processNameSuffix is
+    // mandatory, and a class-name-derived tag would change when R8 renames implementation types.
+    private val userServiceArgs by lazy {
+        Shizuku.UserServiceArgs(
+            ComponentName(BuildConfig.APPLICATION_ID, PrivFileService::class.java.name),
+        )
+            .daemon(false)
+            .processNameSuffix("privfs")
+            .debuggable(BuildConfig.DEBUG)
+            .version(BuildConfig.VERSION_CODE)
+            .tag("xfiles-privfs")
+    }
+
+    private val userServiceConnection: ServiceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName, binder: IBinder) {
+            val service = IPrivFileService.Stub.asInterface(binder)
+            val deathRecipient = IBinder.DeathRecipient { dropUserService(binder) }
+            try {
+                binder.linkToDeath(deathRecipient, 0)
+            } catch (_: RemoteException) {
+                completeBindingWithoutService()
+                return
+            }
+
+            val oldBinder: IBinder?
+            val oldDeathRecipient: IBinder.DeathRecipient?
+            val latch: CountDownLatch?
+            val reject: Boolean
+            synchronized(serviceLock) {
+                reject = !acceptingUserService
+                if (reject) {
+                    oldBinder = null
+                    oldDeathRecipient = null
+                    latch = null
+                } else {
+                    oldBinder = userServiceBinder
+                    oldDeathRecipient = userServiceDeathRecipient
+                    userService = service
+                    userServiceBinder = binder
+                    userServiceDeathRecipient = deathRecipient
+                    latch = bindingLatch
+                    bindingLatch = null
+                }
+            }
+            if (reject) {
+                runCatching { binder.unlinkToDeath(deathRecipient, 0) }
+                runCatching { service.destroy() }
+                runCatching {
+                    Shizuku.unbindUserService(userServiceArgs, userServiceConnection, false)
+                }
+                return
+            }
+            if (oldBinder != null && oldDeathRecipient != null && oldBinder !== binder) {
+                runCatching { oldBinder.unlinkToDeath(oldDeathRecipient, 0) }
+            }
+            latch?.countDown()
+        }
+
+        override fun onServiceDisconnected(name: ComponentName) {
+            // Shizuku dispatches this when the user-service binder dies.
+            dropUserService()
+        }
+
+        override fun onBindingDied(name: ComponentName) {
+            // Android may invalidate a binding without a normal disconnect callback.
+            dropUserService()
+            completeBindingWithoutService()
+        }
+
+        override fun onNullBinding(name: ComponentName) {
+            // A null binding can never satisfy an fd request; let this call fall back promptly.
+            dropUserService()
+            completeBindingWithoutService()
+        }
+    }
+
     @Synchronized
     override fun reset() {
         closeShell()
+        resetUserService()
     }
 
     @Throws(IOException::class)
     @Synchronized
     override fun exec(script: String): String {
+        boundUserServiceOrNull()?.let { return execThroughService(it, script) }
+
+        // A remote-process shell is retained only for devices where the user service cannot bind.
         val (code, output) = try {
             runCommand(script)
         } catch (e: IOException) {
@@ -69,6 +167,11 @@ object ShizukuTransport : PrivilegedTransport {
 
     @Throws(IOException::class)
     override fun execOneShot(script: String): String {
+        boundUserServiceOrNull()?.let { return execThroughService(it, script) }
+        return execOneShotWithRemoteProcess(script)
+    }
+
+    private fun execOneShotWithRemoteProcess(script: String): String {
         val process = spawn(arrayOf("sh", "-c", script))
         return try {
             closeQuietly(remoteOutput(process))
@@ -147,6 +250,20 @@ object ShizukuTransport : PrivilegedTransport {
     /** Streams bytes from a dedicated remote `cat`; closing also releases its binder process. */
     @Throws(IOException::class)
     override fun openRead(path: String): InputStream {
+        openFd(path, write = false)?.let { descriptor ->
+            return try {
+                ParcelFileDescriptor.AutoCloseInputStream(descriptor)
+            } catch (e: Exception) {
+                closeQuietly(descriptor)
+                throw IOException("Cannot create Shizuku input stream", e)
+            }
+        }
+
+        // `cat` is a compatibility fallback only when the user service cannot bind.
+        return openReadWithRemoteProcess(path)
+    }
+
+    private fun openReadWithRemoteProcess(path: String): InputStream {
         val process = spawn(arrayOf("sh", "-c", "exec cat ${shQuote(path)}"))
         return try {
             closeQuietly(remoteOutput(process))
@@ -164,6 +281,20 @@ object ShizukuTransport : PrivilegedTransport {
     /** Streams bytes into a dedicated remote `cat`; close waits so write failures are visible. */
     @Throws(IOException::class)
     override fun openWrite(path: String): OutputStream {
+        openFd(path, write = true)?.let { descriptor ->
+            return try {
+                ParcelFileDescriptor.AutoCloseOutputStream(descriptor)
+            } catch (e: Exception) {
+                closeQuietly(descriptor)
+                throw IOException("Cannot create Shizuku output stream", e)
+            }
+        }
+
+        // `cat` is a compatibility fallback only when the user service cannot bind.
+        return openWriteWithRemoteProcess(path)
+    }
+
+    private fun openWriteWithRemoteProcess(path: String): OutputStream {
         val process = spawn(arrayOf("sh", "-c", "exec cat > ${shQuote(path)}"))
         return try {
             closeQuietly(remoteInput(process))
@@ -176,6 +307,133 @@ object ShizukuTransport : PrivilegedTransport {
             destroyQuietly(process)
             throw if (e is IOException) e else IOException("Cannot write through Shizuku", e)
         }
+    }
+
+    @Throws(IOException::class)
+    override fun openFd(path: String, write: Boolean): ParcelFileDescriptor? {
+        val service = boundUserServiceOrNull() ?: return null
+        val mode = if (write) {
+            ParcelFileDescriptor.MODE_WRITE_ONLY or
+                ParcelFileDescriptor.MODE_CREATE or
+                ParcelFileDescriptor.MODE_TRUNCATE
+        } else {
+            ParcelFileDescriptor.MODE_READ_ONLY
+        }
+        return try {
+            service.open(path, mode)
+                ?: throw IOException("Privileged service returned no file descriptor")
+        } catch (e: IllegalStateException) {
+            throw IOException(e.message ?: "Privileged service could not open $path", e)
+        } catch (e: RemoteException) {
+            dropUserService(service.asBinder())
+            throw IOException("Privileged file service disconnected while opening $path", e)
+        } catch (e: RuntimeException) {
+            if (!service.asBinder().isBinderAlive) dropUserService(service.asBinder())
+            throw IOException("Cannot open $path through privileged file service", e)
+        }
+    }
+
+    private fun execThroughService(service: IPrivFileService, script: String): String = try {
+        service.exec(script)
+    } catch (e: IllegalStateException) {
+        throw IOException(e.message ?: "Privileged command failed", e)
+    } catch (e: RemoteException) {
+        // Replaying a command after a lost reply could duplicate a mutation, so only the next
+        // call rebinds; remote-process fallback is used solely when binding failed up front.
+        dropUserService(service.asBinder())
+        throw IOException("Privileged file service disconnected during command", e)
+    } catch (e: RuntimeException) {
+        if (!service.asBinder().isBinderAlive) dropUserService(service.asBinder())
+        throw IOException("Cannot execute command through privileged file service", e)
+    }
+
+    private fun boundUserServiceOrNull(): IPrivFileService? {
+        userService?.takeIf { it.asBinder().isBinderAlive }?.let { return it }
+        if (!isAvailable()) return null
+
+        val latch: CountDownLatch
+        var startBinding = false
+        synchronized(serviceLock) {
+            userService?.takeIf { it.asBinder().isBinderAlive }?.let { return it }
+            latch = bindingLatch ?: CountDownLatch(1).also {
+                bindingLatch = it
+                acceptingUserService = true
+                startBinding = true
+            }
+        }
+
+        if (startBinding) {
+            val started = runCatching {
+                // This guarded call throws before Shizuku has delivered its own binder.
+                Shizuku.bindUserService(userServiceArgs, userServiceConnection)
+            }.isSuccess
+            if (!started) completeBindingWithoutService(latch)
+        }
+
+        // Shizuku posts ServiceConnection callbacks to the main looper. Never deadlock it: the
+        // first main-thread call starts binding and temporarily uses the compatibility fallback.
+        if (Looper.myLooper() == Looper.getMainLooper()) return userService
+
+        val connected = try {
+            latch.await(SERVICE_BIND_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+        if (!connected) completeBindingWithoutService(latch)
+        return userService?.takeIf { it.asBinder().isBinderAlive }
+    }
+
+    private fun completeBindingWithoutService(expected: CountDownLatch? = null) {
+        val latch: CountDownLatch?
+        synchronized(serviceLock) {
+            if (expected != null && bindingLatch !== expected) return
+            latch = bindingLatch
+            bindingLatch = null
+        }
+        latch?.countDown()
+    }
+
+    private fun dropUserService(expectedBinder: IBinder? = null) {
+        val binder: IBinder?
+        val deathRecipient: IBinder.DeathRecipient?
+        val latch: CountDownLatch?
+        synchronized(serviceLock) {
+            if (expectedBinder != null && userServiceBinder !== expectedBinder) return
+            binder = userServiceBinder
+            deathRecipient = userServiceDeathRecipient
+            userService = null
+            userServiceBinder = null
+            userServiceDeathRecipient = null
+            acceptingUserService = false
+            latch = bindingLatch
+            bindingLatch = null
+        }
+        if (binder != null && deathRecipient != null) {
+            runCatching { binder.unlinkToDeath(deathRecipient, 0) }
+        }
+        latch?.countDown()
+    }
+
+    private fun resetUserService() {
+        val service: IPrivFileService?
+        val wasBinding: Boolean
+        synchronized(serviceLock) {
+            service = userService
+            // A timeout clears the waiter but deliberately still accepts a late connection.
+            // Track that pending launch too so reset can ask Shizuku to remove it.
+            wasBinding = acceptingUserService && userService == null
+            acceptingUserService = false
+        }
+        dropUserService()
+
+        // destroy is required because Shizuku unbind only releases this connection.
+        runCatching { service?.destroy() }
+        if (service == null && wasBinding) {
+            // A timed-out launch may still be in flight; ask Shizuku to remove that process too.
+            runCatching { Shizuku.unbindUserService(userServiceArgs, userServiceConnection, true) }
+        }
+        runCatching { Shizuku.unbindUserService(userServiceArgs, userServiceConnection, false) }
     }
 
     private fun spawn(argv: Array<String>): IRemoteProcess {

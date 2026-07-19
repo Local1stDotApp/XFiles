@@ -1,5 +1,6 @@
 package app.local1st.files.core.fs.priv
 
+import android.os.ParcelFileDescriptor
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -19,6 +20,8 @@ interface PrivilegedTransport {
     fun execOneShot(script: String): String
     fun openRead(path: String): InputStream
     fun openWrite(path: String): OutputStream
+    /** Optional seekable channel for consumers that can use a kernel fd directly. */
+    fun openFd(path: String, write: Boolean): ParcelFileDescriptor? = null
     fun reset()
 }
 
