@@ -68,6 +68,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.local1st.files.ui.appinfo.AppInfoOverlay
+import app.local1st.files.ui.browser.CrumbBarHeight
 import app.local1st.files.ui.browser.PaneView
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.dialogs.DestinationPicker
@@ -183,8 +184,9 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 ),
         )
 
-        // A compact 40dp circle on the breadcrumb pill's top line: a full 48dp
-        // IconButton both out-sizes the pill and bleeds into the first list row.
+        // Same box and same top inset as the breadcrumb pill opposite it (CrumbBarHeight),
+        // which is what puts the two on one mid-line — no measuring, no offset. A full
+        // 48dp IconButton would out-size the pill and bleed into the first list row.
         // (align must sit on a direct Box child — TooltipBox swallows it.)
         Box(
             Modifier
@@ -201,7 +203,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                     onClick = { vm.showSettings.value = true },
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.85f),
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier.size(CrumbBarHeight),
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
@@ -27,18 +28,21 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
+
+/**
+ * The box the breadcrumb pill and the floating settings button both occupy. Sharing one
+ * size is what lines them up: same top inset + same height means the same mid-line, with
+ * no measuring or offsets between the two composables.
+ */
+val CrumbBarHeight = 40.dp
 
 /**
  * One browser pane: breadcrumb bar + flattened tree list.
@@ -73,14 +77,11 @@ fun PaneView(
     ) {
         Box(Modifier.fillMaxSize()) {
             // Rows scroll edge-to-edge under the status bar and the floating breadcrumb;
-            // the top inset only keeps row 0 initially clear of both. The pill's height
-            // is measured, not assumed — it scales with the user's font size.
+            // the top inset only keeps row 0 initially clear of both.
             // IgnoringVisibility: the video player hides the system bars, and reacting
             // to that would reflow (and permanently shift) this list on every return.
             val statusPad = WindowInsets.statusBarsIgnoringVisibility
                 .asPaddingValues().calculateTopPadding()
-            var pillHeightPx by remember { mutableIntStateOf(0) }
-            val pillHeight = with(LocalDensity.current) { pillHeightPx.toDp() }
 
             if (state.loadingRoots && state.nodes.isEmpty()) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -90,7 +91,7 @@ fun PaneView(
                 LazyColumn(
                     state = listState,
                     contentPadding = PaddingValues(
-                        top = statusPad + 8.dp + pillHeight,
+                        top = statusPad + 8.dp + CrumbBarHeight,
                         bottom = contentPadding.calculateBottomPadding(),
                     ),
                     modifier = Modifier.fillMaxSize(),
@@ -135,14 +136,19 @@ fun PaneView(
                     .align(Alignment.TopStart)
                     .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
                     // The end inset keeps a long trail clear of the floating settings button.
-                    .padding(start = 6.dp, top = 4.dp, end = 60.dp)
-                    .onSizeChanged { pillHeightPx = it.height },
+                    .padding(start = 6.dp, top = 4.dp, end = 60.dp),
             )
         }
     }
 }
 
-/** Floating breadcrumb pill; the list scrolls underneath it. */
+/**
+ * Floating breadcrumb pill; the list scrolls underneath it.
+ *
+ * It occupies the same [CrumbBarHeight] box as the settings button opposite it, so the two
+ * share a mid-line by construction. A floor rather than a fixed height: at large font
+ * scales the pill grows instead of clipping the trail.
+ */
 @Composable
 private fun BreadcrumbBar(
     focusedDirId: String?,
@@ -152,21 +158,28 @@ private fun BreadcrumbBar(
 ) {
     val crumbs = remember(focusedDirId) { crumbsFor(focusedDirId) }
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(CrumbBarHeight / 2),
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
-        modifier = modifier,
+        modifier = modifier.defaultMinSize(
+            minWidth = CrumbBarHeight,
+            minHeight = CrumbBarHeight,
+        ),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .horizontalScroll(rememberScrollState(), reverseScrolling = true)
-                .padding(horizontal = 12.dp, vertical = 4.dp),
+                .padding(horizontal = 12.dp),
         ) {
             if (crumbs.isEmpty()) {
                 Text(
                     "XFiles",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Padded exactly like a crumb: the fallback and a real trail have to
+                    // measure alike at every font scale, or the pill would resize (and jolt
+                    // the list under it) every time the tree collapses back to the root.
+                    modifier = Modifier.padding(vertical = 4.dp, horizontal = 2.dp),
                 )
             }
             crumbs.forEachIndexed { index, (id, name) ->
