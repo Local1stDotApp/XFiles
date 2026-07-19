@@ -1,5 +1,6 @@
 package app.local1st.files.ui.settings
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -34,7 +35,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,13 +47,21 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import app.local1st.files.core.fs.priv.PrivilegedAccess
+import app.local1st.files.core.fs.priv.ShizukuGate
+import app.local1st.files.core.fs.priv.ShizukuState
+import app.local1st.files.core.fs.priv.TransportId
+import app.local1st.files.core.fs.priv.TransportPref
 import app.local1st.files.core.prefs.SortBy
 import app.local1st.files.core.prefs.ThemeMode
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.components.PredictiveBackContainer
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.main.MainViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import rikka.shizuku.ShizukuProvider
 
 /** Full-screen settings overlay, visible while [MainViewModel.showSettings] is true. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -70,6 +83,24 @@ fun SettingsOverlay(vm: MainViewModel) {
     val sortDescending by settings.sortDescending.collectAsState(initial = false)
     val rootEnabled by settings.rootEnabled.collectAsState(initial = false)
     val rootReadOnly by settings.rootReadOnly.collectAsState(initial = true)
+    val transportPref by settings.privilegedTransport.collectAsState(initial = null)
+    val shizukuState by ShizukuGate.state.collectAsState()
+    val permissionPermanentlyDenied by
+        ShizukuGate.permissionPermanentlyDeniedState.collectAsState()
+    var showShizukuHelp by rememberSaveable { mutableStateOf(false) }
+
+    val activeTransport by produceState<TransportId?>(
+        null,
+        rootEnabled,
+        transportPref,
+        shizukuState,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            // Do not probe the AUTO default while a saved forced choice is still loading: on a
+            // rooted device that could briefly exercise su despite an explicit Shizuku choice.
+            transportPref?.takeIf { rootEnabled }?.let { PrivilegedAccess.activeFor(it)?.id }
+        }
+    }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -145,7 +176,7 @@ fun SettingsOverlay(vm: MainViewModel) {
                     onCheckedChange = { scope.launch { settings.setSortDescending(it) } },
                 )
 
-                SectionHeader("Root")
+                SectionHeader("Access")
                 SwitchRow(
                     title = "Root access",
                     subtitle = "Browse the whole system as superuser (needs su)",
@@ -159,6 +190,52 @@ fun SettingsOverlay(vm: MainViewModel) {
                         checked = rootReadOnly,
                         onCheckedChange = { scope.launch { settings.setRootReadOnly(it) } },
                     )
+                }
+                RadioOptionsRow(
+                    title = "Transport",
+                    options = listOf(
+                        TransportPref.AUTO to "Auto",
+                        TransportPref.SU to "Root (su)",
+                        TransportPref.SHIZUKU to "Shizuku",
+                        TransportPref.OFF to "Off",
+                    ),
+                    selected = transportPref ?: TransportPref.AUTO,
+                    onSelect = { scope.launch { settings.setPrivilegedTransport(it) } },
+                )
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            "Active: ${activeTransportLabel(activeTransport)} · " +
+                                "Shizuku: ${shizukuStateLabel(shizukuState)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        if (shizukuState == ShizukuState.PermissionRequired) {
+                            Spacer(Modifier.height(8.dp))
+                            if (permissionPermanentlyDenied) {
+                                Text(
+                                    "Grant permission inside the Shizuku app; another request " +
+                                        "will not show a dialog.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedButton(onClick = { openShizuku(context) }) {
+                                    Text("Open Shizuku")
+                                }
+                            } else {
+                                OutlinedButton(onClick = { ShizukuGate.requestPermission() }) {
+                                    Text("Grant permission")
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { showShizukuHelp = !showShizukuHelp }) {
+                    Text(if (showShizukuHelp) "Hide Shizuku help" else "How to start Shizuku")
+                }
+                if (showShizukuHelp) {
+                    ShizukuHelpCard(onOpenShizuku = { openShizuku(context) })
                 }
 
                 SectionHeader("About")
@@ -198,6 +275,76 @@ fun SettingsOverlay(vm: MainViewModel) {
             }
         }
     }
+    }
+}
+
+private fun activeTransportLabel(transport: TransportId?): String = when (transport) {
+    TransportId.SU -> "Root (su)"
+    TransportId.SHIZUKU -> "Shizuku"
+    null -> "None"
+}
+
+private fun shizukuStateLabel(state: ShizukuState): String = when (state) {
+    ShizukuState.NotInstalled -> "Not installed"
+    ShizukuState.NotRunning -> "Not running"
+    ShizukuState.PermissionRequired -> "Permission required"
+    ShizukuState.Ready -> "Ready"
+}
+
+@Composable
+private fun ShizukuHelpCard(onOpenShizuku: () -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Starting Shizuku", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Open the Shizuku app and use its own “View command” or pairing flow. " +
+                    "XFiles does not provide a start command because current versions keep " +
+                    "the starter inside the Shizuku app.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Shizuku must be restarted after every reboot unless the device is rooted. " +
+                    "On Android 13+, it can auto-start on a trusted Wi-Fi network.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "OEM setup:\n" +
+                    "• ColorOS (OPPO/OnePlus): turn off “Permission monitoring”.\n" +
+                    "• MIUI: enable “USB debugging (Security options)”.\n" +
+                    "• Android 11+: enable “Disable adb authorization timeout”.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Shizuku lets XFiles reach Android/data and Android/obb. It cannot reach " +
+                    "/data/data or browse the whole filesystem; those require root.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(12.dp))
+            OutlinedButton(onClick = onOpenShizuku) {
+                Text("Open Shizuku")
+            }
+        }
+    }
+}
+
+private fun openShizuku(context: Context) {
+    val launched = runCatching {
+        // Resolving the owner of Shizuku's global permission supports forks and avoids a
+        // package-visibility query for a hardcoded package name.
+        val packageName = context.packageManager
+            .getPermissionInfo(ShizukuProvider.PERMISSION, 0)
+            .packageName
+        val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+            ?: return@runCatching false
+        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    }.getOrDefault(false)
+    if (!launched) {
+        Toast.makeText(context, "Shizuku app is not available", Toast.LENGTH_SHORT).show()
     }
 }
 

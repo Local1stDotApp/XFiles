@@ -7,6 +7,7 @@ package app.local1st.files.core.fs.priv
  * - [enabled]: the user opted into root browsing in Settings. When false, no `su` probe runs
  *   and no root content is surfaced.
  * - [readOnly]: read-only root mode — root writes (create/rename/delete/overwrite) are blocked.
+ * - [preference]: which available privileged transport the user chose.
  *
  * Updated by a collector wired in `GraphInit`/`MainViewModel`; defaults are the safe off state.
  */
@@ -17,9 +18,20 @@ object PrivilegedAccess {
     @Volatile
     var readOnly: Boolean = true
 
+    @Volatile
+    var preference: TransportPref = TransportPref.AUTO
+
     val active: PrivilegedTransport?
-        get() = SuTransport.takeIf { it.isAvailable() }
-            ?: ShizukuTransport.takeIf { it.isAvailable() }
+        get() = activeFor(preference)
+
+    internal fun activeFor(selected: TransportPref): PrivilegedTransport? =
+        when (selected) {
+            TransportPref.OFF -> null
+            TransportPref.SU -> SuTransport.takeIf { it.isAvailable() }
+            TransportPref.SHIZUKU -> ShizukuTransport.takeIf { it.isAvailable() }
+            TransportPref.AUTO -> SuTransport.takeIf { it.isAvailable() }
+                ?: ShizukuTransport.takeIf { it.isAvailable() }
+        }
 
     val caps: Caps
         get() = active?.caps ?: NO_CAPS

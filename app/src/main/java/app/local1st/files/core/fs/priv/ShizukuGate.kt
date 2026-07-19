@@ -25,6 +25,12 @@ object ShizukuGate {
     private val _state = MutableStateFlow<ShizukuState>(ShizukuState.NotRunning)
     val state: StateFlow<ShizukuState> = _state.asStateFlow()
 
+    // A denial can change from ordinary to permanent while the public lifecycle state remains
+    // PermissionRequired, so UI needs a separate emission to replace the now-useless button.
+    private val _permissionPermanentlyDeniedState = MutableStateFlow(false)
+    val permissionPermanentlyDeniedState: StateFlow<Boolean> =
+        _permissionPermanentlyDeniedState.asStateFlow()
+
     /** True when Shizuku says another permission request must not be shown. */
     @Volatile
     var permissionPermanentlyDenied: Boolean = false
@@ -66,7 +72,7 @@ object ShizukuGate {
         runCatching { Shizuku.removeRequestPermissionResultListener(permissionResultListener) }
         ShizukuTransport.reset()
         appContext = null
-        permissionPermanentlyDenied = false
+        setPermissionPermanentlyDenied(false)
         _state.value = ShizukuState.NotRunning
     }
 
@@ -90,7 +96,7 @@ object ShizukuGate {
     internal fun refresh() {
         val context = appContext ?: return
         if (!isInstalled(context)) {
-            permissionPermanentlyDenied = false
+            setPermissionPermanentlyDenied(false)
             _state.value = ShizukuState.NotInstalled
             return
         }
@@ -102,16 +108,16 @@ object ShizukuGate {
             }
             if (Shizuku.isPreV11()) return@runCatching ShizukuState.NotRunning
             if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
-                permissionPermanentlyDenied = false
+                setPermissionPermanentlyDenied(false)
                 ShizukuState.Ready
             } else {
                 // In Shizuku's API this flag means the user selected deny-and-don't-ask-again;
                 // callers must send the user to Shizuku rather than loop permission dialogs.
-                permissionPermanentlyDenied = Shizuku.shouldShowRequestPermissionRationale()
+                setPermissionPermanentlyDenied(Shizuku.shouldShowRequestPermissionRationale())
                 ShizukuState.PermissionRequired
             }
         }.getOrElse {
-            permissionPermanentlyDenied = false
+            setPermissionPermanentlyDenied(false)
             ShizukuState.NotRunning
         }
         _state.value = status
@@ -125,4 +131,9 @@ object ShizukuGate {
             .packageName
             .isNotEmpty()
     }.getOrDefault(false)
+
+    private fun setPermissionPermanentlyDenied(value: Boolean) {
+        permissionPermanentlyDenied = value
+        _permissionPermanentlyDeniedState.value = value
+    }
 }

@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import app.local1st.files.core.fs.priv.TransportPref
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
@@ -52,6 +53,7 @@ class SettingsRepo(private val context: Context) {
     private val keyDynamicColor = booleanPreferencesKey("dynamic_color")
     private val keyRootEnabled = booleanPreferencesKey("root_enabled")
     private val keyRootReadOnly = booleanPreferencesKey("root_read_only")
+    private val keyPrivilegedTransport = stringPreferencesKey("privileged_transport")
     // JSON array, not a string set: favorites keep their user-defined order.
     private val keyFavorites = stringPreferencesKey("favorites")
     private val keySessionActivePane = intPreferencesKey("session_active_pane")
@@ -89,6 +91,10 @@ class SettingsRepo(private val context: Context) {
 
     /** Read-only root mode is the safe default: block writes that need root. */
     val rootReadOnly: Flow<Boolean> = setting { it[keyRootReadOnly] ?: true }
+
+    val privilegedTransport: Flow<TransportPref> = setting {
+        TransportPref.fromStoredValue(it[keyPrivilegedTransport] ?: "auto")
+    }
 
     /** Entries pinned as top-level favorites, in display order. */
     val favorites: Flow<List<Favorite>> = setting { prefs ->
@@ -140,4 +146,7 @@ class SettingsRepo(private val context: Context) {
     suspend fun setDynamicColor(value: Boolean) = context.dataStore.edit { it[keyDynamicColor] = value }
     suspend fun setRootEnabled(value: Boolean) = context.dataStore.edit { it[keyRootEnabled] = value }
     suspend fun setRootReadOnly(value: Boolean) = context.dataStore.edit { it[keyRootReadOnly] = value }
+    suspend fun setPrivilegedTransport(value: TransportPref) = context.dataStore.edit {
+        it[keyPrivilegedTransport] = value.storedValue
+    }
 }

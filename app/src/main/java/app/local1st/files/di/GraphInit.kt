@@ -32,4 +32,7 @@ fun initGraph(graph: Graph) {
     // App-lifetime so file operations honor read-only mode even without a UI in the foreground.
     Graph.appScope.launch { Graph.settings.rootEnabled.collect { PrivilegedAccess.enabled = it } }
     Graph.appScope.launch { Graph.settings.rootReadOnly.collect { PrivilegedAccess.readOnly = it } }
+    Graph.appScope.launch {
+        Graph.settings.privilegedTransport.collect { PrivilegedAccess.preference = it }
+    }
 }

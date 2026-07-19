@@ -97,6 +97,18 @@ class MainViewModel : ViewModel() {
                 }
             }
         }
+        viewModelScope.launch {
+            Graph.settings.privilegedTransport.drop(1).collect { preference ->
+                PrivilegedAccess.preference = preference
+                // A transport change can alter both root:// capabilities and the apps://
+                // Android/data fallback, so neither scheme may retain the old transport's data.
+                panes.forEach {
+                    it.invalidateScheme(XId.SCHEME_ROOT)
+                    it.invalidateScheme(XId.SCHEME_APPS)
+                    it.reloadRoots()
+                }
+            }
+        }
         // Rebuild roots when favorites change so pinned shortcuts (dis)appear immediately.
         viewModelScope.launch {
             Graph.favorites.filterNotNull().distinctUntilChanged().drop(1).collect {
@@ -135,6 +147,7 @@ class MainViewModel : ViewModel() {
         // Restore inputs must be settled first: the root gate (a saved root:// position
         // stats through it) and the favorites cache (saved ids may live under a pinned root).
         PrivilegedAccess.enabled = Graph.settings.rootEnabled.first()
+        PrivilegedAccess.preference = Graph.settings.privilegedTransport.first()
         Graph.favorites.first { it != null }
         val session = Graph.settings.loadSession()
         activePane.value = session.activePane.coerceIn(0, panes.lastIndex)
