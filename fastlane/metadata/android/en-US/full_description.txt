@@ -1,0 +1,51 @@
+XFiles is an offline file manager for Android that borrows X-plore's workflow: two independent panes, folders that expand in place as a tree, and archives you can walk into like folders.
+
+It has no INTERNET permission. Android itself blocks it from opening a network connection, so nothing you browse, copy or open can leave your device. No analytics, no crash reporting, no ads, no account, no cloud.
+
+DUAL-PANE TREE BROWSER
+• Two independent panes — side by side on tablets and in landscape, a swipeable pager on phones
+• Folders expand in place with indent guides, instead of replacing the view one directory at a time
+• Image thumbnails and video poster frames render inline, cached so they are instant next time
+• Copy and move between panes with an explicit destination picker that defaults to the other pane
+
+FILE OPERATIONS
+• Multi-select, copy, move, rename, delete, new folder
+• Skip / overwrite / keep-both conflict resolution
+• Long operations keep running in a foreground service with progress and a cancel action
+
+ARCHIVES AS FOLDERS
+• Browse zip, jar, apk, 7z, tar (.gz/.bz2/.xz) and rar in place, without extracting first
+• Create zips using every CPU core
+• Extract by copying out to a folder you choose
+
+BUILT-IN VIEWERS
+• Image viewer with pager and pinch zoom
+• Text viewer you can edit and save
+• Hex viewer with on-demand paging for large files
+• Audio player
+• Video player with frame-accurate stepping — tap the time readout for a frame counter, step one frame at a time, scrub by frame with live preview
+
+APP MANAGER
+• Installed and system apps with real icons, versions and package names
+• Each app's activities, services, receivers and providers, browsable as a tree with their exported and enabled state
+• base.apk and every split APK listed per app — and expandable, because an APK is just a zip
+• Install, launch, uninstall, or copy an APK out to share an app as a file
+
+ROOT ACCESS (OPTIONAL, OFF BY DEFAULT)
+• Enable it in Settings to browse the whole filesystem as superuser on a rooted device
+• A separate read-only switch blocks anything that would write, so you can look without risk
+• Falls back to a read-only view when su is unavailable
+
+MODERN ANDROID
+• Material 3 Expressive with dynamic colour, light / dark / system themes
+• True edge-to-edge, no top app bar
+• Hidden files, folders-first and sort options
+
+WHY "ALL FILES ACCESS"
+XFiles requests All files access because that is what a general-purpose file manager does: it has to list, open and modify files anywhere in shared storage, including folders it did not create. It is used for nothing else. The app has no network permission, so it has no way to send your files anywhere.
+
+OPEN SOURCE
+XFiles is free software under GPL-3.0. Read the code, build it yourself, or verify the missing INTERNET permission for yourself:
+https://github.com/Local1stDotApp/XFiles
+
+XFiles is an independent project inspired by X-plore File Manager. It shares no code or assets with it and is not affiliated with its developer.

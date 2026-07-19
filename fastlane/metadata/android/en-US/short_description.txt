@@ -1,0 +1,1 @@
+Offline dual-pane file manager — archives, apps, root. No network permission.

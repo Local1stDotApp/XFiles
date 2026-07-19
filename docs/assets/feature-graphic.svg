@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="500" viewBox="0 0 1024 500">
+  <!--
+    Play Store feature graphic (1024x500, opaque).
+    Play crops and overlays UI near the edges, so the glyph and wordmark stay well
+    inside a safe margin. Glyph geometry is the same path as the launcher icon,
+    scaled 5x out of its 108dp canvas and drawn straight onto the background.
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0B4FC0"/>
+      <stop offset="55%" stop-color="#1B6EF3"/>
+      <stop offset="100%" stop-color="#3D87FF"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="500" fill="url(#bg)"/>
+
+  <!-- folder + punched-out X, centred at (208, 250), scaled 5x from the 108dp canvas -->
+  <g transform="translate(-62,-20) scale(5)">
+    <path fill="#FFFFFF" fill-rule="evenodd"
+          d="M33,36 L45,36 L49,42 L75,42 A4,4 0 0 1 79,46 L79,68 A4,4 0 0 1 75,72 L33,72 A4,4 0 0 1 29,68 L29,40 A4,4 0 0 1 33,36 Z M47,50 L51,50 L54,54.5 L57,50 L61,50 L56.4,57 L61,64 L57,64 L54,59.5 L51,64 L47,64 L51.6,57 Z"/>
+  </g>
+
+  <text x="392" y="248" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="104"
+        font-weight="700" fill="#FFFFFF" letter-spacing="-2">XFiles</text>
+  <text x="396" y="312" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="35"
+        font-weight="400" fill="#FFFFFF" fill-opacity="0.92">Dual-pane file manager</text>
+  <text x="396" y="362" font-family="Noto Sans, DejaVu Sans, sans-serif" font-size="29"
+        font-weight="400" fill="#FFFFFF" fill-opacity="0.72">Offline · open source · no network</text>
+</svg>

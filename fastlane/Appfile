@@ -1,0 +1,2 @@
+json_key_file(ENV["PLAY_JSON_KEY_PATH"].to_s)
+package_name("app.local1st.files")

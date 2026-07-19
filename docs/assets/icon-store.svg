@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="18 18 72 72" width="512" height="512" role="img" aria-label="XFiles">
+  <!--
+    Full-bleed store icon (Play / F-Droid / social preview).
+    Same geometry as logo.svg but WITHOUT the rounded-rect clip: storefronts apply
+    their own corner mask, and a pre-rounded icon would get rounded twice.
+    The viewBox is the launcher's 72dp safe area, so the glyph keeps exactly the
+    proportion users see on their home screen. No alpha — the square is opaque.
+  -->
+  <rect x="18" y="18" width="72" height="72" fill="#1B6EF3"/>
+  <path fill="#FFFFFF" fill-rule="evenodd"
+        d="M33,36 L45,36 L49,42 L75,42 A4,4 0 0 1 79,46 L79,68 A4,4 0 0 1 75,72 L33,72 A4,4 0 0 1 29,68 L29,40 A4,4 0 0 1 33,36 Z M47,50 L51,50 L54,54.5 L57,50 L61,50 L56.4,57 L61,64 L57,64 L54,59.5 L51,64 L47,64 L51.6,57 Z"/>
+</svg>
