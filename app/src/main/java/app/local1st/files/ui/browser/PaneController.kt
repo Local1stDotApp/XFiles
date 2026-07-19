@@ -370,24 +370,65 @@ class PaneController(
 
     // ---- selection ----
 
+    /** Volumes and the apps/root pseudo-nodes are tree scaffolding, not operable entries. */
+    private fun selectable(entry: XEntry): Boolean = when (entry.kind) {
+        EntryKind.VOLUME_INTERNAL, EntryKind.VOLUME_SD, EntryKind.VOLUME_USB,
+        EntryKind.APPS_ROOT, EntryKind.APP_COMPONENT_GROUP, EntryKind.APP_COMPONENT,
+        EntryKind.ROOT,
+        -> false
+        else -> true
+    }
+
+    /** The rows shown directly under [entry]; empty for files, closed dirs and unlisted ones. */
+    private fun openChildren(entry: XEntry): List<XEntry> {
+        if (!entry.isContainer || entry.id !in expanded.value) return emptyList()
+        val kids = children.value[entry.id] ?: return emptyList()
+        val showHidden = sortSpec.value.showHidden
+        return kids.filter { (showHidden || !it.hidden) && selectable(it) }
+    }
+
+    /**
+     * Files and closed dirs toggle. An OPEN dir cycles three ways —
+     * nothing → the dir itself → every entry inside it → nothing — so unticking a
+     * ticked folder hands the selection down to its contents, and single items can then
+     * be dropped from there (X-plore's inverse select). The last step clears instead of
+     * re-ticking the folder on top of its own children.
+     *
+     * Whichever way it lands, a dir and anything under it are never selected together:
+     * the ops would then process the same bytes twice (copy the folder, then copy its
+     * files into the copy), so picking one level always drops the other.
+     */
     fun toggleSelect(entry: XEntry) {
-        if (entry.kind == app.local1st.files.core.fs.EntryKind.VOLUME_INTERNAL ||
-            entry.kind == app.local1st.files.core.fs.EntryKind.VOLUME_SD ||
-            entry.kind == app.local1st.files.core.fs.EntryKind.VOLUME_USB ||
-            entry.kind == app.local1st.files.core.fs.EntryKind.APPS_ROOT ||
-            entry.kind == app.local1st.files.core.fs.EntryKind.APP_COMPONENT_GROUP ||
-            entry.kind == app.local1st.files.core.fs.EntryKind.APP_COMPONENT ||
-            entry.kind == app.local1st.files.core.fs.EntryKind.ROOT
-        ) return
-        selection.update { if (entry.id in it) it - entry.id else it + entry.id }
+        if (!selectable(entry)) return
+        val kids = openChildren(entry)
+        if (kids.isEmpty()) {
+            selection.update { sel ->
+                if (entry.id in sel) {
+                    sel - entry.id
+                } else {
+                    sel.filterTo(HashSet()) {
+                        !isAncestorOf(it, entry.id) && !isAncestorOf(entry.id, it)
+                    } + entry.id
+                }
+            }
+            return
+        }
+        val kidIds = kids.mapTo(HashSet()) { it.id }
+        selection.update { sel ->
+            val outside = sel.filterTo(HashSet()) {
+                it != entry.id &&
+                    !isAncestorOf(it, entry.id) &&
+                    !isAncestorOf(entry.id, it)
+            }
+            when {
+                entry.id in sel -> outside + kidIds
+                sel.containsAll(kidIds) -> outside
+                else -> outside + entry.id
+            }
+        }
     }
 
     fun clearSelection() = selection.update { emptySet() }
-
-    fun selectAllIn(dirId: String) {
-        val kids = children.value[dirId] ?: return
-        selection.update { it + kids.map { k -> k.id } }
-    }
 
     fun selectionEntries(): List<XEntry> {
         val sel = selection.value
