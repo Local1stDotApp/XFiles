@@ -6,12 +6,15 @@ import app.local1st.files.core.fs.DefaultRootsRepository
 import app.local1st.files.core.fs.LocalFileSystem
 import app.local1st.files.core.fs.RootFileSystem
 import app.local1st.files.core.fs.priv.PrivilegedAccess
+import app.local1st.files.core.fs.priv.ShizukuGate
 import app.local1st.files.core.ops.DefaultOperationEngine
 import app.local1st.files.core.search.DefaultSearchEngine
 import kotlinx.coroutines.launch
 
 /** Wires concrete implementations into [Graph]. */
 fun initGraph(graph: Graph) {
+    ShizukuGate.initialize(Graph.appContext)
+
     graph.fsRegistry.register(LocalFileSystem())
     graph.fsRegistry.register(ArchiveFileSystem())
     graph.fsRegistry.register(AppsFileSystem(Graph.appContext))

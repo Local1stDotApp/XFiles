@@ -19,6 +19,7 @@ object PrivilegedAccess {
 
     val active: PrivilegedTransport?
         get() = SuTransport.takeIf { it.isAvailable() }
+            ?: ShizukuTransport.takeIf { it.isAvailable() }
 
     val caps: Caps
         get() = active?.caps ?: NO_CAPS
