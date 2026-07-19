@@ -49,22 +49,14 @@ X-plore's signature: two independent panes — side-by-side on wide screens, a s
 pager on phones. Folders expand **in place** as a tree with indent guide lines, and each
 pane carries its own floating breadcrumb pill.
 
-<div align="center">
-<img src="docs/assets/dual-pane.png" width="860" alt="Two panes side by side: a folder tree with image thumbnails on the left, a zip browsed as a folder on the right">
-</div>
-
-Archives sit in the tree like any other folder — the breadcrumb above just descends
-straight into `project.zip`.
+Archives sit in the tree like any other folder — the breadcrumb descends straight into
+`project.zip`.
 
 ### Thumbnails in the tree
 
 Images and video poster frames render inline. Video frames are extracted once at
 thumbnail size and disk-cached, so they are instant after a restart, with a play badge
 and an icon fallback while loading.
-
-<div align="center">
-<img src="docs/assets/tree-thumbnails.png" width="440" alt="File tree showing inline image thumbnails and video poster frames with play badges">
-</div>
 
 ### File operations
 
@@ -99,18 +91,9 @@ APK install shortcut.
 Installed and system apps in two groups, with real icons, version/package badges and
 rich details. Install, launch, uninstall, or copy an APK out to share an app as a file.
 
-<div align="center">
-<img src="docs/assets/app-manager.png" width="400" alt="App manager listing system apps with icons, version numbers and package names">
-<img src="docs/assets/app-components.png" width="400" alt="An app expanded to show its component counts and its base and split APKs">
-</div>
-
 Expand an app and you get everything that belongs to it in one place: a **Components**
 node broken down into activities / providers / receivers / services, plus `base.apk` and
 every `split_config.*` APK — each one expandable, because an APK is just a zip.
-
-<div align="center">
-<img src="docs/assets/app-activities.png" width="400" alt="Activity list of an app showing class names with exported and disabled badges">
-</div>
 
 Drill into a category and each component shows its class name and its real manifest
 state — `exported` / `not exported`, `enabled` / `disabled`. Launch activities, create
@@ -122,23 +105,14 @@ Off by default. Turn on **Root access** in Settings and a **Root** entry (`/`) j
 storage roots — with a separate **Read-only** switch that blocks anything needing root
 to write, so you can go look without being able to break your system.
 
-<div align="center">
-<img src="docs/assets/storage-roots.png" width="560" alt="Storage roots list: internal shared storage, app manager, and a Root entry labelled Superuser, read-only">
-</div>
+What you get is the real filesystem — `/data` opening up to `adb`, `anr`, `app`,
+`app-private`, `dalvik-cache`, none of which a normal app can even list. XFiles browses
+it as superuser via `su`: list/read/write/mkdir/rename/delete under `/data`, `/system`, …
+Files stream through `su cat` / `cat >`, so the app's own viewers can open protected
+files. Falls back to a read-only `/` view when `su` is unavailable.
 
-<div align="center">
-<img src="docs/assets/root-browsing.png" width="400" alt="The Root entry expanded showing the real filesystem, with /data opened to reveal adb, anr, app, app-private and other root-only directories">
-<img src="docs/assets/settings.png" width="400" alt="Settings screen with theme, browsing and root sections; Root access and Read-only are both on">
-</div>
-
-That's the actual filesystem on a Magisk-rooted device — `/data` opened up to `adb`,
-`anr`, `app`, `app-private`, `dalvik-cache`, none of which a normal app can even list.
-XFiles browses it as superuser via `su`: list/read/write/mkdir/rename/delete under
-`/data`, `/system`, … Files stream through `su cat` / `cat >`, so the app's own viewers
-can open protected files. Falls back to a read-only `/` view when `su` is unavailable.
-
-The settings screen on the right carries the rest of the preferences too — theme,
-dynamic color, hidden files, folders-first, sort key and direction.
+The settings screen carries the rest of the preferences too — theme, dynamic color,
+hidden files, folders-first, sort key and direction.
 
 ### Viewers
 
@@ -146,13 +120,9 @@ An image viewer (pager + pinch zoom), a text viewer with edit/save, a hex viewer
 on-demand paging, an audio player, and a custom video player (Media3/ExoPlayer) with
 **frame-accurate stepping**.
 
-<div align="center">
-<img src="docs/assets/video-player.png" width="860" alt="Video player paused with the readout switched to a frame counter reading 358 of 359 at 29.9fps, with single-frame step buttons">
-</div>
-
-Tap the time readout to swap it for a frame counter — `358 · 359 · 29.9fps` above — then
-step ±1 frame, swipe on the picture to scrub by time or frames with live preview, drag
-the compact control card out of the way, or go fullscreen immersive.
+Tap the time readout to swap it for a frame counter — current frame, total, and the real
+frame rate — then step ±1 frame, swipe on the picture to scrub by time or frames with
+live preview, drag the compact control card out of the way, or go fullscreen immersive.
 
 ### Search
 

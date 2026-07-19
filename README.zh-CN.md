@@ -48,20 +48,12 @@
 X-plore 的招牌：两栏互不干扰 —— 宽屏左右并排，手机上是可滑动切换的分页。
 文件夹**原地展开**成树，带缩进引导线，每一栏各自有一个悬浮的面包屑胶囊。
 
-<div align="center">
-<img src="docs/assets/dual-pane.png" width="860" alt="左右两栏：左边是带图片缩略图的文件夹树，右边把 zip 当文件夹展开">
-</div>
-
-压缩包在树里跟普通文件夹没两样 —— 看上面那条面包屑，它直接就钻进 `project.zip` 里去了。
+压缩包在树里跟普通文件夹没两样 —— 面包屑会直接钻进 `project.zip` 里去。
 
 ### 树里直接出缩略图
 
 图片和视频首帧就地渲染。视频帧只按缩略图尺寸抽取一次并落盘缓存，重启后立即可见；
 加载过程中会先显示图标占位，视频还会叠一个播放角标。
-
-<div align="center">
-<img src="docs/assets/tree-thumbnails.png" width="440" alt="文件树中内联显示的图片缩略图，以及带播放角标的视频首帧">
-</div>
 
 ### 文件操作
 
@@ -94,18 +86,9 @@ APK 有安装快捷入口。
 已安装和系统应用分成两大类，带真实图标、版本号/包名标签和详细信息。
 支持安装、启动、卸载，或者把 APK 复制出来当文件分享。
 
-<div align="center">
-<img src="docs/assets/app-manager.png" width="400" alt="应用管理列出系统应用，带图标、版本号和包名">
-<img src="docs/assets/app-components.png" width="400" alt="展开一个应用后显示各类组件数量，以及 base.apk 和各个 split APK">
-</div>
-
 展开一个应用，属于它的东西就都在这儿了：一个 **Components** 节点，
 按 activity / provider / receiver / service 分好类；外加 `base.apk` 和每个
 `split_config.*` APK —— 每个都能继续展开，毕竟 APK 本来就是个 zip。
-
-<div align="center">
-<img src="docs/assets/app-activities.png" width="400" alt="某个应用的 activity 列表，显示类名以及 exported / disabled 标记">
-</div>
 
 再往下点开某一类，每个组件都会显示类名和它在 manifest 里的真实状态 ——
 `exported` / `not exported`、`enabled` / `disabled`。
@@ -117,34 +100,21 @@ APK 有安装快捷入口。
 旁边还有个独立的 **Read-only** 开关，会挡掉所有需要 root 权限的写操作，
 让你能进去看，但没法把系统搞坏。
 
-<div align="center">
-<img src="docs/assets/storage-roots.png" width="560" alt="存储根列表：内部存储、应用管理，以及标着 Superuser · read-only 的 Root 入口">
-</div>
-
-<div align="center">
-<img src="docs/assets/root-browsing.png" width="400" alt="Root 入口展开后的真实文件系统，/data 已展开，露出 adb、anr、app、app-private 等只有 root 才能看的目录">
-<img src="docs/assets/settings.png" width="400" alt="设置页，包含外观、浏览和 Root 三节，Root access 和 Read-only 都已打开">
-</div>
-
-左图是 Magisk 已 root 的真机上的真实文件系统 —— `/data` 展开后是 `adb`、`anr`、`app`、
+打开之后看到的是真实的文件系统 —— `/data` 展开后是 `adb`、`anr`、`app`、
 `app-private`、`dalvik-cache`，这些目录普通应用连列出来都做不到。
 XFiles 通过 `su` 以超级用户身份浏览它：在 `/data`、`/system` 等目录下
 list/read/write/mkdir/rename/delete。
 文件通过 `su cat` / `cat >` 流式读写，所以 App 自带的查看器也能打开受保护的文件。
 拿不到 `su` 时退化为只读的 `/` 视图。
 
-右图那页设置里还有其余的偏好项 —— 主题、动态取色、显示隐藏文件、文件夹优先、排序字段和升降序。
+设置页里还有其余的偏好项 —— 主题、动态取色、显示隐藏文件、文件夹优先、排序字段和升降序。
 
 ### 查看器
 
 图片查看器（分页 + 双指缩放）、可编辑保存的文本查看器、按需分页的十六进制查看器、
 音频播放器，以及一个自研的视频播放器（Media3/ExoPlayer），支持**逐帧精确定位**。
 
-<div align="center">
-<img src="docs/assets/video-player.png" width="860" alt="视频播放器暂停中，时间读数已切换为帧计数，显示 358 / 359 · 29.9fps，旁边是单帧步进按钮">
-</div>
-
-点一下时间读数，它就变成帧计数器 —— 上图的 `358 · 359 · 29.9fps` —— 然后可以 ±1 帧步进；
+点一下时间读数，它就变成帧计数器 —— 当前帧、总帧数和真实帧率 —— 然后可以 ±1 帧步进；
 在画面上滑动可按时间或按帧拖动并实时预览；那张紧凑的控制卡片可以拖走；也能全屏沉浸播放。
 
 ### 搜索
