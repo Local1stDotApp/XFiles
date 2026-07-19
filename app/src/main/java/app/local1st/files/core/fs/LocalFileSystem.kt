@@ -1,6 +1,7 @@
 package app.local1st.files.core.fs
 
 import android.os.Build
+import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.util.FileTypes
 import java.io.File
 import java.io.FileInputStream
@@ -18,18 +19,40 @@ import java.nio.file.attribute.BasicFileAttributes
  */
 class LocalFileSystem(
     private val legacySaf: LegacySafAccess? = null,
+    private val privilegedFallback: XFileSystem? = null,
 ) : XFileSystem {
 
     override val scheme: String = XId.SCHEME_FILE
 
     override fun list(dir: XEntry): List<XEntry> {
         val file = File(dir.path)
-        val children = file.listFiles()
-            ?: throw IOException(
-                if (file.exists()) "Cannot read ${dir.name}"
-                else "Folder not found: ${dir.name}"
-            )
+        val children = file.listFiles() ?: return privilegedListing(file, dir)
         return children.map { toEntry(it, readAttrs(it)) }
+    }
+
+    /**
+     * Scoped storage hides Android/data and Android/obb from File I/O on API 30+, and
+     * MANAGE_EXTERNAL_STORAGE does not cover them — the FUSE layer keys that access off the
+     * ext_data_rw/ext_obb_rw supplementary GIDs, which only the shell uid holds. A privileged
+     * transport runs there, so retry the listing through it.
+     *
+     * The children come back with root:// ids on purpose: every later operation on them
+     * (open, copy, thumbnail) then routes to the same transport instead of failing again.
+     */
+    private fun privilegedListing(file: File, dir: XEntry): List<XEntry> {
+        val directError = IOException(
+            if (file.exists()) "Cannot read ${dir.name}"
+            else "Folder not found: ${dir.name}",
+        )
+        val fallback = privilegedFallback ?: throw directError
+        if (!PrivilegedAccess.usable()) throw directError
+        return try {
+            fallback.list(dir.copy(id = XId.root(file.absolutePath)))
+        } catch (e: IOException) {
+            // Keep the message the user's action actually produced, but carry the privileged
+            // failure as the cause so a dead transport is still diagnosable.
+            throw IOException(directError.message, e)
+        }
     }
 
     override fun stat(id: String): XEntry? {

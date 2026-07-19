@@ -15,10 +15,13 @@ import kotlinx.coroutines.launch
 fun initGraph(graph: Graph) {
     ShizukuGate.initialize(Graph.appContext)
 
-    graph.fsRegistry.register(LocalFileSystem(graph.legacySaf))
+    // The local fs falls back to the privileged transport for directories File I/O cannot
+    // read (Android/data and Android/obb under scoped storage), so share one instance.
+    val rootFs = RootFileSystem()
+    graph.fsRegistry.register(LocalFileSystem(graph.legacySaf, privilegedFallback = rootFs))
     graph.fsRegistry.register(ArchiveFileSystem())
     graph.fsRegistry.register(AppsFileSystem(Graph.appContext))
-    graph.fsRegistry.register(RootFileSystem())
+    graph.fsRegistry.register(rootFs)
 
     graph.roots = DefaultRootsRepository(
         Graph.appContext,
