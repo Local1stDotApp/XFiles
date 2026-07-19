@@ -3,7 +3,7 @@ package app.local1st.files.ui.main
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.local1st.files.core.fs.EntryKind
-import app.local1st.files.core.fs.RootAccess
+import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.ops.FileOp
@@ -87,7 +87,7 @@ class MainViewModel : ViewModel() {
         // emission — restoreSession applies it and builds the roots itself.
         viewModelScope.launch {
             Graph.settings.rootEnabled.drop(1).collect { enabled ->
-                RootAccess.enabled = enabled
+                PrivilegedAccess.enabled = enabled
                 // Invalidate before reloading: cached root:// listings must not stay
                 // browsable after disabling (nor keep gate errors after re-enabling),
                 // and pinned root:// favorites survive the roots rebuild.
@@ -134,7 +134,7 @@ class MainViewModel : ViewModel() {
     private suspend fun restoreSession() {
         // Restore inputs must be settled first: the root gate (a saved root:// position
         // stats through it) and the favorites cache (saved ids may live under a pinned root).
-        RootAccess.enabled = Graph.settings.rootEnabled.first()
+        PrivilegedAccess.enabled = Graph.settings.rootEnabled.first()
         Graph.favorites.first { it != null }
         val session = Graph.settings.loadSession()
         activePane.value = session.activePane.coerceIn(0, panes.lastIndex)

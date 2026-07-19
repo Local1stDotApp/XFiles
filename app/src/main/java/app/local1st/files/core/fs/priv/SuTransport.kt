@@ -1,4 +1,4 @@
-package app.local1st.files.core.fs
+package app.local1st.files.core.fs.priv
 
 import java.io.BufferedReader
 import java.io.BufferedWriter
@@ -14,7 +14,16 @@ import java.io.OutputStream
  * ([openRead]/[openWrite]) still use dedicated processes.
  * All calls block and must run on Dispatchers.IO.
  */
-object RootShell {
+object SuTransport : PrivilegedTransport {
+
+    override val id: TransportId = TransportId.SU
+
+    override val caps: Caps = Caps(
+        appPrivateData = true,
+        wholeFilesystem = true,
+        remount = true,
+        otherUsers = true,
+    )
 
     @Volatile
     private var availableCache: Boolean? = null
@@ -27,7 +36,7 @@ object RootShell {
     private var mountMaster: Boolean = true
 
     /** Whether `su` exists and grants uid 0. Result is cached after the first probe. */
-    fun isAvailable(): Boolean {
+    override fun isAvailable(): Boolean {
         availableCache?.let { return it }
         if (probe(useMountMaster = true)) {
             mountMaster = true
@@ -61,7 +70,7 @@ object RootShell {
 
     /** Forget the cached availability (e.g. after the user grants/revokes superuser). */
     @Synchronized
-    fun resetCache() {
+    override fun reset() {
         availableCache = null
         closeShell()
     }
@@ -81,7 +90,7 @@ object RootShell {
      */
     @Throws(IOException::class)
     @Synchronized
-    fun exec(script: String): String {
+    override fun exec(script: String): String {
         val (code, output) = try {
             runCommand(script)
         } catch (e: IOException) {
@@ -103,7 +112,7 @@ object RootShell {
      * persistent shell's lock.
      */
     @Throws(IOException::class)
-    fun execOneShot(script: String): String {
+    override fun execOneShot(script: String): String {
         val process = ProcessBuilder(suArgv(script)).start()
         val stdout = process.inputStream.bufferedReader().readText()
         val stderr = process.errorStream.bufferedReader().readText()
@@ -163,20 +172,17 @@ object RootShell {
 
     /** Streams the bytes of [path] out of `cat`. Caller must close the stream. */
     @Throws(IOException::class)
-    fun openRead(path: String): InputStream {
-        val process = ProcessBuilder(suArgv("cat ${quote(path)}")).start()
+    override fun openRead(path: String): InputStream {
+        val process = ProcessBuilder(suArgv("cat ${shQuote(path)}")).start()
         return RootInputStream(process)
     }
 
     /** Streams bytes into `cat > path` (creates/truncates). Caller must close to commit. */
     @Throws(IOException::class)
-    fun openWrite(path: String): OutputStream {
-        val process = ProcessBuilder(suArgv("cat > ${quote(path)}")).start()
+    override fun openWrite(path: String): OutputStream {
+        val process = ProcessBuilder(suArgv("cat > ${shQuote(path)}")).start()
         return RootOutputStream(process)
     }
-
-    /** Single-quotes a path for safe embedding in a shell command. */
-    fun quote(path: String): String = "'" + path.replace("'", "'\\''") + "'"
 
     private class RootInputStream(private val process: Process) : InputStream() {
         private val delegate = process.inputStream

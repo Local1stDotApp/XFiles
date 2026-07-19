@@ -6,6 +6,7 @@ import android.os.Environment
 import android.os.StatFs
 import android.os.storage.StorageManager
 import android.os.storage.StorageVolume
+import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.prefs.Favorite
 import app.local1st.files.core.util.Format
 import java.io.File
@@ -50,8 +51,8 @@ class DefaultRootsRepository(
         // Superuser access to "/" (X-plore's "Root"), gated behind the Settings switch so it
         // (and the `su` probe) only appears when the user opts in. Prefer real root via `su`;
         // fall back to a plain non-privileged view only if "/" is readable without it.
-        if (RootAccess.enabled) {
-            if (RootShell.isAvailable()) {
+        if (PrivilegedAccess.enabled) {
+            if (PrivilegedAccess.caps.wholeFilesystem) {
                 specials += RootFileSystem.rootEntry()
             } else {
                 val fsRoot = File("/")

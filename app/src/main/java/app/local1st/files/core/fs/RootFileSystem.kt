@@ -1,5 +1,8 @@
 package app.local1st.files.core.fs
 
+import app.local1st.files.core.fs.priv.PrivilegedAccess
+import app.local1st.files.core.fs.priv.PrivilegedTransport
+import app.local1st.files.core.fs.priv.shQuote
 import app.local1st.files.core.util.FileTypes
 import java.io.IOException
 import java.io.InputStream
@@ -32,7 +35,7 @@ class RootFileSystem : XFileSystem {
         // dir stays browsable; dangling links error out of stat, so a builtin-only
         // loop (zero extra forks) re-emits those, and `:` keeps exit 0.
         val script = buildString {
-            append("d=").append(RootShell.quote(path)).append('\n')
+            append("d=").append(shQuote(path)).append('\n')
             append("[ -d \"\$d\" ] || { echo __XF_ERR__; exit 0; }\n")
             append("b=\${d%/}\n")
             append("printf '%s\\0' \"\$b\"/* \"\$b\"/.* | xargs -0 stat -L -c '%F|%s|%Y|%n' 2>/dev/null\n")
@@ -41,7 +44,7 @@ class RootFileSystem : XFileSystem {
             append("done\n")
             append(":\n")
         }
-        val output = RootShell.exec(script)
+        val output = activeTransport().exec(script)
         // Exact-first-line match only: data lines carry full paths (stat %n), so a
         // substring check would false-positive on any path containing the marker.
         if (output.lineSequence().firstOrNull() == "__XF_ERR__") {
@@ -67,17 +70,17 @@ class RootFileSystem : XFileSystem {
         // Soft-fail when root browsing is off: a pinned/saved root:// id then reads as
         // "gone" (favorites show Not available, session restore falls back) without
         // spawning `su` behind the user's back.
-        if (!RootAccess.enabled) return null
+        if (!PrivilegedAccess.enabled) return null
         val path = id.substringAfter("://")
         if (path == "/" || path.isEmpty()) return rootEntry()
         val script = buildString {
-            append("p=").append(RootShell.quote(path)).append('\n')
+            append("p=").append(shQuote(path)).append('\n')
             append("if [ -d \"\$p\" ]; then t=d; ")
             append("elif [ -e \"\$p\" ] || [ -L \"\$p\" ]; then t=f; ")
             append("else echo __XF_NONE__; exit 0; fi\n")
             append("stat -c \"\$t|%s|%Y\" \"\$p\" 2>/dev/null\n")
         }
-        val output = runCatching { RootShell.exec(script) }.getOrNull() ?: return null
+        val output = runCatching { PrivilegedAccess.active?.exec(script) }.getOrNull() ?: return null
         if (output.contains("__XF_NONE__")) return null
         val line = output.lineSequence().firstOrNull { it.contains('|') } ?: return null
         val parts = line.split("|")
@@ -92,18 +95,18 @@ class RootFileSystem : XFileSystem {
 
     override fun openIn(entry: XEntry): InputStream {
         requireEnabled()
-        return RootShell.openRead(entry.path)
+        return activeTransport().openRead(entry.path)
     }
 
     override fun openOut(parentDir: XEntry, name: String): OutputStream {
         requireWritable()
-        return RootShell.openWrite(XId.joinPath(parentDir.path, name))
+        return activeTransport().openWrite(XId.joinPath(parentDir.path, name))
     }
 
     override fun mkdir(parentDir: XEntry, name: String): XEntry {
         requireWritable()
         val childPath = XId.joinPath(parentDir.path, name)
-        RootShell.exec("mkdir -p ${RootShell.quote(childPath)}")
+        activeTransport().exec("mkdir -p ${shQuote(childPath)}")
         return toEntry(parentDir.path, name, isDir = true, size = -1L, mtime = 0L)
     }
 
@@ -111,18 +114,18 @@ class RootFileSystem : XFileSystem {
         requireWritable()
         // Own process: a recursive delete can run for minutes and must not queue
         // every root listing behind it on the persistent shell's lock.
-        RootShell.execOneShot("rm -rf ${RootShell.quote(entry.path)}")
+        activeTransport().execOneShot("rm -rf ${shQuote(entry.path)}")
     }
 
     override fun rename(entry: XEntry, newName: String): XEntry {
         requireWritable()
         val parentPath = entry.path.trimEnd('/').substringBeforeLast('/', "").ifEmpty { "/" }
         val dst = XId.joinPath(parentPath, newName)
-        RootShell.exec("mv -f ${RootShell.quote(entry.path)} ${RootShell.quote(dst)}")
+        activeTransport().exec("mv -f ${shQuote(entry.path)} ${shQuote(dst)}")
         return toEntry(parentPath, newName, entry.isDir, entry.size, entry.mtime)
     }
 
-    override fun canWrite(entry: XEntry): Boolean = !RootAccess.readOnly
+    override fun canWrite(entry: XEntry): Boolean = !PrivilegedAccess.readOnly
 
     /**
      * The Settings switch must gate every `su` use, not just the Root pane's visibility:
@@ -130,14 +133,17 @@ class RootFileSystem : XFileSystem {
      * the user turns the feature off.
      */
     private fun requireEnabled() {
-        if (!RootAccess.enabled) throw IOException("Root browsing is disabled in Settings")
+        if (!PrivilegedAccess.enabled) throw IOException("Root browsing is disabled in Settings")
     }
 
     /** In read-only root mode, any write that would need superuser is refused up front. */
     private fun requireWritable() {
         requireEnabled()
-        if (RootAccess.readOnly) throw IOException("Read-only root mode — enable writes in Settings")
+        if (PrivilegedAccess.readOnly) throw IOException("Read-only root mode — enable writes in Settings")
     }
+
+    private fun activeTransport(): PrivilegedTransport =
+        PrivilegedAccess.active ?: throw IOException("Root access is unavailable")
 
     private fun toEntry(
         parentPath: String,
@@ -156,7 +162,7 @@ class RootFileSystem : XFileSystem {
             mime = if (isDir) null else FileTypes.mimeOf(name),
             hidden = name.startsWith("."),
             canRead = true,
-            canWrite = !RootAccess.readOnly,
+            canWrite = !PrivilegedAccess.readOnly,
             kind = if (isDir) EntryKind.DIR else EntryKind.FILE,
             localPath = null,
         )
@@ -172,8 +178,8 @@ class RootFileSystem : XFileSystem {
             isDir = true,
             kind = EntryKind.ROOT,
             canRead = true,
-            canWrite = !RootAccess.readOnly,
-            badge = if (RootAccess.readOnly) "Superuser · read-only" else "Superuser · /",
+            canWrite = !PrivilegedAccess.readOnly,
+            badge = if (PrivilegedAccess.readOnly) "Superuser · read-only" else "Superuser · /",
             localPath = null,
         )
     }

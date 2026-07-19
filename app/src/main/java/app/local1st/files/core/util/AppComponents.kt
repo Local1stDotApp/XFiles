@@ -6,8 +6,8 @@ import android.content.pm.ComponentInfo
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
-import app.local1st.files.core.fs.RootAccess
-import app.local1st.files.core.fs.RootShell
+import app.local1st.files.core.fs.priv.PrivilegedAccess
+import app.local1st.files.core.fs.priv.shQuote
 import java.io.IOException
 
 /** The four Android manifest component kinds, with display label and id slug. */
@@ -94,7 +94,7 @@ object AppComponents {
      * call off the main thread.
      */
     fun canToggle(context: Context, packageName: String): Boolean =
-        packageName == context.packageName || RootAccess.usable()
+        packageName == context.packageName || PrivilegedAccess.usable()
 
     /**
      * The component's effective enabled state: the runtime override when one is set, else the
@@ -137,11 +137,12 @@ object AppComponents {
             )
             return
         }
-        if (!RootAccess.usable()) {
+        if (!PrivilegedAccess.usable()) {
             throw IOException("Changing another app's components needs root")
         }
         val verb = if (enabled) "enable" else "disable"
-        RootShell.exec("pm $verb ${RootShell.quote(name.flattenToString())}")
+        PrivilegedAccess.active?.exec("pm $verb ${shQuote(name.flattenToString())}")
+            ?: throw IOException("Changing another app's components needs root")
     }
 
     private fun componentName(component: Parsed): ComponentName =

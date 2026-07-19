@@ -4,8 +4,8 @@ import app.local1st.files.core.fs.AppsFileSystem
 import app.local1st.files.core.fs.ArchiveFileSystem
 import app.local1st.files.core.fs.DefaultRootsRepository
 import app.local1st.files.core.fs.LocalFileSystem
-import app.local1st.files.core.fs.RootAccess
 import app.local1st.files.core.fs.RootFileSystem
+import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.ops.DefaultOperationEngine
 import app.local1st.files.core.search.DefaultSearchEngine
 import kotlinx.coroutines.launch
@@ -27,6 +27,6 @@ fun initGraph(graph: Graph) {
 
     // Mirror the root-access settings into the process-wide gate consulted by the fs layer.
     // App-lifetime so file operations honor read-only mode even without a UI in the foreground.
-    Graph.appScope.launch { Graph.settings.rootEnabled.collect { RootAccess.enabled = it } }
-    Graph.appScope.launch { Graph.settings.rootReadOnly.collect { RootAccess.readOnly = it } }
+    Graph.appScope.launch { Graph.settings.rootEnabled.collect { PrivilegedAccess.enabled = it } }
+    Graph.appScope.launch { Graph.settings.rootReadOnly.collect { PrivilegedAccess.readOnly = it } }
 }

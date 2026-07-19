@@ -6,6 +6,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Environment
+import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.util.AppComponent
 import app.local1st.files.core.util.AppComponents
 import app.local1st.files.core.util.ComponentType
@@ -126,8 +127,11 @@ class AppsFileSystem(private val context: Context) : XFileSystem {
             .sortedBy { it.name }
             .forEach { out += apkEntry(it) }
 
-        // Private internal data — only meaningful (and readable) with root.
-        if (RootAccess.usable()) {
+        // Private internal data. Needs real root, not merely a privileged transport:
+        // /data/data is SELinux-denied to the adb shell domain (media_userdir_file /
+        // *_app_data_file are not in shell's allow set), so a Shizuku-backed transport
+        // would list an entry that can never open.
+        if (PrivilegedAccess.enabled && PrivilegedAccess.caps.appPrivateData) {
             out += rootDirEntry("/data/data/$packageName", "Data (internal)")
         }
 
@@ -219,7 +223,7 @@ class AppsFileSystem(private val context: Context) : XFileSystem {
                 localPath = dir.absolutePath,
             )
             // Scoped storage hides other apps' data/obb from File I/O; root can still reach them.
-            RootAccess.usable() -> out += rootDirEntry(dir.absolutePath, label)
+            PrivilegedAccess.usable() -> out += rootDirEntry(dir.absolutePath, label)
             // else: not accessible without root — omit rather than show an un-openable stub.
         }
     }
@@ -244,7 +248,7 @@ class AppsFileSystem(private val context: Context) : XFileSystem {
         isDir = true,
         kind = EntryKind.DIR,
         canRead = true,
-        canWrite = !RootAccess.readOnly,
+        canWrite = !PrivilegedAccess.readOnly,
         badge = "root · $path",
         localPath = null,
     )
