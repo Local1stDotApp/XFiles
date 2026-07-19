@@ -4,12 +4,24 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- folder body -->
+    <!--
+      Only the middle 72dp of this 108dp canvas survives the launcher's mask.
+      Sized off Gmail, the closest Google icon in spirit (a wide shape in the same
+      circle): its ink spans 70% of the mask's diameter, so the folder is 50dp wide.
+      Height follows from proportion rather than the mask - at the old 56x34 the
+      folder was flat enough (1.65) that its corners crowded the rim while the space
+      above and below it sat empty. 50x36 (1.39, near Material's own folder glyph)
+      keeps the same visual weight with the corners pulled in to a 29.2dp radius.
+
+      One path, evenOdd: the X is punched out of the folder as a hole rather than
+      painted over it in the background colour. On the launcher icon
+      the hole exposes the same @color/ic_launcher_background, so it looks identical -
+      but this drawable is also the monochrome layer, and a themed icon tints every
+      opaque pixel one colour. Painted on top, the X would flatten into the folder and
+      vanish; as a hole it stays transparent and survives the tint.
+    -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M30,38 L44,38 L48,43 L78,43 A4,4 0 0 1 82,47 L82,68 A4,4 0 0 1 78,72 L30,72 A4,4 0 0 1 26,68 L26,42 A4,4 0 0 1 30,38 Z" />
-    <!-- X mark -->
-    <path
-        android:fillColor="#FF1B6EF3"
-        android:pathData="M47,51 L51,51 L54,55.5 L57,51 L61,51 L56.4,58 L61,65 L57,65 L54,60.5 L51,65 L47,65 L51.6,58 Z" />
+        android:fillType="evenOdd"
+        android:pathData="M33,36 L45,36 L49,42 L75,42 A4,4 0 0 1 79,46 L79,68 A4,4 0 0 1 75,72 L33,72 A4,4 0 0 1 29,68 L29,40 A4,4 0 0 1 33,36 Z M47,50 L51,50 L54,54.5 L57,50 L61,50 L56.4,57 L61,64 L57,64 L54,59.5 L51,64 L47,64 L51.6,57 Z" />
 </vector>
