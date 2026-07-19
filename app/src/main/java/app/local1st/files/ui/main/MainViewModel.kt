@@ -259,6 +259,16 @@ class MainViewModel : ViewModel() {
         viewer.value = ViewerRequest.Hex(entry)
     }
 
+    fun openWith(entry: XEntry) {
+        if (entry.localPath == null) {
+            snackbar.tryEmit("Open with requires a local file")
+            return
+        }
+        if (!IntentUtils.openWith(Graph.appContext, entry)) {
+            snackbar.tryEmit("No app can open ${entry.name}")
+        }
+    }
+
     /** Expand an app and its base APK so the APK's zip contents show inline. */
     fun openAppAsZip(app: XEntry) {
         activeCtrl.revealAppApk(app)
@@ -319,7 +329,10 @@ class MainViewModel : ViewModel() {
      * thread; the system shows its own confirm UI and the result arrives as a toast.
      */
     fun installPackage(entry: XEntry) {
-        val path = entry.localPath ?: run { snackbar.tryEmit("Nothing to install"); return }
+        val path = entry.localPath ?: run {
+            snackbar.tryEmit("Install requires a local file")
+            return
+        }
         val label = entry.name.substringBeforeLast('.').ifBlank { entry.name }
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -503,7 +516,16 @@ class MainViewModel : ViewModel() {
     }
 
     fun shareSelection(entries: List<XEntry> = activeCtrl.selectionEntries()) {
-        IntentUtils.share(Graph.appContext, entries.filter { !it.isDir })
+        val files = entries.filter { !it.isDir }
+        if (files.isEmpty()) {
+            snackbar.tryEmit("Select a file to share")
+            return
+        }
+        if (files.any { it.localPath == null }) {
+            snackbar.tryEmit("Share requires local files")
+            return
+        }
+        IntentUtils.share(Graph.appContext, files)
     }
 
     fun openSearch() {

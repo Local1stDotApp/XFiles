@@ -25,6 +25,8 @@ import androidx.compose.material.icons.outlined.Window
 import androidx.compose.ui.graphics.vector.ImageVector
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.XEntry
+import app.local1st.files.core.fs.XId
+import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.util.AppComponents
 import app.local1st.files.core.util.ComponentType
 import app.local1st.files.core.util.FileCategory
@@ -81,7 +83,9 @@ object EntryIcons {
     fun wantsThumbnail(entry: XEntry): Boolean {
         // size < 0 = stat failed mid-listing: nothing decodable behind the entry, and a
         // video's (path, mtime, size) thumb-cache key would be degenerate.
-        if (entry.localPath == null || entry.isDir || entry.size < 0) return false
+        val readableModel = entry.localPath != null ||
+            (entry.scheme == XId.SCHEME_ROOT && PrivilegedAccess.canOpenFd())
+        if (!readableModel || entry.isDir || entry.size < 0) return false
         return when (FileTypes.categoryOf(entry.name, entry.mime)) {
             FileCategory.IMAGE, FileCategory.VIDEO -> true
             else -> false

@@ -15,6 +15,8 @@ fun shQuote(path: String): String = "'" + path.replace("'", "'\\''") + "'"
 interface PrivilegedTransport {
     val id: TransportId
     val caps: Caps
+    /** Whether [openFd] is a real seekable binder-backed channel, rather than the null default. */
+    val supportsFileDescriptors: Boolean get() = false
     fun isAvailable(): Boolean
     fun exec(script: String): String
     fun execOneShot(script: String): String

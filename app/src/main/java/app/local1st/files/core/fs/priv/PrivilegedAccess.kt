@@ -39,6 +39,9 @@ object PrivilegedAccess {
     /** True when root browsing is enabled AND a privileged transport is available. */
     fun usable(): Boolean = enabled && active != null
 
+    /** True only for an active transport whose opener rights can cross binder on a real fd. */
+    fun canOpenFd(): Boolean = enabled && active?.supportsFileDescriptors == true
+
     private val NO_CAPS = Caps(
         appPrivateData = false,
         wholeFilesystem = false,

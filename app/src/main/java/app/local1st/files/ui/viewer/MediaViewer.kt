@@ -1,5 +1,6 @@
 package app.local1st.files.ui.viewer
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,7 +55,11 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.datasource.DefaultDataSource
 import app.local1st.files.core.fs.XEntry
+import app.local1st.files.core.fs.XId
+import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.util.FileCategory
 import app.local1st.files.core.util.FileTypes
 import app.local1st.files.ui.components.TooltipIconButton
@@ -65,14 +70,17 @@ import kotlinx.coroutines.isActive
 
 /**
  * media3 playback: PlayerView for video, an Expressive card UI for audio.
- * Only entries with a real local file are playable; others are skipped.
+ * Local files use Media3's normal file source; root:// files use a binder-opened seekable fd.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
-    val playable = remember(entry.id, playlist) {
-        playlist.ifEmpty { listOf(entry) }.filter { it.localPath != null }
+    val privilegedFdAvailable = PrivilegedAccess.canOpenFd()
+    val playable = remember(entry.id, playlist, privilegedFdAvailable) {
+        playlist.ifEmpty { listOf(entry) }.filter {
+            it.localPath != null || (it.scheme == XId.SCHEME_ROOT && privilegedFdAvailable)
+        }
     }
     if (playable.isEmpty()) {
         Column(
@@ -82,7 +90,7 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
         ) {
             Text("Cannot play ${entry.name}", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Only files with a local copy can be played.",
+                "This file has no local or seekable privileged source.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
@@ -99,12 +107,20 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
         playable.indexOfFirst { it.id == entry.id }.coerceAtLeast(0)
     }
     val player = remember {
+        val dataSourceFactory = DefaultDataSource.Factory(context, PrivilegedDataSource.Factory())
         ExoPlayer.Builder(context)
+            .setMediaSourceFactory(
+                DefaultMediaSourceFactory(context).setDataSourceFactory(dataSourceFactory),
+            )
             .setAudioAttributes(AudioAttributes.DEFAULT, true)
             .build()
             .apply {
                 setMediaItems(
-                    playable.map { MediaItem.fromUri(File(checkNotNull(it.localPath)).toUri()) },
+                    playable.map {
+                        val uri = it.localPath?.let { path -> File(path).toUri() }
+                            ?: Uri.Builder().scheme(XId.SCHEME_ROOT).path(it.path).build()
+                        MediaItem.fromUri(uri)
+                    },
                     startIndex,
                     C.TIME_UNSET,
                 )

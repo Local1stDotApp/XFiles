@@ -28,6 +28,7 @@ import rikka.shizuku.Shizuku
 object ShizukuTransport : PrivilegedTransport {
 
     override val id: TransportId = TransportId.SHIZUKU
+    override val supportsFileDescriptors: Boolean = true
 
     // uid 2000 has the supplementary GIDs needed for Android/data and Android/obb, but the
     // shell SELinux domain is denied on /data/data and /data/media. It also cannot remount

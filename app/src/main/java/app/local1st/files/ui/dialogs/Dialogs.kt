@@ -228,10 +228,19 @@ private fun EntryMenuContent(
         }
 
         if (!entry.isDir) {
-            MenuItem("Open with…") { IntentUtils.openWith(context, entry); dismiss() }
+            val hasLocalFile = entry.localPath != null
+            MenuItem(
+                label = "Open with…",
+                enabled = hasLocalFile,
+                disabledReason = "Requires a local file",
+            ) { vm.openWith(entry); dismiss() }
             MenuItem("Open as text") { vm.openAsText(entry); dismiss() }
             MenuItem("Open as hex") { vm.openAsHex(entry); dismiss() }
-            MenuItem("Share") { vm.shareSelection(listOf(entry)); dismiss() }
+            MenuItem(
+                label = "Share",
+                enabled = hasLocalFile,
+                disabledReason = "Requires a local file",
+            ) { vm.shareSelection(listOf(entry)); dismiss() }
         }
         // Explicit copy/move to a chosen folder (works from a single item too).
         MenuItem("Copy to…") { vm.copySelection(move = false, sources = listOf(entry)); dismiss() }
@@ -246,9 +255,13 @@ private fun EntryMenuContent(
                 vm.extractArchive(entry)
                 dismiss()
             }
-            if (entry.extension == "apk" || entry.extension == "apks") {
-                MenuItem("Install") { vm.installPackage(entry); dismiss() }
-            }
+        }
+        if (!entry.isDir && (entry.extension == "apk" || entry.extension == "apks")) {
+            MenuItem(
+                label = "Install",
+                enabled = entry.localPath != null,
+                disabledReason = "Requires a local file",
+            ) { vm.installPackage(entry); dismiss() }
         }
         if (entry.canWrite) {
             MenuItem("Rename") { vm.requestRename(entry) }
@@ -258,13 +271,27 @@ private fun EntryMenuContent(
 }
 
 @Composable
-private fun MenuItem(label: String, onClick: () -> Unit) {
+private fun MenuItem(
+    label: String,
+    enabled: Boolean = true,
+    disabledReason: String? = null,
+    onClick: () -> Unit,
+) {
     TextButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp),
     ) {
-        Text(label, modifier = Modifier.fillMaxWidth())
+        Column(Modifier.fillMaxWidth()) {
+            Text(label)
+            if (!enabled && disabledReason != null) {
+                Text(
+                    disabledReason,
+                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
     }
 }

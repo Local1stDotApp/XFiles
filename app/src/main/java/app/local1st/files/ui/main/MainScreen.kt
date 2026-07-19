@@ -93,6 +93,12 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 
     val activeState = if (activePane == 0) pane0State else pane1State
     val selectionCount = activeState.selection.size
+    val selectedFiles = if (selectionCount > 0) {
+        vm.activeCtrl.selectionEntries().filter { !it.isDir }
+    } else {
+        emptyList()
+    }
+    val canShareSelection = selectedFiles.isNotEmpty() && selectedFiles.all { it.localPath != null }
 
     LaunchedEffect(vm) {
         vm.snackbar.collect { snackbarHostState.showSnackbar(it) }
@@ -247,7 +253,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                             }
                             TooltipIconButton("Delete", Icons.Outlined.Delete) { vm.requestDelete() }
                             TooltipIconButton("Zip", Icons.Outlined.Archive) { vm.requestCompress() }
-                            TooltipIconButton("Share", Icons.Outlined.Share) { vm.shareSelection() }
+                            TooltipIconButton(
+                                label = if (canShareSelection) "Share" else "Share requires local files",
+                                icon = Icons.Outlined.Share,
+                                enabled = canShareSelection,
+                            ) { vm.shareSelection() }
                         } else {
                             TooltipIconButton("New folder", Icons.Outlined.CreateNewFolder) {
                                 vm.requestNewFolder()

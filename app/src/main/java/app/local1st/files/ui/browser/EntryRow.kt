@@ -51,6 +51,7 @@ import coil3.compose.AsyncImagePainter
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.thumb.AppIcon
+import app.local1st.files.core.thumb.PrivFile
 import app.local1st.files.core.thumb.VideoThumb
 import app.local1st.files.core.util.FileCategory
 import app.local1st.files.core.util.FileTypes
@@ -257,8 +258,16 @@ private fun EntryThumbnail(entry: XEntry) {
             )
         }
         AsyncImage(
-            model = if (isVideo) VideoThumb(entry.localPath!!, entry.mtime, entry.size)
-            else File(entry.localPath!!),
+            model = when {
+                isVideo -> VideoThumb(
+                    path = entry.localPath ?: entry.path,
+                    mtime = entry.mtime,
+                    size = entry.size,
+                    privileged = entry.localPath == null,
+                )
+                entry.localPath != null -> File(entry.localPath)
+                else -> PrivFile(entry.path, entry.mtime, entry.size)
+            },
             contentDescription = null,
             contentScale = ContentScale.Crop,
             onState = { loaded = it is AsyncImagePainter.State.Success },

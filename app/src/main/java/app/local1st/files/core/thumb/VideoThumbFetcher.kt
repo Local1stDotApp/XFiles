@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.os.Build
+import android.os.ParcelFileDescriptor
+import app.local1st.files.core.fs.priv.PrivilegedAccess
 import coil3.ImageLoader
 import coil3.asImage
 import coil3.decode.DataSource
@@ -28,7 +30,12 @@ import java.util.concurrent.TimeUnit
  * Coil model for a video file's poster frame. [mtime]/[size] are part of the cache key,
  * so an overwritten video naturally invalidates its stale thumbnail.
  */
-data class VideoThumb(val path: String, val mtime: Long, val size: Long)
+data class VideoThumb(
+    val path: String,
+    val mtime: Long,
+    val size: Long,
+    val privileged: Boolean = false,
+)
 
 /**
  * Extracts a small poster frame from a local video and keeps it in an on-disk thumbnail
@@ -61,7 +68,7 @@ class VideoThumbFetcher(
                 CacheRead.Failed -> return@withPermit null
                 CacheRead.Miss -> {}
             }
-            val bitmap = extractFrame(data.path)
+            val bitmap = extractFrame(data)
             writeCache(cached, bitmap)
             bitmap?.let {
                 ImageFetchResult(image = it.asImage(), isSampled = true, dataSource = DataSource.DISK)
@@ -118,8 +125,9 @@ class VideoThumbFetcher(
         }
     }.getOrDefault(false)
 
-    private fun extractFrame(path: String): Bitmap? {
+    private fun extractFrame(data: VideoThumb): Bitmap? {
         val retriever = MediaMetadataRetriever()
+        var descriptor: ParcelFileDescriptor? = null
         // A malformed stream can wedge the native call indefinitely while it holds one of
         // the two extraction permits; release() from another thread aborts it with an
         // exception. The lock keeps watchdog and normal teardown from double-releasing.
@@ -129,7 +137,15 @@ class VideoThumbFetcher(
         }
         val watchdog = watchdogExecutor.schedule({ release() }, EXTRACT_TIMEOUT_S, TimeUnit.SECONDS)
         return try {
-            retriever.setDataSource(path)
+            if (data.privileged) {
+                val transport = PrivilegedAccess.active
+                    ?.takeIf { PrivilegedAccess.enabled && it.supportsFileDescriptors }
+                    ?: return null
+                descriptor = transport.openFd(data.path, write = false) ?: return null
+                retriever.setDataSource(descriptor.fileDescriptor)
+            } else {
+                retriever.setDataSource(data.path)
+            }
             // timeUs -1 = the format's representative frame. Scaled decode caps the
             // output at thumb size instead of a full video-resolution bitmap.
             if (Build.VERSION.SDK_INT >= 27) {
@@ -144,6 +160,8 @@ class VideoThumbFetcher(
         } finally {
             watchdog.cancel(false)
             release()
+            // MediaMetadataRetriever does not own the caller's descriptor.
+            runCatching { descriptor?.close() }
         }
     }
 

@@ -42,7 +42,8 @@ object IntentUtils {
     }
 
     fun share(context: Context, entries: List<XEntry>) {
-        val uris = entries.mapNotNull { it.localPath }.map { uriFor(context, it) }
+        // Never silently share only the local subset of a mixed selection.
+        val uris = entries.map { uriFor(context, it.localPath ?: return) }
         if (uris.isEmpty()) return
         val intent = if (uris.size == 1) {
             Intent(Intent.ACTION_SEND)
