@@ -1,0 +1,8 @@
+First public release.
+
+Dual-pane tree browser with in-place folder expansion, inline image and video
+thumbnails, archives browsable as folders, an app manager with per-app components
+and split APKs, optional read-only root access, and viewers for image, text, hex,
+audio and video (with frame-accurate stepping).
+
+No network permission. Nothing leaves your device.

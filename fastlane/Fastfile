@@ -1,0 +1,79 @@
+# frozen_string_literal: true
+#
+# Google Play lanes for XFiles. Mirrors the proven setup in
+# local1st/nearby/flutter_app/fastlane/Fastfile, minus the Apple platforms —
+# XFiles is a plain Gradle Android app, so there is no Flutter/xcframework step.
+#
+# Prerequisites that a HUMAN must do once in the Play Console (see
+# docs/play-submission.md):
+#   * the app "app.local1st.files" exists          <- no API can create it
+#   * Play App Signing enrolled, upload key registered
+#   * the service account has Release access TO THIS APP (account-level access
+#     covers it automatically; app-scoped access must be extended to XFiles)
+#   * the FIRST bundle is uploaded by hand — the Play API routinely refuses the
+#     very first upload of a brand-new package. Afterwards these lanes take over.
+
+APP_IDENTIFIER = "app.local1st.files"
+METADATA_PATH  = "./fastlane/metadata/android"
+
+default_platform(:android)
+
+# Prefer raw JSON from a CI secret, else a local key-file path.
+def play_credentials
+  if ENV["PLAY_SERVICE_ACCOUNT_JSON"].to_s.strip != ""
+    { json_key_data: ENV["PLAY_SERVICE_ACCOUNT_JSON"] }
+  elsif ENV["PLAY_JSON_KEY_PATH"].to_s.strip != ""
+    { json_key: ENV["PLAY_JSON_KEY_PATH"] }
+  else
+    UI.user_error!("No Play credentials. Set PLAY_SERVICE_ACCOUNT_JSON (raw JSON) or PLAY_JSON_KEY_PATH (file path).")
+  end
+end
+
+platform :android do
+  desc "Validate the Play service-account credential (no upload)"
+  lane :validate_play do
+    validate_play_store_json_key(**play_credentials)
+  end
+
+  desc "Build the signed release AAB. Param: build_number"
+  lane :build_aab do |options|
+    build_number = options[:build_number] || ENV["GITHUB_RUN_NUMBER"] || Time.now.strftime("%y%m%d%H%M").to_i
+    UI.user_error!("XFILES_KEYSTORE is not set — the build would be unsigned.") if ENV["XFILES_KEYSTORE"].to_s.strip == ""
+    gradle(task: "bundle", build_type: "Release", flags: "-PbuildNumber=#{build_number} --no-daemon")
+    UI.success("AAB at app/build/outputs/bundle/release/app-release.aab")
+  end
+
+  # metadata:true also pushes listing text, images and screenshots from
+  # fastlane/metadata/android. Left OFF by default so a routine binary upload
+  # can never silently rewrite a reviewed store listing.
+  desc "Upload an existing AAB. Params: track (default internal), aab, metadata (default false)"
+  lane :upload_play do |options|
+    track    = options[:track] || "internal"
+    aab      = options[:aab] || "app/build/outputs/bundle/release/app-release.aab"
+    metadata = options[:metadata].to_s == "true"
+    UI.user_error!("AAB not found at #{aab} — run `fastlane android build_aab` first.") unless File.exist?(aab)
+
+    UI.message("Uploading #{File.basename(aab)} to Play track '#{track}'#{metadata ? ' (with store listing)' : ''}...")
+    upload_to_play_store(
+      package_name: APP_IDENTIFIER,
+      aab: aab,
+      track: track,
+      # production -> a draft you finish rolling out by hand; test tracks publish directly
+      release_status: (track == "production" ? "draft" : "completed"),
+      skip_upload_apk: true,
+      skip_upload_metadata:    !metadata,
+      skip_upload_images:      !metadata,
+      skip_upload_screenshots: !metadata,
+      skip_upload_changelogs:  !metadata,
+      metadata_path: (metadata ? METADATA_PATH : nil),
+      **play_credentials,
+    )
+    UI.success("Uploaded to Play track '#{track}'.")
+  end
+
+  desc "Build the AAB and upload it. Params: track (default internal), metadata"
+  lane :deploy do |options|
+    build_aab(options)
+    upload_play(options)
+  end
+end

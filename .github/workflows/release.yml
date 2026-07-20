@@ -27,13 +27,26 @@ jobs:
         run: |
           echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
 
-      - name: Build signed release APK
+      # APK goes to GitHub Releases for direct download; AAB is what Google Play accepts
+      # (mandatory for new apps since 2021). Both come from the same signed build.
+      - name: Build signed release APK + AAB
         env:
           XFILES_KEYSTORE: ${{ runner.temp }}/release.jks
           XFILES_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           XFILES_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           XFILES_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease -PbuildNumber=${{ github.run_number }} --no-daemon
+        run: ./gradlew :app:assembleRelease :app:bundleRelease -PbuildNumber=${{ github.run_number }} --no-daemon
+
+      # Not attached to the public release: the AAB is only useful for a Play upload,
+      # and shipping it alongside the APK would just confuse people. Grab it from the
+      # run's artifacts when you need to push a Play build.
+      - name: Upload AAB as build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: XFiles-${{ github.run_number }}-play-bundle
+          path: app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Decide release (stable vs rolling prerelease)
         id: decide
