@@ -52,6 +52,16 @@ object AabConverter {
                 } catch (second: Exception) {
                     second.addSuppressed(first)
                     throw second
+                } catch (second: LinkageError) {
+                    // Universal mode merges dex through bundletool's D8, whose internals the
+                    // vendored jar strips (see vendor/bundletool-shaded); only multi-module
+                    // bundles with minSdk < 21 reach it. That arrives as a LinkageError, which
+                    // the caller's Exception handler would miss — report the failure instead.
+                    throw IllegalStateException(
+                        "Cannot build APKs for this device, and the universal fallback needs " +
+                            "dex merging that this build omits",
+                        first,
+                    )
                 }
             }
             if (apkFiles.isEmpty()) throw IllegalStateException("Bundletool produced no installable APK")

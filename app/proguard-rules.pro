@@ -30,3 +30,6 @@
 }
 
 -dontwarn app.local1st.files.vendor.**
+
+# bundletool's embedded R8 is stripped from the shaded jar; D8DexMerger keeps referencing it.
+-dontwarn shadow.bundletool.com.android.tools.r8.**

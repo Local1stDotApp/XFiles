@@ -58,6 +58,21 @@ val shadowJar = tasks.named<ShadowJar>("shadowJar") {
     // DEX/class JARs rejected by D8/R8 and intentionally makes ApkBuildMode.ARCHIVE unusable.
     exclude("com/android/tools/build/bundletool/archive/dex/**")
     exclude("META-INF/services/com.android.tools.r8.internal.WE")
+
+    // bundletool ships its own obfuscated R8, whose internals collide case-insensitively
+    // (A.class beside a.class). R8 then rejects the whole jar as a duplicate type whenever the
+    // build machine's filesystem is case-insensitive, as the macOS CI runner's is. Dagger
+    // instantiates D8DexMerger while assembling the BuildApks component, so the public API it
+    // links against has to survive; the internals only matter to run a merge, and bundletool
+    // merges dex solely for multi-feature-module bundles with minSdk < 21 — device-targeted
+    // splits never merge, and universal mode renames shards instead from minSdk 21 up.
+    // AabConverter turns the resulting LinkageError into an ordinary install failure.
+    // Every collision sits in R8's obfuscated internals: these packages, plus the single-letter
+    // classes of the API package. What is left is R8's public API, which is uniquely named.
+    listOf("internal", "code", "graph", "shaking", "naming", "synthesis", "utils").forEach {
+        exclude("shadow/bundletool/com/android/tools/r8/$it/**")
+    }
+    exclude("shadow/bundletool/com/android/tools/r8/?.class")
     exclude("META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA")
     exclude("META-INF/versions/**/module-info.class", "module-info.class")
     exclude("META-INF/maven/**")
