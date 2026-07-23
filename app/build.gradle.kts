@@ -116,7 +116,6 @@ dependencies {
     implementation(libs.xz)
     implementation(libs.junrar)
     implementation(project(path = ":vendor:bundletool-shaded", configuration = "shadedRuntimeElements"))
-    implementation(libs.bouncycastle.bcpkix)
     implementation(libs.arsclib)
 
     implementation(libs.media3.exoplayer)

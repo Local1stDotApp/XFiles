@@ -21,11 +21,6 @@ import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Date
 import java.util.UUID
-import org.bouncycastle.asn1.x500.X500Name
-import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
-import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
-import org.bouncycastle.jce.provider.BouncyCastleProvider
-import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 
 object AabConverter {
 
@@ -130,12 +125,11 @@ object AabConverter {
 
     @Synchronized
     private fun signingConfiguration(context: Context): SigningResult {
-        val provider = BouncyCastleProvider()
         val storeFile = File(context.filesDir, SIGNING_KEY_FILE)
         var regenerated = false
         if (storeFile.isFile) {
             try {
-                val (privateKey, certificate) = loadSigningKey(storeFile, provider)
+                val (privateKey, certificate) = loadSigningKey(storeFile)
                 return SigningResult(
                     SigningConfiguration.builder().setSignerConfig(privateKey, certificate).build(),
                     regenerated = false,
@@ -146,23 +140,15 @@ object AabConverter {
             }
         }
 
-        val keyPair = KeyPairGenerator.getInstance("RSA", provider).apply { initialize(2048) }.generateKeyPair()
+        val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
         val now = System.currentTimeMillis()
-        val name = X500Name("CN=XFiles AAB Installer")
-        val certificateBuilder = JcaX509v3CertificateBuilder(
-            name,
-            BigInteger(159, SecureRandom()).setBit(158),
-            Date(now - DAY_MILLIS),
-            Date(now + CERT_VALIDITY_MILLIS),
-            name,
-            keyPair.public,
+        val certificate = SelfSignedCertificate.create(
+            keyPair = keyPair,
+            commonName = "XFiles AAB Installer",
+            notBefore = Date(now - DAY_MILLIS),
+            notAfter = Date(now + CERT_VALIDITY_MILLIS),
+            serial = BigInteger(159, SecureRandom()).setBit(158),
         )
-        val signer = JcaContentSignerBuilder("SHA256withRSA")
-            .setProvider(provider)
-            .build(keyPair.private)
-        val certificate = JcaX509CertificateConverter()
-            .setProvider(provider)
-            .getCertificate(certificateBuilder.build(signer))
         val temp = File(context.filesDir, "$SIGNING_KEY_FILE.tmp")
         DataOutputStream(FileOutputStream(temp).buffered()).use { output ->
             output.writeInt(KEY_FILE_VERSION)
@@ -181,9 +167,10 @@ object AabConverter {
         )
     }
 
+    // The stored form is standard PKCS#8 + DER, so keys written by earlier releases (which used
+    // BouncyCastle) still load through the platform providers.
     private fun loadSigningKey(
         file: File,
-        provider: BouncyCastleProvider,
     ): Pair<PrivateKey, X509Certificate> = DataInputStream(FileInputStream(file).buffered()).use { input ->
         if (input.readInt() != KEY_FILE_VERSION) throw IllegalStateException("Unknown bundle signing key format")
         val keyBytes = ByteArray(input.readInt().takeIf { it in 1..MAX_KEY_BYTES }
@@ -192,9 +179,9 @@ object AabConverter {
         val certificateBytes = ByteArray(input.readInt().takeIf { it in 1..MAX_KEY_BYTES }
             ?: throw IllegalStateException("Invalid bundle signing certificate"))
         input.readFully(certificateBytes)
-        val privateKey = KeyFactory.getInstance("RSA", provider)
+        val privateKey = KeyFactory.getInstance("RSA")
             .generatePrivate(PKCS8EncodedKeySpec(keyBytes))
-        val certificate = CertificateFactory.getInstance("X.509", provider)
+        val certificate = CertificateFactory.getInstance("X.509")
             .generateCertificate(certificateBytes.inputStream()) as X509Certificate
         privateKey to certificate
     }

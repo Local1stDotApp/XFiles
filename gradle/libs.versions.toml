@@ -36,7 +36,6 @@ failureAccess = "1.0.2"
 shadow = "9.0.0-beta12"
 
 # Direct app dependencies; unlike the shaded bundletool internals, keep these current.
-bouncycastle = "1.85"
 # pinned to 1.3.5 — 1.3.8's table writer drops the string type in our proto→arsc
 # path; revisit only with an on-device-verified fix.
 arsclib = "1.3.5"
@@ -65,7 +64,6 @@ commons-compress = { group = "org.apache.commons", name = "commons-compress", ve
 xz = { group = "org.tukaani", name = "xz", version.ref = "xz" }
 junrar = { group = "com.github.junrar", name = "junrar", version.ref = "junrar" }
 bundletool = { group = "com.android.tools.build", name = "bundletool", version.ref = "bundletool" }
-bouncycastle-bcpkix = { group = "org.bouncycastle", name = "bcpkix-jdk18on", version.ref = "bouncycastle" }
 protobuf-java = { group = "com.google.protobuf", name = "protobuf-java", version.ref = "protobuf" }
 guava = { group = "com.google.guava", name = "guava", version.ref = "guava" }
 aapt2-proto = { group = "com.android.tools.build", name = "aapt2-proto", version.ref = "aapt2Proto" }
