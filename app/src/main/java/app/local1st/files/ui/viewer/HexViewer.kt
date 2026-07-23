@@ -30,8 +30,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.util.Format
@@ -91,14 +93,14 @@ fun HexViewer(entry: XEntry, onClose: () -> Unit) {
                 else -> result.fold(
                     onSuccess = { data ->
                         if (data.size > HEX_STREAM_LIMIT) {
-                            HexBanner("Showing the first 8 MB of ${entry.name}")
+                            HexBanner(stringResource(R.string.showing_first_8_mb, entry.name))
                         }
                         StreamHexRows(data, Modifier.weight(1f))
                     },
                     onFailure = { e ->
                         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                             Text(
-                                e.message ?: "Cannot read ${entry.name}",
+                                e.message ?: stringResource(R.string.cannot_read, entry.name),
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.padding(24.dp),
                             )
@@ -127,7 +129,7 @@ private fun HexTopBar(name: String, sizeBytes: Long, onClose: () -> Unit) {
             }
         },
         navigationIcon = {
-            TooltipIconButton("Close", Icons.Outlined.Close, onClick = onClose)
+            TooltipIconButton(stringResource(R.string.close), Icons.Outlined.Close, onClick = onClose)
         },
     )
 }
@@ -188,7 +190,7 @@ private fun StreamHexRows(data: ByteArray, modifier: Modifier) {
 private fun HexRowList(rowCount: Int, modifier: Modifier, rowText: @Composable (Int) -> String) {
     if (rowCount == 0) {
         Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-            Text("Empty file", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.empty_file), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
@@ -231,7 +233,7 @@ private class HexPageCache(private val file: File) {
                     }
                 }
             } catch (e: IOException) {
-                error.value = e.message ?: "Read error in ${file.name}"
+                error.value = e.message ?: Graph.appContext.getString(R.string.read_error, file.name)
                 ByteArray(0)
             }
             trimIfNeeded()

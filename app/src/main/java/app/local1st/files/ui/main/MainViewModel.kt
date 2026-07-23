@@ -1,5 +1,10 @@
 package app.local1st.files.ui.main
 
+import android.content.Intent
+import android.net.Uri
+import android.os.SystemClock
+import android.provider.Settings
+import app.local1st.files.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.local1st.files.core.fs.EntryKind
@@ -7,6 +12,7 @@ import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.ops.FileOp
+import app.local1st.files.core.util.AabConverter
 import app.local1st.files.core.util.ApkInstaller
 import app.local1st.files.core.util.AppComponents
 import app.local1st.files.core.util.ComponentType
@@ -15,11 +21,15 @@ import app.local1st.files.core.prefs.SessionPane
 import app.local1st.files.core.prefs.SessionState
 import app.local1st.files.core.util.FileCategory
 import app.local1st.files.core.util.FileTypes
+import app.local1st.files.core.util.ExternalOpenKind
+import app.local1st.files.core.util.ExternalOpenResolver
 import app.local1st.files.core.util.IntentUtils
+import app.local1st.files.core.util.XapkObbInstaller
 import app.local1st.files.di.Graph
 import java.io.File
 import java.io.FileInputStream
 import java.util.zip.ZipFile
+import java.util.concurrent.ConcurrentHashMap
 import app.local1st.files.ui.browser.PaneController
 import app.local1st.files.ui.dialogs.DialogRequest
 import app.local1st.files.ui.viewer.ViewerRequest
@@ -35,10 +45,20 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+data class PackageInstallProgress(
+    val label: String,
+    val message: String,
+    val startedAtRealtimeMillis: Long,
+)
+
 class MainViewModel : ViewModel() {
+    private fun text(@androidx.annotation.StringRes id: Int, vararg formatArgs: Any): String =
+        Graph.appContext.getString(id, *formatArgs)
+
 
     val panes = listOf(
         PaneController(0, viewModelScope),
@@ -60,6 +80,9 @@ class MainViewModel : ViewModel() {
 
     val snackbar = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
+    /** Long-running package preparation that must remain visible after a Snackbar expires. */
+    val packageInstallProgress = MutableStateFlow<Map<String, PackageInstallProgress>>(emptyMap())
+
     val activeCtrl: PaneController get() = panes[activePane.value]
     val inactiveCtrl: PaneController get() = panes[1 - activePane.value]
 
@@ -68,6 +91,9 @@ class MainViewModel : ViewModel() {
 
     /** True once the auto-saver runs; gates the final flush in [onCleared]. */
     private var persistenceStarted = false
+
+    /** Prevents two install jobs from racing on the same archive/OBB destinations. */
+    private val installsInFlight = ConcurrentHashMap.newKeySet<String>()
 
     init {
         // Without storage access every listing fails, so restoring now would only degrade
@@ -209,11 +235,11 @@ class MainViewModel : ViewModel() {
             runCatching { Graph.settings.setFavorites(updated) }.fold(
                 onSuccess = {
                     snackbar.tryEmit(
-                        if (add) "Added ${entry.name} to favorites"
-                        else "Removed ${entry.name} from favorites",
+                        if (add) text(R.string.favorites_added, entry.name)
+                        else text(R.string.favorites_removed, entry.name),
                     )
                 },
-                onFailure = { snackbar.tryEmit("Couldn't update favorites") },
+                onFailure = { snackbar.tryEmit(text(R.string.favorites_update_failed)) },
             )
         }
     }
@@ -269,6 +295,28 @@ class MainViewModel : ViewModel() {
         }
     }
 
+    /** Routes an ACTION_VIEW delivered through one of the user-enabled manifest aliases. */
+    fun openExternalIntent(intent: Intent) {
+        if (intent.action != Intent.ACTION_VIEW || intent.data == null) return
+        viewModelScope.launch {
+            val resolved = withContext(Dispatchers.IO) {
+                runCatching { ExternalOpenResolver.resolve(Graph.appContext, intent) }
+            }
+            resolved.fold(
+                onSuccess = { (kind, entry) ->
+                    when (kind) {
+                        ExternalOpenKind.ARCHIVE -> dialog.value = DialogRequest.EntryMenu(entry)
+                        ExternalOpenKind.IMAGE -> viewer.value = ViewerRequest.Image(listOf(entry), 0)
+                        ExternalOpenKind.VIDEO -> viewer.value = ViewerRequest.Media(entry, listOf(entry))
+                    }
+                },
+                onFailure = { error ->
+                    snackbar.tryEmit(error.message ?: text(R.string.generic_error))
+                },
+            )
+        }
+    }
+
     /** Expand an app and its base APK so the APK's zip contents show inline. */
     fun openAppAsZip(app: XEntry) {
         activeCtrl.revealAppApk(app)
@@ -284,7 +332,7 @@ class MainViewModel : ViewModel() {
         val c = AppComponents.parseId(entry.id) ?: return
         if (c.type != ComponentType.ACTIVITY) return
         if (!IntentUtils.launchActivity(Graph.appContext, c.packageName, c.className)) {
-            snackbar.tryEmit("Can't launch ${entry.name} — it may not be exported")
+            snackbar.tryEmit(text(R.string.cannot_launch_component, entry.name))
         }
     }
 
@@ -297,8 +345,8 @@ class MainViewModel : ViewModel() {
                 Graph.appContext, c.packageName, c.className, entry.name,
             )
             snackbar.tryEmit(
-                if (ok) "Shortcut requested for ${entry.name}"
-                else "Your launcher doesn't support pinning shortcuts",
+                if (ok) text(R.string.shortcut_requested, entry.name)
+                else text(R.string.shortcut_not_supported),
             )
         }
     }
@@ -315,53 +363,102 @@ class MainViewModel : ViewModel() {
             }
             result.fold(
                 onSuccess = {
-                    snackbar.tryEmit("${if (enabled) "Enabled" else "Disabled"} ${entry.name}")
+                    snackbar.tryEmit(text(if (enabled) R.string.component_enabled else R.string.component_disabled, entry.name))
                     XId.parent(entry.id)?.let { parent -> panes.forEach { it.refresh(parent) } }
                 },
-                onFailure = { snackbar.tryEmit(it.message ?: "Cannot change ${entry.name}") },
+                onFailure = { snackbar.tryEmit(it.message ?: text(R.string.cannot_change, entry.name)) },
             )
         }
     }
 
     /**
-     * Installs an `.apk`, or a split bundle (`.apks`) by feeding base + every split into one
-     * [ApkInstaller] session — the only way to install a split app. Reads bytes off the main
-     * thread; the system shows its own confirm UI and the result arrives as a toast.
+     * Installs an APK, split bundle, XAPK with expansion files, or converts an AAB first. Reads
+     * bytes off the main thread; the system shows its own confirm UI and reports the result.
      */
     fun installPackage(entry: XEntry) {
-        val path = entry.localPath ?: run {
-            snackbar.tryEmit("Install requires a local file")
+        val path = entry.localPath ?: run { snackbar.tryEmit(text(R.string.nothing_to_install)); return }
+        if (!installsInFlight.add(entry.id)) {
+            snackbar.tryEmit(text(R.string.already_installing, entry.name))
             return
         }
         val label = entry.name.substringBeforeLast('.').ifBlank { entry.name }
+        val showPersistentProgress = entry.extension == "aab"
+        if (showPersistentProgress) {
+            packageInstallProgress.update { progress ->
+                progress + (entry.id to PackageInstallProgress(
+                    label = label,
+                    message = text(R.string.building_apks),
+                    startedAtRealtimeMillis = SystemClock.elapsedRealtime(),
+                ))
+            }
+        }
         viewModelScope.launch(Dispatchers.IO) {
+            var keepGuardUntilResult = false
             try {
-                snackbar.tryEmit("Preparing to install $label…")
+                if (!showPersistentProgress) snackbar.tryEmit(text(R.string.preparing_install, label))
                 val file = File(path)
                 if (entry.extension == "apk") {
                     val source = ApkInstaller.ApkSource(file.name, file.length()) { FileInputStream(file) }
                     ApkInstaller.install(Graph.appContext, label, listOf(source))
+                } else if (entry.extension == "aab") {
+                    AabConverter.install(Graph.appContext, file, label) {
+                        snackbar.tryEmit(
+                            text(R.string.aab_key_regenerated),
+                        )
+                    }
                 } else {
                     // A bundle: install every APK member (base + splits) together.
                     ZipFile(file).use { zip ->
-                        val apks = buildList {
-                            val entries = zip.entries()
-                            while (entries.hasMoreElements()) {
-                                val e = entries.nextElement()
-                                if (!e.isDirectory && e.name.substringAfterLast('/').endsWith(".apk", true)) {
-                                    add(ApkInstaller.ApkSource(e.name, e.size) { zip.getInputStream(e) })
+                        val obbs = if (entry.extension == "xapk") XapkObbInstaller.findObbs(zip) else emptyList()
+                        if (obbs.isNotEmpty()) snackbar.tryEmit(text(R.string.extracting_obb))
+                        val placement = XapkObbInstaller.place(Graph.appContext, zip, obbs)
+                        var submitted = false
+                        try {
+                            val apks = buildList {
+                                val entries = zip.entries()
+                                while (entries.hasMoreElements()) {
+                                    val e = entries.nextElement()
+                                    if (!e.isDirectory && e.name.substringAfterLast('/').endsWith(".apk", true)) {
+                                        add(ApkInstaller.ApkSource(e.name, e.size) { zip.getInputStream(e) })
+                                    }
                                 }
                             }
+                            if (apks.isEmpty()) throw IllegalArgumentException("No APK inside ${entry.name}")
+                            ApkInstaller.install(Graph.appContext, label, apks) { success ->
+                                Graph.appScope.launch(Dispatchers.IO) {
+                                    if (success) placement.commit() else placement.cleanUp()
+                                }
+                                installsInFlight.remove(entry.id)
+                            }
+                            submitted = true
+                            keepGuardUntilResult = true
+                        } finally {
+                            if (!submitted) placement.cleanUp()
                         }
-                        if (apks.isEmpty()) {
-                            snackbar.tryEmit("No APK inside ${entry.name}")
-                            return@use
-                        }
-                        ApkInstaller.install(Graph.appContext, label, apks)
                     }
                 }
+            } catch (e: XapkObbInstaller.UnknownSourcesPermissionException) {
+                snackbar.tryEmit(e.message ?: text(R.string.enable_unknown_apps))
+                Graph.appContext.startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:${Graph.appContext.packageName}"),
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
             } catch (e: Exception) {
-                snackbar.tryEmit("Install failed: ${e.message ?: "error"}")
+                val message = generateSequence<Throwable>(e) { it.cause }
+                    .mapNotNull { it.message }
+                    .firstOrNull()
+                    ?.lineSequence()
+                    ?.firstOrNull()
+                    ?.take(180)
+                    ?: text(R.string.generic_error)
+                snackbar.tryEmit(text(R.string.install_failed, message))
+            } finally {
+                if (showPersistentProgress) {
+                    packageInstallProgress.update { progress -> progress - entry.id }
+                }
+                if (!keepGuardUntilResult) installsInFlight.remove(entry.id)
             }
         }
     }
@@ -398,7 +495,7 @@ class MainViewModel : ViewModel() {
         val transfer = pendingTransfer.value ?: return
         pendingTransfer.value = null
         if (!isValidDest(destDir)) {
-            snackbar.tryEmit("Cannot write to ${destDir.name}")
+            snackbar.tryEmit(text(R.string.cannot_write, destDir.name))
             return
         }
         if (transfer.compress) {
@@ -424,7 +521,7 @@ class MainViewModel : ViewModel() {
                 }
                 folder.fold(
                     onSuccess = { Graph.opEngine.submit(FileOp.Extract(archive, it)) },
-                    onFailure = { snackbar.tryEmit(it.message ?: "Cannot create folder") },
+                    onFailure = { snackbar.tryEmit(it.message ?: text(R.string.cannot_create_folder)) },
                 )
             }
         } else {
@@ -474,7 +571,7 @@ class MainViewModel : ViewModel() {
     fun requestNewFolder() {
         val parent = activeCtrl.focusedDirEntry() ?: return
         if (!isValidDest(parent)) {
-            snackbar.tryEmit("Cannot create folder in ${parent.name}")
+            snackbar.tryEmit(text(R.string.cannot_create_folder_in, parent.name))
             return
         }
         dialog.value = DialogRequest.NewFolder(parent)
@@ -491,7 +588,7 @@ class MainViewModel : ViewModel() {
                     activeCtrl.expand(parent)
                     panes.forEach { it.refresh(parent.id) }
                 },
-                onFailure = { snackbar.tryEmit(it.message ?: "Cannot create folder") },
+                onFailure = { snackbar.tryEmit(it.message ?: text(R.string.cannot_create_folder)) },
             )
         }
     }
@@ -510,7 +607,7 @@ class MainViewModel : ViewModel() {
                 onSuccess = {
                     XId.parent(entry.id)?.let { parent -> panes.forEach { it.refresh(parent) } }
                 },
-                onFailure = { snackbar.tryEmit(it.message ?: "Rename failed") },
+                onFailure = { snackbar.tryEmit(it.message ?: text(R.string.rename_failed)) },
             )
         }
     }

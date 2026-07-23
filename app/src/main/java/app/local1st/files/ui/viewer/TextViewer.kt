@@ -34,9 +34,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.local1st.files.R
 import app.local1st.files.core.fs.LocalFileSystem
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
@@ -60,6 +62,9 @@ private const val TEXT_LIMIT_BYTES = 2 * 1024 * 1024
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun TextViewer(entry: XEntry, onClose: () -> Unit) {
+    val cannotRead = stringResource(R.string.cannot_read, entry.name)
+    val saveFailed = stringResource(R.string.save_failed)
+    val saved = stringResource(R.string.saved, entry.name)
     var text by remember { mutableStateOf<String?>(null) }
     var truncated by remember { mutableStateOf(false) }
     var isAxml by remember { mutableStateOf(false) }
@@ -94,7 +99,7 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
                 truncated = r.truncated
                 isAxml = r.axml
             },
-            onFailure = { loadError = it.message ?: "Cannot read ${entry.name}" },
+            onFailure = { loadError = it.message ?: cannotRead },
         )
     }
 
@@ -124,9 +129,9 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
                 onSuccess = {
                     text = editText
                     editing = false
-                    feedback = "Saved ${entry.name}"
+                    feedback = saved
                 },
-                onFailure = { feedback = it.message ?: "Save failed" },
+                onFailure = { feedback = it.message ?: saveFailed },
             )
         }
     }
@@ -144,7 +149,7 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
                     val shown = if (editing) editText else text
                     if (shown != null) {
                         Text(
-                            "${countLines(shown)} lines",
+                            stringResource(R.string.lines, countLines(shown)),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -152,20 +157,20 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
                 }
             },
             navigationIcon = {
-                TooltipIconButton("Close", Icons.Outlined.Close, onClick = onClose)
+                TooltipIconButton(stringResource(R.string.close), Icons.Outlined.Close, onClick = onClose)
             },
             actions = {
                 if (canEdit && text != null) {
                     if (editing) {
                         TooltipIconButton(
-                            "Save",
+                            stringResource(R.string.save),
                             Icons.Outlined.Save,
                             enabled = !saving,
                             onClick = { save() },
                         )
                     }
                     TooltipIconButton(
-                        if (editing) "Stop editing" else "Edit",
+                        stringResource(if (editing) R.string.stop_editing else R.string.edit),
                         if (editing) Icons.Outlined.EditOff else Icons.Outlined.Edit,
                         onClick = {
                             if (!editing) editText = text.orEmpty()
@@ -179,7 +184,7 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
         if (truncated) {
             Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    "File exceeds 2 MB — showing the first 2 MB (read-only)",
+                    stringResource(R.string.file_too_large),
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
@@ -189,7 +194,7 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
         if (isAxml) {
             Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
                 Text(
-                    "Decoded from Android binary XML (read-only)",
+                    stringResource(R.string.decoded_binary_xml),
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )

@@ -21,24 +21,29 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import app.local1st.files.R
 import app.local1st.files.core.ops.ConflictChoice
 import app.local1st.files.core.ops.ConflictResolution
 import app.local1st.files.core.ops.OpState
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.main.MainViewModel
+import kotlinx.coroutines.delay
 
 /** Floating progress cards + conflict dialogs for running file operations. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun OpsHost(vm: MainViewModel) {
     val ops by Graph.opEngine.active.collectAsState()
+    val installs by vm.packageInstallProgress.collectAsState()
 
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -46,6 +51,32 @@ fun OpsHost(vm: MainViewModel) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 96.dp),
     ) {
+        installs.forEach { (id, install) ->
+            key(id) {
+                val elapsedSeconds by produceState(0L, install.startedAtRealtimeMillis) {
+                    while (true) {
+                        value = (android.os.SystemClock.elapsedRealtime() -
+                            install.startedAtRealtimeMillis).coerceAtLeast(0L) / 1_000L
+                        delay(1_000L)
+                    }
+                }
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        Text(install.label, style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "${install.message}  ${elapsedSeconds / 60}:${(elapsedSeconds % 60).toString().padStart(2, '0')}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        LinearWavyProgressIndicator(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                        )
+                    }
+                }
+            }
+        }
         ops.forEach { op ->
             key(op.id) {
             val progress by op.progress.collectAsState()
@@ -64,7 +95,7 @@ fun OpsHost(vm: MainViewModel) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        TooltipIconButton("Cancel", Icons.Outlined.Close, onClick = { op.cancel() })
+                        TooltipIconButton(stringResource(R.string.cancel_operation), Icons.Outlined.Close, onClick = { op.cancel() })
                     }
                     if (progress.state == OpState.SCANNING) {
                         LinearWavyProgressIndicator(Modifier.fillMaxWidth())
@@ -82,16 +113,16 @@ fun OpsHost(vm: MainViewModel) {
                 var applyToAll by remember { mutableStateOf(false) }
                 AlertDialog(
                     onDismissRequest = {},
-                    title = { Text("Name conflict") },
+                    title = { Text(stringResource(R.string.name_conflict)) },
                     text = {
                         Column {
-                            Text("“${c.existingName}” already exists in the destination.")
+                            Text(stringResource(R.string.already_exists, c.existingName))
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.padding(top = 8.dp),
                             ) {
                                 Checkbox(checked = applyToAll, onCheckedChange = { applyToAll = it })
-                                Text("Apply to all")
+                                Text(stringResource(R.string.apply_to_all))
                             }
                         }
                     },
@@ -99,13 +130,13 @@ fun OpsHost(vm: MainViewModel) {
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             TextButton(onClick = {
                                 op.resolveConflict(ConflictResolution(ConflictChoice.SKIP, applyToAll))
-                            }) { Text("Skip") }
+                            }) { Text(stringResource(R.string.skip)) }
                             TextButton(onClick = {
                                 op.resolveConflict(ConflictResolution(ConflictChoice.RENAME, applyToAll))
-                            }) { Text("Keep both") }
+                            }) { Text(stringResource(R.string.keep_both)) }
                             Button(onClick = {
                                 op.resolveConflict(ConflictResolution(ConflictChoice.OVERWRITE, applyToAll))
-                            }) { Text("Overwrite") }
+                            }) { Text(stringResource(R.string.overwrite)) }
                         }
                     },
                 )

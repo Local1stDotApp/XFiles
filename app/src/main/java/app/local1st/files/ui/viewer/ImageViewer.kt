@@ -52,10 +52,13 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import coil3.compose.AsyncImage
+import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.di.Graph
 import java.io.File
@@ -79,7 +82,7 @@ private const val MAX_IMAGE_BYTES = 64L * 1024 * 1024
 fun ImageViewer(items: List<XEntry>, startIndex: Int, onClose: () -> Unit) {
     if (items.isEmpty()) {
         Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-            Text("Nothing to show", color = Color.White)
+            Text(stringResource(R.string.nothing_to_show), color = Color.White)
         }
         return
     }
@@ -126,11 +129,11 @@ fun ImageViewer(items: List<XEntry>, startIndex: Int, onClose: () -> Unit) {
             ) {
                 TooltipBox(
                     positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                    tooltip = { PlainTooltip { Text("Close") } },
+                    tooltip = { PlainTooltip { Text(stringResource(R.string.close)) } },
                     state = rememberTooltipState(),
                 ) {
                     IconButton(onClick = onClose) {
-                        Icon(Icons.Outlined.Close, contentDescription = "Close", tint = Color.White)
+                        Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.close), tint = Color.White)
                     }
                 }
                 Text(
@@ -235,9 +238,10 @@ private fun ZoomableImagePage(
                 translationY = offset.y
             }
         val localPath = entry.localPath
-        if (localPath != null) {
+        val contentUri = entry.id.takeIf { entry.scheme == "content" }?.toUri()
+        if (localPath != null || contentUri != null) {
             AsyncImage(
-                model = File(localPath),
+                model = localPath?.let(::File) ?: contentUri,
                 contentDescription = entry.name,
                 contentScale = ContentScale.Fit,
                 modifier = imageModifier,
@@ -284,7 +288,7 @@ private fun ZoomableImagePage(
                                 tint = Color.White.copy(alpha = 0.7f),
                             )
                             Text(
-                                e.message ?: "Cannot load ${entry.name}",
+                                e.message ?: stringResource(R.string.cannot_load, entry.name),
                                 color = Color.White.copy(alpha = 0.7f),
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(top = 8.dp),

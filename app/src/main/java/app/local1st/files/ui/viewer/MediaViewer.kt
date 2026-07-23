@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,8 +56,9 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.fs.priv.PrivilegedAccess
@@ -79,7 +81,7 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
     val privilegedFdAvailable = PrivilegedAccess.canOpenFd()
     val playable = remember(entry.id, playlist, privilegedFdAvailable) {
         playlist.ifEmpty { listOf(entry) }.filter {
-            it.localPath != null || (it.scheme == XId.SCHEME_ROOT && privilegedFdAvailable)
+            mediaUri(it) != null || (it.scheme == XId.SCHEME_ROOT && privilegedFdAvailable)
         }
     }
     if (playable.isEmpty()) {
@@ -88,15 +90,15 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
-            Text("Cannot play ${entry.name}", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.cannot_play, entry.name), style = MaterialTheme.typography.titleMedium)
             Text(
-                "This file has no local or seekable privileged source.",
+                stringResource(R.string.only_local_files_playable),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),
             )
             TextButton(onClick = onClose, modifier = Modifier.padding(top = 16.dp)) {
-                Text("Close")
+                Text(stringResource(R.string.close))
             }
         }
         return
@@ -117,7 +119,7 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
             .apply {
                 setMediaItems(
                     playable.map {
-                        val uri = it.localPath?.let { path -> File(path).toUri() }
+                        val uri = mediaUri(it)
                             ?: Uri.Builder().scheme(XId.SCHEME_ROOT).path(it.path).build()
                         MediaItem.fromUri(uri)
                     },
@@ -179,6 +181,12 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
     }
 }
 
+private fun mediaUri(entry: XEntry) = when {
+    entry.localPath != null -> File(entry.localPath).toUri()
+    entry.scheme == "content" -> entry.id.toUri()
+    else -> null
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun AudioPlayerScreen(
@@ -204,9 +212,9 @@ private fun AudioPlayerScreen(
 
     Column(Modifier.fillMaxSize().navigationBarsPadding()) {
         TopAppBar(
-            title = { Text("Music") },
+            title = { Text(stringResource(R.string.music)) },
             navigationIcon = {
-                TooltipIconButton("Close", Icons.Outlined.Close, onClick = onClose)
+                TooltipIconButton(stringResource(R.string.close), Icons.Outlined.Close, onClick = onClose)
             },
         )
         Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -231,7 +239,7 @@ private fun AudioPlayerScreen(
                         modifier = Modifier.padding(top = 16.dp),
                     )
                     Text(
-                        metadata.artist?.toString()?.takeIf { it.isNotBlank() } ?: "Unknown artist",
+                        metadata.artist?.toString()?.takeIf { it.isNotBlank() } ?: stringResource(R.string.unknown_artist),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
@@ -267,14 +275,14 @@ private fun AudioPlayerScreen(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         TooltipIconButton(
-                            "Previous",
+                            stringResource(R.string.previous),
                             Icons.Outlined.SkipPrevious,
                             enabled = hasPrevious,
                             onClick = { player.seekToPreviousMediaItem() },
                         )
                         TooltipBox(
                             positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                            tooltip = { PlainTooltip { Text(if (playing) "Pause" else "Play") } },
+                            tooltip = { PlainTooltip { Text(stringResource(if (playing) R.string.pause else R.string.play)) } },
                             state = rememberTooltipState(),
                         ) {
                             FilledIconButton(
@@ -283,12 +291,12 @@ private fun AudioPlayerScreen(
                             ) {
                                 Icon(
                                     if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                                    contentDescription = if (playing) "Pause" else "Play",
+                                    contentDescription = stringResource(if (playing) R.string.pause else R.string.play),
                                 )
                             }
                         }
                         TooltipIconButton(
-                            "Next",
+                            stringResource(R.string.next),
                             Icons.Outlined.SkipNext,
                             enabled = hasNext,
                             onClick = { player.seekToNextMediaItem() },

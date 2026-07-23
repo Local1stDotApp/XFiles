@@ -37,6 +37,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -45,8 +46,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import app.local1st.files.R
 import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.fs.priv.ShizukuGate
 import app.local1st.files.core.fs.priv.ShizukuState
@@ -54,6 +57,8 @@ import app.local1st.files.core.fs.priv.TransportId
 import app.local1st.files.core.fs.priv.TransportPref
 import app.local1st.files.core.prefs.SortBy
 import app.local1st.files.core.prefs.ThemeMode
+import app.local1st.files.core.util.ExternalOpenKind
+import app.local1st.files.core.util.ExternalOpenRegistry
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.components.PredictiveBackContainer
 import app.local1st.files.ui.components.TooltipIconButton
@@ -101,6 +106,15 @@ fun SettingsOverlay(vm: MainViewModel) {
             transportPref?.takeIf { rootEnabled }?.let { PrivilegedAccess.activeFor(it)?.id }
         }
     }
+    var archivesRegistered by remember {
+        mutableStateOf(ExternalOpenRegistry.isEnabled(context, ExternalOpenKind.ARCHIVE))
+    }
+    var imagesRegistered by remember {
+        mutableStateOf(ExternalOpenRegistry.isEnabled(context, ExternalOpenKind.IMAGE))
+    }
+    var videosRegistered by remember {
+        mutableStateOf(ExternalOpenRegistry.isEnabled(context, ExternalOpenKind.VIDEO))
+    }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -112,9 +126,9 @@ fun SettingsOverlay(vm: MainViewModel) {
                 .nestedScroll(scrollBehavior.nestedScrollConnection),
             topBar = {
                 LargeFlexibleTopAppBar(
-                    title = { Text("Settings") },
+                    title = { Text(stringResource(R.string.settings)) },
                     navigationIcon = {
-                        TooltipIconButton("Back", Icons.AutoMirrored.Outlined.ArrowBack, onClick = close)
+                        TooltipIconButton(stringResource(R.string.back), Icons.AutoMirrored.Outlined.ArrowBack, onClick = close)
                     },
                     scrollBehavior = scrollBehavior,
                 )
@@ -127,66 +141,93 @@ fun SettingsOverlay(vm: MainViewModel) {
                     .padding(padding)
                     .padding(horizontal = 16.dp),
             ) {
-                SectionHeader("Appearance")
+                SectionHeader(stringResource(R.string.appearance))
                 RadioOptionsRow(
-                    title = "Theme",
+                    title = stringResource(R.string.theme),
                     options = listOf(
-                        ThemeMode.SYSTEM to "System",
-                        ThemeMode.LIGHT to "Light",
-                        ThemeMode.DARK to "Dark",
+                        ThemeMode.SYSTEM to stringResource(R.string.theme_system),
+                        ThemeMode.LIGHT to stringResource(R.string.theme_light),
+                        ThemeMode.DARK to stringResource(R.string.theme_dark),
                     ),
                     selected = themeMode,
                     onSelect = { scope.launch { settings.setThemeMode(it) } },
                 )
                 SwitchRow(
-                    title = "Dynamic color",
-                    subtitle = "Colors from your wallpaper (Android 12+)",
+                    title = stringResource(R.string.dynamic_color),
+                    subtitle = stringResource(R.string.dynamic_color_summary),
                     checked = dynamicColor,
                     onCheckedChange = { scope.launch { settings.setDynamicColor(it) } },
                 )
 
-                SectionHeader("Browsing")
+                SectionHeader(stringResource(R.string.browsing))
                 SwitchRow(
-                    title = "Show hidden files",
-                    subtitle = "Include dot-files and hidden folders",
+                    title = stringResource(R.string.show_hidden),
+                    subtitle = stringResource(R.string.show_hidden_summary),
                     checked = showHidden,
                     onCheckedChange = { scope.launch { settings.setShowHidden(it) } },
                 )
                 SwitchRow(
-                    title = "Folders first",
-                    subtitle = "List folders before files",
+                    title = stringResource(R.string.folders_first),
+                    subtitle = stringResource(R.string.folders_first_summary),
                     checked = dirsFirst,
                     onCheckedChange = { scope.launch { settings.setDirsFirst(it) } },
                 )
                 RadioOptionsRow(
-                    title = "Sort by",
+                    title = stringResource(R.string.sort_by),
                     options = listOf(
-                        SortBy.NAME to "Name",
-                        SortBy.SIZE to "Size",
-                        SortBy.DATE to "Date",
-                        SortBy.TYPE to "Type",
+                        SortBy.NAME to stringResource(R.string.sort_name),
+                        SortBy.SIZE to stringResource(R.string.sort_size),
+                        SortBy.DATE to stringResource(R.string.sort_date),
+                        SortBy.TYPE to stringResource(R.string.sort_type),
                     ),
                     selected = sortBy,
                     onSelect = { scope.launch { settings.setSortBy(it) } },
                 )
                 SwitchRow(
-                    title = "Descending",
-                    subtitle = "Reverse the sort order",
+                    title = stringResource(R.string.descending),
+                    subtitle = stringResource(R.string.descending_summary),
                     checked = sortDescending,
                     onCheckedChange = { scope.launch { settings.setSortDescending(it) } },
                 )
 
-                SectionHeader("Access")
+                SectionHeader(stringResource(R.string.file_associations))
                 SwitchRow(
-                    title = "Root access",
-                    subtitle = "Browse the whole system as superuser (needs su)",
+                    title = stringResource(R.string.open_supported_archives_with_xfiles),
+                    subtitle = stringResource(R.string.supported_archives_summary),
+                    checked = archivesRegistered,
+                    onCheckedChange = {
+                        ExternalOpenRegistry.setEnabled(context, ExternalOpenKind.ARCHIVE, it)
+                        archivesRegistered = it
+                    },
+                )
+                SwitchRow(
+                    title = stringResource(R.string.view_images_with_xfiles),
+                    checked = imagesRegistered,
+                    onCheckedChange = {
+                        ExternalOpenRegistry.setEnabled(context, ExternalOpenKind.IMAGE, it)
+                        imagesRegistered = it
+                    },
+                )
+                SwitchRow(
+                    title = stringResource(R.string.play_videos_with_xfiles),
+                    checked = videosRegistered,
+                    onCheckedChange = {
+                        ExternalOpenRegistry.setEnabled(context, ExternalOpenKind.VIDEO, it)
+                        videosRegistered = it
+                    },
+                )
+
+                SectionHeader(stringResource(R.string.root))
+                SwitchRow(
+                    title = stringResource(R.string.root_access),
+                    subtitle = stringResource(R.string.root_access_summary),
                     checked = rootEnabled,
                     onCheckedChange = { scope.launch { settings.setRootEnabled(it) } },
                 )
                 if (rootEnabled) {
                     SwitchRow(
-                        title = "Read-only",
-                        subtitle = "Block file changes that need root",
+                        title = stringResource(R.string.read_only),
+                        subtitle = stringResource(R.string.read_only_summary),
                         checked = rootReadOnly,
                         onCheckedChange = { scope.launch { settings.setRootReadOnly(it) } },
                     )
@@ -238,13 +279,13 @@ fun SettingsOverlay(vm: MainViewModel) {
                     ShizukuHelpCard(onOpenShizuku = { openShizuku(context) })
                 }
 
-                SectionHeader("About")
+                SectionHeader(stringResource(R.string.about))
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Text("XFiles", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Offline, open-source file manager. No network, no telemetry.",
+                            stringResource(R.string.app_tagline),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -267,7 +308,7 @@ fun SettingsOverlay(vm: MainViewModel) {
                                 }
                             },
                         ) {
-                            Text("Source code")
+                            Text(stringResource(R.string.source_code))
                         }
                     }
                 }

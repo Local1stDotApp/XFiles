@@ -43,9 +43,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.local1st.files.R
 import app.local1st.files.core.search.SearchHit
 import app.local1st.files.core.util.Format
 import app.local1st.files.di.Graph
@@ -71,6 +73,7 @@ fun SearchOverlay(vm: MainViewModel) {
     val root by vm.searchRoot.collectAsState()
     val r = root ?: return
     val close = { vm.searchRoot.value = null }
+    val searchFailed = stringResource(R.string.search_failed)
 
     BackHandler(onBack = close)
 
@@ -96,7 +99,7 @@ fun SearchOverlay(vm: MainViewModel) {
                         .collect { results.add(it) }
                     phase = SearchPhase.DONE
                 } catch (e: IOException) {
-                    error = e.message ?: "Search failed"
+                    error = e.message ?: searchFailed
                     phase = SearchPhase.DONE
                 }
             }
@@ -119,10 +122,10 @@ fun SearchOverlay(vm: MainViewModel) {
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .focusRequester(focusRequester),
-                placeholder = { Text("Search files (* and ? wildcards)") },
+                placeholder = { Text(stringResource(R.string.search_files_hint)) },
                 leadingIcon = {
                     TooltipIconButton(
-                        "Close search",
+                        stringResource(R.string.close_search),
                         Icons.AutoMirrored.Outlined.ArrowBack,
                         onClick = close,
                     )
@@ -130,7 +133,7 @@ fun SearchOverlay(vm: MainViewModel) {
                 trailingIcon = {
                     if (query.isNotEmpty()) {
                         TooltipIconButton(
-                            "Clear query",
+                            stringResource(R.string.clear_query),
                             Icons.Outlined.Close,
                             onClick = { query = "" },
                         )
@@ -143,7 +146,7 @@ fun SearchOverlay(vm: MainViewModel) {
             )
 
             Text(
-                "Searching in ${r.name}",
+                stringResource(R.string.searching_in, r.name),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 24.dp),
@@ -159,15 +162,16 @@ fun SearchOverlay(vm: MainViewModel) {
                     LoadingIndicator(Modifier.size(24.dp))
                     Spacer(Modifier.width(12.dp))
                     Text(
-                        if (results.isEmpty()) "Searching…" else "${results.size} found so far…",
+                        if (results.isEmpty()) stringResource(R.string.searching)
+                        else stringResource(R.string.found_so_far, results.size),
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
                 SearchPhase.DONE -> Text(
                     when {
                         error != null -> error.orEmpty()
-                        results.size == 1 -> "1 result"
-                        else -> "${results.size} results"
+                        results.size == 1 -> stringResource(R.string.one_result)
+                        else -> stringResource(R.string.results, results.size)
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = if (error != null) MaterialTheme.colorScheme.error
@@ -181,14 +185,14 @@ fun SearchOverlay(vm: MainViewModel) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     when (phase) {
                         SearchPhase.IDLE -> Text(
-                            "Type at least $MIN_QUERY_LENGTH characters to search",
+                            stringResource(R.string.search_minimum_length, MIN_QUERY_LENGTH),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         SearchPhase.SEARCHING -> LoadingIndicator()
                         SearchPhase.DONE -> if (error == null) {
                             Text(
-                                "No results for \"${query.trim()}\"",
+                                stringResource(R.string.no_results_for, query.trim()),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

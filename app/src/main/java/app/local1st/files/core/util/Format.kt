@@ -1,6 +1,7 @@
 package app.local1st.files.core.util
 
-import java.text.SimpleDateFormat
+import java.text.DateFormat
+import java.text.NumberFormat
 import java.util.Date
 import java.util.Locale
 
@@ -16,12 +17,17 @@ object Format {
             value /= 1024
             unit++
         }
-        return if (value >= 100) "%.0f %s".format(Locale.US, value, units[unit])
-        else "%.1f %s".format(Locale.US, value, units[unit])
+        val number = NumberFormat.getNumberInstance(Locale.getDefault()).apply {
+            maximumFractionDigits = if (value >= 100) 0 else 1
+            minimumFractionDigits = 0
+        }.format(value)
+        return "$number ${units[unit]}"
     }
 
-    private val dateFmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-
     fun dateTime(epochMillis: Long): String =
-        if (epochMillis <= 0) "" else dateFmt.format(Date(epochMillis))
+        if (epochMillis <= 0) "" else DateFormat.getDateTimeInstance(
+            DateFormat.SHORT,
+            DateFormat.SHORT,
+            Locale.getDefault(),
+        ).format(Date(epochMillis))
 }

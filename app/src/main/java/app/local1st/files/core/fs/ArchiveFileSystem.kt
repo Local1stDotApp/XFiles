@@ -120,7 +120,9 @@ class ArchiveFileSystem : XFileSystem {
             n.endsWith(".tar.gz") || n.endsWith(".tgz") -> ArchiveFormat.TAR_GZ
             n.endsWith(".tar.bz2") || n.endsWith(".tbz2") -> ArchiveFormat.TAR_BZ2
             n.endsWith(".tar.xz") || n.endsWith(".txz") -> ArchiveFormat.TAR_XZ
-            n.endsWith(".zip") || n.endsWith(".jar") || n.endsWith(".apk") || n.endsWith(".apks") ->
+            n.endsWith(".zip") || n.endsWith(".jar") || n.endsWith(".apk") ||
+                n.endsWith(".aab") ||
+                n.substringAfterLast('.', "") in FileTypes.apkBundleExtensions ->
                 ArchiveFormat.ZIP
             n.endsWith(".7z") -> ArchiveFormat.SEVEN_Z
             n.endsWith(".rar") -> ArchiveFormat.RAR

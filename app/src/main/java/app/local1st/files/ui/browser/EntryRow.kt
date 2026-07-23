@@ -43,11 +43,14 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
+import app.local1st.files.R
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.thumb.AppIcon
@@ -150,7 +153,7 @@ fun EntryRow(
             val rotation by animateFloatAsState(if (node.expanded) 90f else 0f, label = "chevron")
             Icon(
                 Icons.Outlined.ChevronRight,
-                contentDescription = if (node.expanded) "Collapse" else "Expand",
+                contentDescription = stringResource(if (node.expanded) R.string.collapse else R.string.expand),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .size(20.dp)
@@ -229,7 +232,7 @@ fun EntryRow(
             IconButton(onClick = onToggleSelect) {
                 Icon(
                     if (selected) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
-                    contentDescription = if (selected) "Deselect" else "Select",
+                    contentDescription = stringResource(if (selected) R.string.deselect else R.string.select),
                     tint = if (selected) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.outlineVariant,
                     modifier = Modifier.size(22.dp),
@@ -293,6 +296,7 @@ private fun EntryThumbnail(entry: XEntry) {
     }
 }
 
+@Composable
 private fun entryDetails(node: TreeNode): String {
     val entry = node.entry
     return when {
@@ -301,7 +305,9 @@ private fun entryDetails(node: TreeNode): String {
             val date = Format.dateTime(entry.mtime)
             if (date.isEmpty()) Format.bytes(entry.size) else "${Format.bytes(entry.size)} · $date"
         }
-        entry.isDir && entry.childCountHint >= 0 -> "${entry.childCountHint} items"
+        entry.isDir && entry.childCountHint >= 0 -> pluralStringResource(
+            R.plurals.item_count_plural, entry.childCountHint, entry.childCountHint,
+        )
         // Folders otherwise show just their name — dropping the bare timestamp declutters the tree.
         else -> ""
     }

@@ -40,9 +40,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.XEntry
+import app.local1st.files.R
 import app.local1st.files.core.fs.XId
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.browser.EntryIcons
@@ -106,7 +109,7 @@ fun DestinationPicker(vm: MainViewModel) {
                     list.filter { it.isDir }
                         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
                 },
-                onFailure = { error = it.message ?: "Cannot open folder"; emptyList() },
+                onFailure = { error = it.message ?: Graph.appContext.getString(R.string.cannot_open_folder); emptyList() },
             )
         }
         loading = false
@@ -121,14 +124,14 @@ fun DestinationPicker(vm: MainViewModel) {
                     Column {
                         Text(
                             when {
-                                t.compress -> "Compress to"
-                                t.extractArchiveName != null -> "Extract to"
-                                t.move -> "Move to"
-                                else -> "Copy to"
+                                t.compress -> stringResource(R.string.compress_to)
+                                t.extractArchiveName != null -> stringResource(R.string.extract_to)
+                                t.move -> stringResource(R.string.move_to_title)
+                                else -> stringResource(R.string.copy_to_title)
                             },
                         )
                         Text(
-                            "${t.sources.size} item${if (t.sources.size == 1) "" else "s"}",
+                            pluralStringResource(R.plurals.item_count_plural, t.sources.size, t.sources.size),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -136,7 +139,7 @@ fun DestinationPicker(vm: MainViewModel) {
                 },
                 navigationIcon = {
                     TooltipIconButton(
-                        "Cancel",
+                        stringResource(R.string.cancel),
                         Icons.AutoMirrored.Outlined.ArrowBack,
                         onClick = { vm.cancelTransfer() },
                     )
@@ -144,7 +147,7 @@ fun DestinationPicker(vm: MainViewModel) {
             )
 
             Text(
-                current?.let { pathLabel(it) } ?: "This device",
+                current?.let { pathLabel(it) } ?: stringResource(R.string.this_device),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
@@ -176,7 +179,7 @@ fun DestinationPicker(vm: MainViewModel) {
                         if (folders.isEmpty() && current != null) {
                             item("__empty__") {
                                 Text(
-                                    error ?: "No sub-folders here",
+                                    error ?: stringResource(R.string.no_subfolders),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(24.dp),
@@ -199,7 +202,7 @@ fun DestinationPicker(vm: MainViewModel) {
                 ) {
                     Icon(Icons.Outlined.CreateNewFolder, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("New folder")
+                    Text(stringResource(R.string.new_folder))
                 }
                 Spacer(Modifier.weight(1f))
                 Button(
@@ -208,10 +211,10 @@ fun DestinationPicker(vm: MainViewModel) {
                 ) {
                     Text(
                         when {
-                            t.compress -> "Zip here"
-                            t.extractArchiveName != null -> "Extract here"
-                            t.move -> "Move here"
-                            else -> "Copy here"
+                            t.compress -> stringResource(R.string.zip_here)
+                            t.extractArchiveName != null -> stringResource(R.string.extract_here)
+                            t.move -> stringResource(R.string.move_here)
+                            else -> stringResource(R.string.copy_here)
                         },
                     )
                 }
@@ -232,7 +235,7 @@ fun DestinationPicker(vm: MainViewModel) {
                     result.fold(
                         onSuccess = { current = it },
                         onFailure = {
-                            vm.snackbar.tryEmit(it.message ?: "Cannot create folder")
+                            vm.snackbar.tryEmit(it.message ?: Graph.appContext.getString(R.string.cannot_create_folder))
                             reloadTick++
                         },
                     )
@@ -277,7 +280,7 @@ private fun NewFolderNameDialog(onDismiss: () -> Unit, onConfirm: (String) -> Un
     var text by remember { mutableStateOf("") }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New folder") },
+        title = { Text(stringResource(R.string.new_folder)) },
         text = {
             androidx.compose.material3.OutlinedTextField(
                 value = text,
@@ -292,10 +295,10 @@ private fun NewFolderNameDialog(onDismiss: () -> Unit, onConfirm: (String) -> Un
                 enabled = trimmed.isNotEmpty() && trimmed != "." && trimmed != ".." &&
                     !trimmed.contains('/') && !trimmed.contains('\\'),
                 onClick = { onConfirm(trimmed) },
-            ) { Text("Create") }
+            ) { Text(stringResource(R.string.create)) }
         },
         dismissButton = {
-            androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
+            androidx.compose.material3.TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }

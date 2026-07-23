@@ -65,10 +65,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.local1st.files.R
 import app.local1st.files.ui.appinfo.AppInfoOverlay
 import app.local1st.files.ui.browser.CrumbBarHeight
 import app.local1st.files.ui.browser.PaneView
@@ -79,7 +81,6 @@ import app.local1st.files.ui.dialogs.MainDialogs
 import app.local1st.files.ui.dialogs.OpsHost
 import app.local1st.files.ui.search.SearchOverlay
 import app.local1st.files.ui.settings.SettingsOverlay
-import app.local1st.files.ui.viewer.ViewerHost
 import app.local1st.files.di.Graph
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -212,7 +213,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         ) {
             TooltipBox(
                 positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                tooltip = { PlainTooltip { Text("Settings") } },
+                tooltip = { PlainTooltip { Text(stringResource(R.string.settings)) } },
                 state = rememberTooltipState(),
             ) {
                 Surface(
@@ -224,7 +225,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             Icons.Outlined.Settings,
-                            contentDescription = "Settings",
+                            contentDescription = stringResource(R.string.settings),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(22.dp),
                         )
@@ -247,7 +248,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 ) { hasSelection ->
                     Row {
                         if (hasSelection) {
-                            TooltipIconButton("Clear", Icons.Outlined.Close) {
+                            TooltipIconButton(stringResource(R.string.clear), Icons.Outlined.Close) {
                                 vm.activeCtrl.clearSelection()
                             }
                             Text(
@@ -255,31 +256,31 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                                 style = MaterialTheme.typography.titleMedium,
                                 modifier = Modifier.align(Alignment.CenterVertically),
                             )
-                            TooltipIconButton("Copy to…", Icons.Outlined.ContentCopy) {
+                            TooltipIconButton(stringResource(R.string.copy_to), Icons.Outlined.ContentCopy) {
                                 vm.copySelection(move = false)
                             }
-                            TooltipIconButton("Move to…", Icons.AutoMirrored.Outlined.DriveFileMove) {
+                            TooltipIconButton(stringResource(R.string.move_to), Icons.AutoMirrored.Outlined.DriveFileMove) {
                                 vm.copySelection(move = true)
                             }
-                            TooltipIconButton("Delete", Icons.Outlined.Delete) { vm.requestDelete() }
-                            TooltipIconButton("Zip", Icons.Outlined.Archive) { vm.requestCompress() }
+                            TooltipIconButton(stringResource(R.string.delete), Icons.Outlined.Delete) { vm.requestDelete() }
+                            TooltipIconButton(stringResource(R.string.zip), Icons.Outlined.Archive) { vm.requestCompress() }
                             TooltipIconButton(
-                                label = if (canShareSelection) "Share" else "Share requires local files",
+                                label = if (canShareSelection) stringResource(R.string.share) else "Share requires local files",
                                 icon = Icons.Outlined.Share,
                                 enabled = canShareSelection,
                             ) { vm.shareSelection() }
                         } else {
-                            TooltipIconButton("New folder", Icons.Outlined.CreateNewFolder) {
+                            TooltipIconButton(stringResource(R.string.new_folder), Icons.Outlined.CreateNewFolder) {
                                 vm.requestNewFolder()
                             }
-                            TooltipIconButton("Search", Icons.Outlined.Search) { vm.openSearch() }
-                            TooltipIconButton("Switch pane", Icons.Outlined.SwapHoriz) {
+                            TooltipIconButton(stringResource(R.string.search), Icons.Outlined.Search) { vm.openSearch() }
+                            TooltipIconButton(stringResource(R.string.switch_pane), Icons.Outlined.SwapHoriz) {
                                 vm.setActivePane(1 - activePane)
                             }
-                            TooltipIconButton("Refresh", Icons.Outlined.Refresh) {
+                            TooltipIconButton(stringResource(R.string.refresh), Icons.Outlined.Refresh) {
                                 vm.activeCtrl.refreshAllExpanded()
                             }
-                            TooltipIconButton("More", Icons.Outlined.MoreVert) {
+                            TooltipIconButton(stringResource(R.string.more), Icons.Outlined.MoreVert) {
                                 vm.activeCtrl.focusedDirEntry()
                                     ?.let { vm.dialog.value = DialogRequest.EntryMenu(it) }
                             }
@@ -301,7 +302,6 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 
     MainDialogs(vm)
     DestinationPicker(vm)
-    ViewerHost(vm)
     SearchOverlay(vm)
     SettingsOverlay(vm)
     AppInfoOverlay(vm)
