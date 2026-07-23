@@ -76,6 +76,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -91,6 +92,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.ui.PlayerView
+import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.ui.components.TooltipIconButton
 import java.util.Locale
@@ -367,7 +369,7 @@ fun VideoPlayerScreen(
                     .padding(start = 4.dp, end = 16.dp, bottom = 8.dp),
             ) {
                 IconButton(onClick = onClose) {
-                    Icon(Icons.Outlined.Close, contentDescription = "Close", tint = Color.White)
+                    Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.close), tint = Color.White)
                 }
                 Text(
                     entry.name,
@@ -526,7 +528,7 @@ fun VideoPlayerScreen(
                     ) {
                         if (hasPrevious || hasNext) {
                             TooltipIconButton(
-                                "Previous video",
+                                stringResource(R.string.previous_video),
                                 Icons.Outlined.SkipPrevious,
                                 enabled = hasPrevious,
                             ) {
@@ -535,17 +537,17 @@ fun VideoPlayerScreen(
                             }
                         }
                         if (frameMode) {
-                            TooltipIconButton("Previous frame", Icons.Outlined.ChevronLeft) {
+                            TooltipIconButton(stringResource(R.string.previous_frame), Icons.Outlined.ChevronLeft) {
                                 stepFrame(-1)
                             }
                         } else {
-                            TooltipIconButton("Back 5 seconds", Icons.Outlined.Replay5) {
+                            TooltipIconButton(stringResource(R.string.back_5_seconds), Icons.Outlined.Replay5) {
                                 stepSeconds(-STEP_SECONDS)
                             }
                         }
                         TooltipBox(
                             positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-                            tooltip = { PlainTooltip { Text(if (playing) "Pause" else "Play") } },
+                            tooltip = { PlainTooltip { Text(stringResource(if (playing) R.string.pause else R.string.play)) } },
                             state = rememberTooltipState(),
                         ) {
                             FilledIconButton(
@@ -571,22 +573,22 @@ fun VideoPlayerScreen(
                             ) {
                                 Icon(
                                     if (playing) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
-                                    contentDescription = if (playing) "Pause" else "Play",
+                                    contentDescription = stringResource(if (playing) R.string.pause else R.string.play),
                                 )
                             }
                         }
                         if (frameMode) {
-                            TooltipIconButton("Next frame", Icons.Outlined.ChevronRight) {
+                            TooltipIconButton(stringResource(R.string.next_frame), Icons.Outlined.ChevronRight) {
                                 stepFrame(1)
                             }
                         } else {
-                            TooltipIconButton("Forward 5 seconds", Icons.Outlined.Forward5) {
+                            TooltipIconButton(stringResource(R.string.forward_5_seconds), Icons.Outlined.Forward5) {
                                 stepSeconds(STEP_SECONDS)
                             }
                         }
                         if (hasPrevious || hasNext) {
                             TooltipIconButton(
-                                "Next video",
+                                stringResource(R.string.next_video),
                                 Icons.Outlined.SkipNext,
                                 enabled = hasNext,
                             ) {
@@ -616,7 +618,7 @@ private fun ModeToggleText(
     TooltipBox(
         positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
         tooltip = {
-            PlainTooltip { Text(if (frameMode) "Switch to time" else "Switch to frame counter") }
+            PlainTooltip { Text(stringResource(if (frameMode) R.string.switch_to_time else R.string.switch_to_frame_counter)) }
         },
         state = rememberTooltipState(),
     ) {

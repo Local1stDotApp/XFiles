@@ -43,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +51,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.local1st.files.R
 import coil3.compose.AsyncImage
 import app.local1st.files.core.thumb.AppIcon
 import app.local1st.files.core.util.AppDetails
@@ -86,7 +88,7 @@ fun AppInfoOverlay(vm: MainViewModel) {
                 LargeFlexibleTopAppBar(
                     title = { Text(details?.label ?: pkg, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     navigationIcon = {
-                        TooltipIconButton("Back", Icons.AutoMirrored.Outlined.ArrowBack, onClick = close)
+                        TooltipIconButton(stringResource(R.string.back), Icons.AutoMirrored.Outlined.ArrowBack, onClick = close)
                     },
                     scrollBehavior = scrollBehavior,
                 )
@@ -110,7 +112,7 @@ fun AppInfoOverlay(vm: MainViewModel) {
                 Header(d)
                 OverviewCard(d)
                 SignatureCard(d.certificates)
-                ExpandableSection("Permissions", d.permissions.size) {
+                ExpandableSection(stringResource(R.string.permissions), d.permissions.size) {
                     if (d.permissions.isEmpty()) EmptyLine()
                     else d.permissions.forEach { MonoLine(it) }
                 }
@@ -121,7 +123,7 @@ fun AppInfoOverlay(vm: MainViewModel) {
                     }
                 }
                 if (d.features.isNotEmpty()) {
-                    ExpandableSection("Features", d.features.size) {
+                    ExpandableSection(stringResource(R.string.features), d.features.size) {
                         d.features.forEach { MonoLine(it) }
                     }
                 }
@@ -159,26 +161,26 @@ private fun Header(d: AppDetails) {
 @Composable
 private fun OverviewCard(d: AppDetails) {
     val kind = buildList {
-        if (d.system) add("System") else add("User")
-        if (d.debuggable) add("Debuggable")
-        if (!d.enabled) add("Disabled")
+        if (d.system) add(stringResource(R.string.system)) else add(stringResource(R.string.user))
+        if (d.debuggable) add(stringResource(R.string.debuggable))
+        if (!d.enabled) add(stringResource(R.string.disabled))
     }.joinToString(" · ")
     SectionCard {
-        InfoRow("Type", kind)
-        InfoRow("Min / Target / Compile SDK", "${d.minSdk} / ${d.targetSdk} / ${d.compileSdk}")
-        InfoRow("APK size", Format.bytes(d.apkSize) + if (d.splitCount > 0) "  ·  ${d.splitCount} splits" else "")
-        InfoRow("Installed", Format.dateTime(d.firstInstallTime))
-        InfoRow("Updated", Format.dateTime(d.lastUpdateTime))
+        InfoRow(stringResource(R.string.type), kind)
+        InfoRow(stringResource(R.string.sdk_versions), "${d.minSdk} / ${d.targetSdk} / ${d.compileSdk}")
+        InfoRow(stringResource(R.string.apk_size), Format.bytes(d.apkSize) + if (d.splitCount > 0) "  ·  ${stringResource(R.string.splits_format, d.splitCount)}" else "")
+        InfoRow(stringResource(R.string.installed), Format.dateTime(d.firstInstallTime))
+        InfoRow(stringResource(R.string.updated), Format.dateTime(d.lastUpdateTime))
         InfoRow("UID", d.uid.toString())
-        d.installerPackage?.let { InfoRow("Installer", it) }
-        InfoRow("APK path", d.sourceDir)
-        InfoRow("Data path", d.dataDir)
+        d.installerPackage?.let { InfoRow(stringResource(R.string.installer), it) }
+        InfoRow(stringResource(R.string.apk_path), d.sourceDir)
+        InfoRow(stringResource(R.string.data_path), d.dataDir)
     }
 }
 
 @Composable
 private fun SignatureCard(certs: List<CertInfo>) {
-    ExpandableSection("Signature", certs.size, initiallyExpanded = certs.size == 1) {
+    ExpandableSection(stringResource(R.string.signature), certs.size, initiallyExpanded = certs.size == 1) {
         if (certs.isEmpty()) {
             EmptyLine()
             return@ExpandableSection
@@ -190,7 +192,7 @@ private fun SignatureCard(certs: List<CertInfo>) {
             if (c.subject.isNotEmpty()) InfoRow("Subject", c.subject)
             if (c.issuer.isNotEmpty()) InfoRow("Issuer", c.issuer)
             if (c.algorithm.isNotEmpty()) InfoRow("Algorithm", c.algorithm)
-            if (c.validTo > 0) InfoRow("Valid", "${Format.dateTime(c.validFrom)} → ${Format.dateTime(c.validTo)}")
+            if (c.validTo > 0) InfoRow(stringResource(R.string.valid), "${Format.dateTime(c.validFrom)} → ${Format.dateTime(c.validTo)}")
         }
     }
 }
@@ -238,7 +240,7 @@ private fun ExpandableSection(
                 val rotation by animateFloatAsState(if (expanded) 180f else 0f, label = "chevron")
                 Icon(
                     Icons.Outlined.ExpandMore,
-                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    contentDescription = stringResource(if (expanded) R.string.collapse else R.string.expand),
                     modifier = Modifier.padding(start = 8.dp).size(22.dp).rotate(rotation),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -270,7 +272,7 @@ private fun MonoLine(text: String) {
 
 @Composable
 private fun EmptyLine() {
-    Text("None", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text(stringResource(R.string.none), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 /** Tap-to-copy text (handy for package names and cert hashes). */
@@ -278,6 +280,7 @@ private fun EmptyLine() {
 private fun CopyableText(text: String, style: androidx.compose.ui.text.TextStyle) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    val copied = stringResource(R.string.copied)
     Text(
         text,
         style = style,
@@ -287,7 +290,7 @@ private fun CopyableText(text: String, style: androidx.compose.ui.text.TextStyle
             .horizontalScroll(rememberScrollState())
             .clickable {
                 clipboard.setText(AnnotatedString(text))
-                Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, copied, Toast.LENGTH_SHORT).show()
             },
     )
 }

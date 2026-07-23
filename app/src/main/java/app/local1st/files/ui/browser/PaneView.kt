@@ -30,10 +30,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 
@@ -156,7 +158,7 @@ private fun BreadcrumbBar(
     onCrumbClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val crumbs = remember(focusedDirId) { crumbsFor(focusedDirId) }
+    val crumbs = crumbsFor(focusedDirId)
     Surface(
         shape = RoundedCornerShape(CrumbBarHeight / 2),
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
@@ -210,17 +212,18 @@ private fun BreadcrumbBar(
     }
 }
 
+@Composable
 private fun crumbsFor(focusedDirId: String?): List<Pair<String, String>> {
     focusedDirId ?: return emptyList()
     val chain = generateSequence(focusedDirId) { XId.parent(it) }.toList().reversed()
     return chain.map { id ->
         val raw = id.substringAfter("://")
         val name = when (raw) {
-            "@user" -> "Installed"
-            "@system" -> "System"
+            "@user" -> stringResource(R.string.installed_apps)
+            "@system" -> stringResource(R.string.system_apps)
             else -> raw.trimEnd('/').substringAfterLast('/')
                 .substringAfterLast(XId.ARCHIVE_SEP)
-                .ifEmpty { if (id.startsWith(XId.SCHEME_APPS)) "Apps" else "/" }
+                .ifEmpty { if (id.startsWith(XId.SCHEME_APPS)) stringResource(R.string.apps) else "/" }
         }
         id to name
     }

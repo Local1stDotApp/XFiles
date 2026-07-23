@@ -6,6 +6,7 @@ import app.local1st.files.core.fs.XId
 import app.local1st.files.core.prefs.SortBy
 import app.local1st.files.core.util.FileCategory
 import app.local1st.files.core.util.FileTypes
+import app.local1st.files.R
 import app.local1st.files.di.Graph
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -231,9 +232,24 @@ class PaneController(
                 runCatching { registry.forEntry(entry).list(entry) }
             }
             result.fold(
-                onSuccess = { kids -> children.update { it + (entry.id to kids) } },
+                onSuccess = { kids ->
+                    children.update { it + (entry.id to kids) }
+                    // Cascade into remembered-but-unloaded sub-expansions. A restored deep
+                    // expansion sits in `expanded` with no cached children (restore only lists
+                    // dirs reachable through an already-expanded ancestor), so when its collapsed
+                    // parent is finally opened it would render as an open folder with no rows
+                    // until the user toggled it. Load such children now, as their parent's listing
+                    // lands; each recurses through its own onSuccess down the remembered chain.
+                    kids.forEach { kid ->
+                        if (kid.isContainer && kid.id in expanded.value &&
+                            children.value[kid.id] == null && kid.id !in loading.value
+                        ) {
+                            load(kid)
+                        }
+                    }
+                },
                 onFailure = { err ->
-                    errors.update { it + (entry.id to (err.message ?: "Cannot read folder")) }
+                    errors.update { it + (entry.id to (err.message ?: Graph.appContext.getString(R.string.cannot_read_folder))) }
                     children.update { it + (entry.id to emptyList()) }
                 },
             )
@@ -331,7 +347,7 @@ class PaneController(
         val kids = result.getOrDefault(emptyList())
         children.update { it + (entry.id to kids) }
         result.exceptionOrNull()
-            ?.let { e -> errors.update { it + (entry.id to (e.message ?: "Cannot read")) } }
+            ?.let { e -> errors.update { it + (entry.id to (e.message ?: Graph.appContext.getString(R.string.cannot_read, entry.name))) } }
             ?: errors.update { it - entry.id }
         loading.update { it - entry.id }
         return kids

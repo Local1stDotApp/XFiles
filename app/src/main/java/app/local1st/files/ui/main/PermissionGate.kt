@@ -30,9 +30,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import app.local1st.files.R
 
 /** True when the app can browse device storage (the same check [PermissionGate] gates on). */
 fun hasStorageAccess(context: android.content.Context): Boolean =
@@ -92,12 +94,12 @@ fun PermissionGate(onGranted: () -> Unit, content: @Composable () -> Unit) {
                 modifier = Modifier.size(72.dp),
             )
             Text(
-                "All-files access",
+                stringResource(R.string.all_files_access),
                 style = MaterialTheme.typography.headlineSmall,
                 textAlign = TextAlign.Center,
             )
             Text(
-                "Needed to browse and manage files on this device.",
+                stringResource(R.string.storage_access_summary),
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -123,7 +125,7 @@ fun PermissionGate(onGranted: () -> Unit, content: @Composable () -> Unit) {
                     )
                 }
             }) {
-                Text("Grant access")
+                Text(stringResource(R.string.grant_access))
             }
         }
     }
