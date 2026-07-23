@@ -1,4 +1,5 @@
 import java.util.Properties
+import org.gradle.api.tasks.testing.Test
 
 plugins {
     alias(libs.plugins.android.application)
@@ -61,9 +62,14 @@ android {
         compose = true
     }
 
+    // Generate Android 13+ "App language" settings from the locales that this app ships.
+    androidResources {
+        generateLocaleConfig = true
+    }
+
     packaging {
         resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE.md}"
         }
     }
 }
@@ -91,7 +97,26 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.xz)
     implementation(libs.junrar)
+    implementation(project(path = ":vendor:bundletool-shaded", configuration = "shadedRuntimeElements"))
+    implementation(libs.bouncycastle.bcpkix)
+    implementation(libs.arsclib)
 
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
+
+    testImplementation("junit:junit:4.13.2")
+}
+
+tasks.withType<Test>().configureEach {
+    systemProperty("xfiles.repo", rootDir.absolutePath)
+    val sdkDir = rootProject.file("local.properties").takeIf { it.exists() }?.let { propertiesFile ->
+        Properties().apply { propertiesFile.inputStream().use { load(it) } }.getProperty("sdk.dir")
+    }?.takeIf { it.isNotBlank() }
+        ?: System.getenv("ANDROID_HOME")?.takeIf { it.isNotBlank() }
+        ?: System.getenv("ANDROID_SDK_ROOT")?.takeIf { it.isNotBlank() }
+    sdkDir?.let { File(it, "build-tools/37.0.0") }
+        ?.let { buildTools -> listOf("aapt2", "aapt2.exe").map { File(buildTools, it) } }
+        ?.firstOrNull { it.isFile }
+        ?.let { systemProperty("xfiles.aapt2", it.absolutePath) }
+    testLogging.showStandardStreams = true
 }

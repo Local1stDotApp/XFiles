@@ -4,6 +4,7 @@ import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.FsRegistry
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
+import app.local1st.files.core.util.FileTypes
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
@@ -498,7 +499,8 @@ class DefaultOperationEngine(
         dirty += destDir.id
 
         val archiveFile = archive.localPath?.let(::File)
-        val zipFamily = archive.extension in setOf("zip", "jar", "apk", "apks")
+        val zipFamily =
+            archive.extension in setOf("zip", "jar", "apk", "aab") + FileTypes.apkBundleExtensions
 
         // Fast path: parallel multi-handle extraction to a local directory.
         if (zipFamily && archiveFile != null && archiveFile.isFile &&

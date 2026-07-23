@@ -44,7 +44,7 @@ object ZipTurbo {
         "jpg", "jpeg", "png", "gif", "webp", "heic", "heif",
         "mp4", "mkv", "avi", "mov", "webm", "m4v", "3gp",
         "mp3", "aac", "ogg", "oga", "opus", "flac", "m4a",
-        "zip", "jar", "apk", "apks", "7z", "gz", "tgz", "xz", "bz2", "rar", "zst",
+        "zip", "jar", "apk", "aab", "apks", "apkm", "xapk", "7z", "gz", "tgz", "xz", "bz2", "rar", "zst",
     )
 
     class ZipSource(
