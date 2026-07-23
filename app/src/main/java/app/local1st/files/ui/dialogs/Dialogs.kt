@@ -3,13 +3,17 @@ package app.local1st.files.ui.dialogs
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -101,8 +105,18 @@ fun MainDialogs(vm: MainViewModel) {
             confirmButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.close)) } },
         )
 
-        is DialogRequest.EntryMenu -> ModalBottomSheet(onDismissRequest = dismiss) {
-            EntryMenuContent(vm, req, dismiss)
+        is DialogRequest.EntryMenu -> {
+            val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden)
+            ModalBottomSheet(
+                onDismissRequest = dismiss,
+                sheetState = sheetState,
+                // Material3's full-surface anchored drag can keep consuming taps after the sheet
+                // settles at Expanded. Keep the upward gesture from PartiallyExpanded, then hand
+                // input to the menu once it reaches the top.
+                sheetGesturesEnabled = sheetState.currentValue != SheetValue.Expanded,
+            ) {
+                EntryMenuContent(vm, req, dismiss)
+            }
         }
     }
 }
@@ -146,7 +160,11 @@ private fun EntryMenuContent(
     val entry = req.entry
     val context = Graph.appContext
     val clipboard = LocalClipboardManager.current
-    Column(Modifier.padding(bottom = 24.dp)) {
+    Column(
+        Modifier
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 24.dp),
+    ) {
         Text(
             entry.name,
             style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
