@@ -16,9 +16,9 @@
 
 [English](README.md) · 简体中文
 
-<img src="docs/assets/demo.gif" width="800" alt="在左栏选中三张图片复制到右栏，中间会弹出目标文件夹选择器，完成后有进度提示">
+<img src="docs/assets/demo.gif" width="300" alt="一台 OnePlus 7 Pro 上的一条完整演示：在 Download 里多选两个文件，Copy to… 通过全屏选择器复制到指定目录；打开应用管理，就地展开某个应用，露出它的组件节点、base.apk 与每个 split_config 拆分包；打开 Root 浏览真实文件系统，/data 露出 adb、anr、app、app-private 等普通应用无法列出的目录">
 
-<sub>真机录制（OnePlus 7 Pro，Android 16）。在一栏选中 → <b>Copy to…</b> → 另一栏就是默认的目标目录。</sub>
+<sub>真机录制（OnePlus 7 Pro，Android 16），已加速。一条连起来：<b>Copy to…</b> 复制到指定目录 → <b>应用管理</b>（应用的组件与 APK 拆分包）→ <b>Root</b>（真实文件系统，<code>/data</code> 一览无余）。</sub>
 
 </div>
 

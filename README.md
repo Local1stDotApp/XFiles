@@ -16,9 +16,9 @@ stack with a Material 3 Expressive UI.
 
 English · [简体中文](README.zh-CN.md)
 
-<img src="docs/assets/demo.gif" width="800" alt="Selecting three photos in the left pane and copying them into the right pane, with the destination picker and a progress toast">
+<img src="docs/assets/demo.gif" width="300" alt="One tour on a OnePlus 7 Pro: multi-select two files in Download and Copy to… an explicit destination via the full-screen picker; open the App manager and expand an app in place to its Components node, base.apk and every split_config APK; open Root and browse the real filesystem, with /data revealing adb, anr, app, app-private and other root-only directories">
 
-<sub>Real capture on a OnePlus 7 Pro (Android 16). Select in one pane → <b>Copy to…</b> → the other pane is the default destination.</sub>
+<sub>Real capture on a OnePlus 7 Pro (Android 16), sped up. One run: <b>Copy to…</b> an explicit destination → <b>App manager</b> (an app's components &amp; APK splits) → <b>Root</b> (the real filesystem, <code>/data</code> and all).</sub>
 
 </div>
 
