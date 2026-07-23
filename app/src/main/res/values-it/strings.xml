@@ -82,6 +82,11 @@
     <string name="sort_type">Digitare</string>
     <string name="descending">Discendente</string>
     <string name="descending_summary">Invertire l\'ordinamento</string>
+    <string name="file_associations">Associazioni file</string>
+    <string name="open_supported_archives_with_xfiles">Usa XFiles per aprire qualsiasi archivio supportato</string>
+    <string name="supported_archives_summary">Supporta ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2 e XZ</string>
+    <string name="view_images_with_xfiles">Usa XFiles per visualizzare le immagini</string>
+    <string name="play_videos_with_xfiles">Usa XFiles per riprodurre i video</string>
     <string name="root">Root</string>
     <string name="root_access">Accesso root</string>
     <string name="root_access_summary">Naviga nell\'intero sistema come superutente (è necessario su)</string>

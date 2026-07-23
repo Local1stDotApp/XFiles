@@ -15,11 +15,11 @@ object FileTypes {
     val apkBundleExtensions = setOf("apks", "apkm", "xapk")
 
     val archiveExtensions =
-        setOf("zip", "jar", "apk", "aab", "7z", "tar", "gz", "tgz", "bz2", "xz", "rar") +
+        setOf(
+            "zip", "jar", "apk", "aab", "7z", "tar", "gz", "tgz", "bz2", "tbz2",
+            "xz", "txz", "rar",
+        ) +
             apkBundleExtensions
-
-    private val browsableExtensions =
-        setOf("zip", "jar", "apk", "aab", "7z", "tar", "rar") + apkBundleExtensions
 
     private val textExtensions = setOf(
         "txt", "md", "json", "xml", "html", "htm", "css", "js", "ts", "kt", "kts", "java",
@@ -60,8 +60,11 @@ object FileTypes {
     /** Archives we can browse into as folders. */
     fun isBrowsableArchive(name: String): Boolean {
         val ext = name.substringAfterLast('.', "").lowercase()
-        return ext in browsableExtensions
+        return ext in archiveExtensions
     }
+
+    /** Every archive or compressed-stream format backed by the archive file system. */
+    fun isSupportedArchive(name: String): Boolean = isBrowsableArchive(name)
 
     /** True for package files supported by the direct, split-bundle, or AAB install routes. */
     fun isInstallable(extension: String): Boolean =

@@ -82,6 +82,11 @@
     <string name="sort_type">유형</string>
     <string name="descending">내림차순</string>
     <string name="descending_summary">정렬 순서를 반대로 바꿈</string>
+    <string name="file_associations">파일 연결</string>
+    <string name="open_supported_archives_with_xfiles">지원되는 모든 압축 파일을 XFiles로 열기</string>
+    <string name="supported_archives_summary">ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2, XZ 지원</string>
+    <string name="view_images_with_xfiles">XFiles로 이미지 보기</string>
+    <string name="play_videos_with_xfiles">XFiles로 동영상 재생</string>
     <string name="root">Root</string>
     <string name="root_access">Root 액세스</string>
     <string name="root_access_summary">슈퍼유저로 전체 시스템 탐색(su 필요)</string>

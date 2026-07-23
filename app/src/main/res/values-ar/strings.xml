@@ -82,6 +82,11 @@
     <string name="sort_type">اكتب</string>
     <string name="descending">تنازلي</string>
     <string name="descending_summary">عكس ترتيب الفرز</string>
+    <string name="file_associations">ارتباطات الملفات</string>
+    <string name="open_supported_archives_with_xfiles">استخدام XFiles لفتح أي أرشيف مدعوم</string>
+    <string name="supported_archives_summary">يدعم ZIP وJAR وAPK وAAB وAPKS وAPKM وXAPK و7Z وRAR وTAR وTAR.GZ/TGZ وTAR.BZ2/TBZ2 وTAR.XZ/TXZ وGZ وBZ2 وXZ</string>
+    <string name="view_images_with_xfiles">استخدام XFiles لعرض الصور</string>
+    <string name="play_videos_with_xfiles">استخدام XFiles لتشغيل الفيديو</string>
     <string name="root">Root</string>
     <string name="root_access">الوصول إلى Root</string>
     <string name="root_access_summary">تصفح النظام بأكمله كمستخدم متميز (يحتاج إلى su)</string>

@@ -34,7 +34,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +49,8 @@ import androidx.compose.ui.unit.dp
 import app.local1st.files.R
 import app.local1st.files.core.prefs.SortBy
 import app.local1st.files.core.prefs.ThemeMode
+import app.local1st.files.core.util.ExternalOpenKind
+import app.local1st.files.core.util.ExternalOpenRegistry
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.components.PredictiveBackContainer
 import app.local1st.files.ui.components.TooltipIconButton
@@ -72,6 +77,15 @@ fun SettingsOverlay(vm: MainViewModel) {
     val sortDescending by settings.sortDescending.collectAsState(initial = false)
     val rootEnabled by settings.rootEnabled.collectAsState(initial = false)
     val rootReadOnly by settings.rootReadOnly.collectAsState(initial = true)
+    var archivesRegistered by remember {
+        mutableStateOf(ExternalOpenRegistry.isEnabled(context, ExternalOpenKind.ARCHIVE))
+    }
+    var imagesRegistered by remember {
+        mutableStateOf(ExternalOpenRegistry.isEnabled(context, ExternalOpenKind.IMAGE))
+    }
+    var videosRegistered by remember {
+        mutableStateOf(ExternalOpenRegistry.isEnabled(context, ExternalOpenKind.VIDEO))
+    }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
@@ -145,6 +159,33 @@ fun SettingsOverlay(vm: MainViewModel) {
                     subtitle = stringResource(R.string.descending_summary),
                     checked = sortDescending,
                     onCheckedChange = { scope.launch { settings.setSortDescending(it) } },
+                )
+
+                SectionHeader(stringResource(R.string.file_associations))
+                SwitchRow(
+                    title = stringResource(R.string.open_supported_archives_with_xfiles),
+                    subtitle = stringResource(R.string.supported_archives_summary),
+                    checked = archivesRegistered,
+                    onCheckedChange = {
+                        ExternalOpenRegistry.setEnabled(context, ExternalOpenKind.ARCHIVE, it)
+                        archivesRegistered = it
+                    },
+                )
+                SwitchRow(
+                    title = stringResource(R.string.view_images_with_xfiles),
+                    checked = imagesRegistered,
+                    onCheckedChange = {
+                        ExternalOpenRegistry.setEnabled(context, ExternalOpenKind.IMAGE, it)
+                        imagesRegistered = it
+                    },
+                )
+                SwitchRow(
+                    title = stringResource(R.string.play_videos_with_xfiles),
+                    checked = videosRegistered,
+                    onCheckedChange = {
+                        ExternalOpenRegistry.setEnabled(context, ExternalOpenKind.VIDEO, it)
+                        videosRegistered = it
+                    },
                 )
 
                 SectionHeader(stringResource(R.string.root))

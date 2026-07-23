@@ -82,6 +82,11 @@
     <string name="sort_type">Тип</string>
     <string name="descending">По убыванию</string>
     <string name="descending_summary">Обратный порядок сортировки</string>
+    <string name="file_associations">Ассоциации файлов</string>
+    <string name="open_supported_archives_with_xfiles">Открывать любые поддерживаемые архивы в XFiles</string>
+    <string name="supported_archives_summary">Поддерживаются ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2 и XZ</string>
+    <string name="view_images_with_xfiles">Просматривать изображения в XFiles</string>
+    <string name="play_videos_with_xfiles">Воспроизводить видео в XFiles</string>
     <string name="root">Root</string>
     <string name="root_access">Root доступ</string>
     <string name="root_access_summary">Просмотрите всю систему как суперпользователь (необходим su)</string>

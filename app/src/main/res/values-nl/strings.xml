@@ -82,6 +82,11 @@
     <string name="sort_type">Type</string>
     <string name="descending">Aflopend</string>
     <string name="descending_summary">Keer de sorteervolgorde om</string>
+    <string name="file_associations">Bestandskoppelingen</string>
+    <string name="open_supported_archives_with_xfiles">Gebruik XFiles om elk ondersteund archief te openen</string>
+    <string name="supported_archives_summary">Ondersteunt ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2 en XZ</string>
+    <string name="view_images_with_xfiles">Gebruik XFiles om afbeeldingen te bekijken</string>
+    <string name="play_videos_with_xfiles">Gebruik XFiles om video’s af te spelen</string>
     <string name="root">Root</string>
     <string name="root_access">Root-toegang</string>
     <string name="root_access_summary">Blader door het hele systeem als superuser (heeft su nodig)</string>

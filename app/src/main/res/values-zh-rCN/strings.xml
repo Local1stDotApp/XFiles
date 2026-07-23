@@ -82,6 +82,11 @@
     <string name="sort_type">类型</string>
     <string name="descending">降序</string>
     <string name="descending_summary">反转排序顺序</string>
+    <string name="file_associations">文件关联</string>
+    <string name="open_supported_archives_with_xfiles">使用 XFiles 打开任意支持的压缩包</string>
+    <string name="supported_archives_summary">支持 ZIP、JAR、APK、AAB、APKS、APKM、XAPK、7Z、RAR、TAR、TAR.GZ/TGZ、TAR.BZ2/TBZ2、TAR.XZ/TXZ、GZ、BZ2 和 XZ</string>
+    <string name="view_images_with_xfiles">使用 XFiles 查看图片</string>
+    <string name="play_videos_with_xfiles">使用 XFiles 播放视频</string>
     <string name="root">Root</string>
     <string name="root_access">Root 访问</string>
     <string name="root_access_summary">以超级用户身份浏览整个系统（需要 su）</string>

@@ -21,6 +21,8 @@ import app.local1st.files.core.prefs.SessionPane
 import app.local1st.files.core.prefs.SessionState
 import app.local1st.files.core.util.FileCategory
 import app.local1st.files.core.util.FileTypes
+import app.local1st.files.core.util.ExternalOpenKind
+import app.local1st.files.core.util.ExternalOpenResolver
 import app.local1st.files.core.util.IntentUtils
 import app.local1st.files.core.util.XapkObbInstaller
 import app.local1st.files.di.Graph
@@ -268,6 +270,28 @@ class MainViewModel : ViewModel() {
 
     fun openAsHex(entry: XEntry) {
         viewer.value = ViewerRequest.Hex(entry)
+    }
+
+    /** Routes an ACTION_VIEW delivered through one of the user-enabled manifest aliases. */
+    fun openExternalIntent(intent: Intent) {
+        if (intent.action != Intent.ACTION_VIEW || intent.data == null) return
+        viewModelScope.launch {
+            val resolved = withContext(Dispatchers.IO) {
+                runCatching { ExternalOpenResolver.resolve(Graph.appContext, intent) }
+            }
+            resolved.fold(
+                onSuccess = { (kind, entry) ->
+                    when (kind) {
+                        ExternalOpenKind.ARCHIVE -> dialog.value = DialogRequest.EntryMenu(entry)
+                        ExternalOpenKind.IMAGE -> viewer.value = ViewerRequest.Image(listOf(entry), 0)
+                        ExternalOpenKind.VIDEO -> viewer.value = ViewerRequest.Media(entry, listOf(entry))
+                    }
+                },
+                onFailure = { error ->
+                    snackbar.tryEmit(error.message ?: text(R.string.generic_error))
+                },
+            )
+        }
     }
 
     /** Expand an app and its base APK so the APK's zip contents show inline. */

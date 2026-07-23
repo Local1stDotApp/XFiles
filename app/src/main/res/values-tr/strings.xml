@@ -82,6 +82,11 @@
     <string name="sort_type">Tür</string>
     <string name="descending">Azalan</string>
     <string name="descending_summary">Sıralama düzenini tersine çevir</string>
+    <string name="file_associations">Dosya ilişkilendirmeleri</string>
+    <string name="open_supported_archives_with_xfiles">Desteklenen tüm arşivleri XFiles ile aç</string>
+    <string name="supported_archives_summary">ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2 ve XZ desteklenir</string>
+    <string name="view_images_with_xfiles">Görüntüleri XFiles ile görüntüle</string>
+    <string name="play_videos_with_xfiles">Videoları XFiles ile oynat</string>
     <string name="root">Root</string>
     <string name="root_access">Root erişimi</string>
     <string name="root_access_summary">Tüm sisteme süper kullanıcı olarak göz atın (su gerekir)</string>

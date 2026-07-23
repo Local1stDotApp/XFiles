@@ -82,6 +82,11 @@
     <string name="sort_type">Loại</string>
     <string name="descending">Giảm dần</string>
     <string name="descending_summary">Đảo ngược thứ tự sắp xếp</string>
+    <string name="file_associations">Liên kết tệp</string>
+    <string name="open_supported_archives_with_xfiles">Dùng XFiles để mở mọi tệp nén được hỗ trợ</string>
+    <string name="supported_archives_summary">Hỗ trợ ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2 và XZ</string>
+    <string name="view_images_with_xfiles">Dùng XFiles để xem hình ảnh</string>
+    <string name="play_videos_with_xfiles">Dùng XFiles để phát video</string>
     <string name="root">Root</string>
     <string name="root_access">Quyền truy cập gốc</string>
     <string name="root_access_summary">Duyệt toàn bộ hệ thống với tư cách siêu người dùng (cần su)</string>

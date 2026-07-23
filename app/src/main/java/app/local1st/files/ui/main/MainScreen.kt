@@ -79,7 +79,6 @@ import app.local1st.files.ui.dialogs.MainDialogs
 import app.local1st.files.ui.dialogs.OpsHost
 import app.local1st.files.ui.search.SearchOverlay
 import app.local1st.files.ui.settings.SettingsOverlay
-import app.local1st.files.ui.viewer.ViewerHost
 
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -283,7 +282,6 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 
     MainDialogs(vm)
     DestinationPicker(vm)
-    ViewerHost(vm)
     SearchOverlay(vm)
     SettingsOverlay(vm)
     AppInfoOverlay(vm)

@@ -56,6 +56,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
@@ -237,9 +238,10 @@ private fun ZoomableImagePage(
                 translationY = offset.y
             }
         val localPath = entry.localPath
-        if (localPath != null) {
+        val contentUri = entry.id.takeIf { entry.scheme == "content" }?.toUri()
+        if (localPath != null || contentUri != null) {
             AsyncImage(
-                model = File(localPath),
+                model = localPath?.let(::File) ?: contentUri,
                 contentDescription = entry.name,
                 contentScale = ContentScale.Fit,
                 modifier = imageModifier,

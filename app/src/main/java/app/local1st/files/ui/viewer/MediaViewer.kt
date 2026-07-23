@@ -74,7 +74,7 @@ import kotlinx.coroutines.isActive
 @Composable
 fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
     val playable = remember(entry.id, playlist) {
-        playlist.ifEmpty { listOf(entry) }.filter { it.localPath != null }
+        playlist.ifEmpty { listOf(entry) }.filter { mediaUri(it) != null }
     }
     if (playable.isEmpty()) {
         Column(
@@ -106,7 +106,7 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
             .build()
             .apply {
                 setMediaItems(
-                    playable.map { MediaItem.fromUri(File(checkNotNull(it.localPath)).toUri()) },
+                    playable.map { MediaItem.fromUri(checkNotNull(mediaUri(it))) },
                     startIndex,
                     C.TIME_UNSET,
                 )
@@ -163,6 +163,12 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
             onClose = onClose,
         )
     }
+}
+
+private fun mediaUri(entry: XEntry) = when {
+    entry.localPath != null -> File(entry.localPath).toUri()
+    entry.scheme == "content" -> entry.id.toUri()
+    else -> null
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
