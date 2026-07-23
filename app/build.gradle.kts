@@ -67,11 +67,28 @@ android {
     // Generate Android 13+ "App language" settings from the locales that this app ships.
     androidResources {
         generateLocaleConfig = true
+        localeFilters += listOf(
+            "en", "ar", "de", "es", "fr", "hi", "id", "it", "ja", "ko",
+            "nl", "pl", "pt-rBR", "ru", "tr", "vi", "zh-rCN", "zh-rTW",
+        )
     }
 
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1,LICENSE.md}"
+            // Payloads no code can read — resource shrinking only covers res/, so these ride
+            // along dead: ARSCLib's bundled framework tables (we drive its chunk classes
+            // directly, never its decoder), the API-level database belonging to the R8
+            // internals the vendored bundletool drops, bundletool's AndroidX migration map,
+            // and the .proto sources that protobuf and bundletool ship for reference — the
+            // runtime reads descriptors compiled into the generated classes instead.
+            excludes += listOf(
+                "/frameworks/**",
+                "/api_database/**",
+                "/shadow/bundletool/com/android/support/migrateToAndroidx/**",
+                "**/*.proto",
+                "/*.proto",
+            )
         }
     }
 }
