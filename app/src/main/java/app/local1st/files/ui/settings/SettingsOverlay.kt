@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -235,12 +236,12 @@ fun SettingsOverlay(vm: MainViewModel) {
                     )
                 }
                 RadioOptionsRow(
-                    title = "Transport",
+                    title = stringResource(R.string.transport),
                     options = listOf(
-                        TransportPref.AUTO to "Auto",
-                        TransportPref.SU to "Root (su)",
-                        TransportPref.SHIZUKU to "Shizuku",
-                        TransportPref.OFF to "Off",
+                        TransportPref.AUTO to stringResource(R.string.transport_auto),
+                        TransportPref.SU to stringResource(R.string.transport_su),
+                        TransportPref.SHIZUKU to stringResource(R.string.shizuku),
+                        TransportPref.OFF to stringResource(R.string.transport_off),
                     ),
                     selected = transportPref ?: TransportPref.AUTO,
                     onSelect = { scope.launch { settings.setPrivilegedTransport(it) } },
@@ -248,26 +249,28 @@ fun SettingsOverlay(vm: MainViewModel) {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Text(
-                            "Active: ${activeTransportLabel(activeTransport)} · " +
-                                "Shizuku: ${shizukuStateLabel(shizukuState)}",
+                            stringResource(
+                                R.string.transport_status,
+                                stringResource(activeTransportLabelRes(activeTransport)),
+                                stringResource(shizukuStateLabelRes(shizukuState)),
+                            ),
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         if (shizukuState == ShizukuState.PermissionRequired) {
                             Spacer(Modifier.height(8.dp))
                             if (permissionPermanentlyDenied) {
                                 Text(
-                                    "Grant permission inside the Shizuku app; another request " +
-                                        "will not show a dialog.",
+                                    stringResource(R.string.shizuku_grant_in_app),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Spacer(Modifier.height(8.dp))
                                 OutlinedButton(onClick = { openShizuku(context) }) {
-                                    Text("Open Shizuku")
+                                    Text(stringResource(R.string.open_shizuku))
                                 }
                             } else {
                                 OutlinedButton(onClick = { ShizukuGate.requestPermission() }) {
-                                    Text("Grant permission")
+                                    Text(stringResource(R.string.shizuku_grant_permission))
                                 }
                             }
                         }
@@ -275,7 +278,12 @@ fun SettingsOverlay(vm: MainViewModel) {
                 }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { showShizukuHelp = !showShizukuHelp }) {
-                    Text(if (showShizukuHelp) "Hide Shizuku help" else "How to start Shizuku")
+                    Text(
+                        stringResource(
+                            if (showShizukuHelp) R.string.shizuku_help_hide
+                            else R.string.shizuku_help_show,
+                        ),
+                    )
                 }
                 if (showShizukuHelp) {
                     ShizukuHelpCard(onOpenShizuku = { openShizuku(context) })
@@ -333,54 +341,49 @@ fun SettingsOverlay(vm: MainViewModel) {
     }
 }
 
-private fun activeTransportLabel(transport: TransportId?): String = when (transport) {
-    TransportId.SU -> "Root (su)"
-    TransportId.SHIZUKU -> "Shizuku"
-    null -> "None"
+@StringRes
+private fun activeTransportLabelRes(transport: TransportId?): Int = when (transport) {
+    TransportId.SU -> R.string.transport_su
+    TransportId.SHIZUKU -> R.string.shizuku
+    null -> R.string.transport_none
 }
 
-private fun shizukuStateLabel(state: ShizukuState): String = when (state) {
-    ShizukuState.NotInstalled -> "Not installed"
-    ShizukuState.NotRunning -> "Not running"
-    ShizukuState.PermissionRequired -> "Permission required"
-    ShizukuState.Ready -> "Ready"
+@StringRes
+private fun shizukuStateLabelRes(state: ShizukuState): Int = when (state) {
+    ShizukuState.NotInstalled -> R.string.shizuku_not_installed
+    ShizukuState.NotRunning -> R.string.shizuku_not_running
+    ShizukuState.PermissionRequired -> R.string.shizuku_permission_required
+    ShizukuState.Ready -> R.string.shizuku_ready
 }
 
 @Composable
 private fun ShizukuHelpCard(onOpenShizuku: () -> Unit) {
     Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Column(Modifier.padding(16.dp)) {
-            Text("Starting Shizuku", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.shizuku_help_title), style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Open the Shizuku app and use its own “View command” or pairing flow. " +
-                    "XFiles does not provide a start command because current versions keep " +
-                    "the starter inside the Shizuku app.",
+                stringResource(R.string.shizuku_help_start),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Shizuku must be restarted after every reboot unless the device is rooted. " +
-                    "On Android 13+, it can auto-start on a trusted Wi-Fi network.",
+                stringResource(R.string.shizuku_help_restart),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "OEM setup:\n" +
-                    "• ColorOS (OPPO/OnePlus): turn off “Permission monitoring”.\n" +
-                    "• MIUI: enable “USB debugging (Security options)”.\n" +
-                    "• Android 11+: enable “Disable adb authorization timeout”.",
+                stringResource(R.string.shizuku_help_oem),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Shizuku lets XFiles reach Android/data and Android/obb. It cannot reach " +
-                    "/data/data or browse the whole filesystem; those require root.",
+                stringResource(R.string.shizuku_help_scope),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(12.dp))
             OutlinedButton(onClick = onOpenShizuku) {
-                Text("Open Shizuku")
+                Text(stringResource(R.string.open_shizuku))
             }
         }
     }
@@ -399,7 +402,7 @@ private fun openShizuku(context: Context) {
         true
     }.getOrDefault(false)
     if (!launched) {
-        Toast.makeText(context, "Shizuku app is not available", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, R.string.shizuku_app_not_available, Toast.LENGTH_SHORT).show()
     }
 }
 

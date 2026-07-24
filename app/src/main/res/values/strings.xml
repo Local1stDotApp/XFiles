@@ -89,9 +89,31 @@
     <string name="play_videos_with_xfiles">Use XFiles to play videos</string>
     <string name="root">Root</string>
     <string name="root_access">Root access</string>
-    <string name="root_access_summary">Browse the whole system as superuser (needs su)</string>
+    <string name="root_access_summary">Browse the whole system (su) or Android/data (Shizuku)</string>
     <string name="read_only">Read-only</string>
     <string name="read_only_summary">Block file changes that need root</string>
+    <string name="transport">Transport</string>
+    <string name="transport_auto">Auto</string>
+    <string name="transport_su" translatable="false">Root (su)</string>
+    <string name="shizuku" translatable="false">Shizuku</string>
+    <string name="transport_off">Off</string>
+    <string name="transport_none">None</string>
+    <string name="transport_status">Active: %1$s · Shizuku: %2$s</string>
+    <string name="shizuku_not_installed">Not installed</string>
+    <string name="shizuku_not_running">Not running</string>
+    <string name="shizuku_permission_required">Permission required</string>
+    <string name="shizuku_ready">Ready</string>
+    <string name="shizuku_grant_permission">Grant permission</string>
+    <string name="shizuku_grant_in_app">Grant permission inside the Shizuku app; another request will not show a dialog.</string>
+    <string name="open_shizuku">Open Shizuku</string>
+    <string name="shizuku_help_show">How to start Shizuku</string>
+    <string name="shizuku_help_hide">Hide Shizuku help</string>
+    <string name="shizuku_help_title">Starting Shizuku</string>
+    <string name="shizuku_help_start">Open the Shizuku app and use its own “View command” or pairing flow. XFiles does not provide a start command because current versions keep the starter inside the Shizuku app.</string>
+    <string name="shizuku_help_restart">Shizuku must be restarted after every reboot unless the device is rooted. On Android 13+, it can auto-start on a trusted Wi-Fi network.</string>
+    <string name="shizuku_help_oem">OEM setup:\n• ColorOS (OPPO/OnePlus): turn off “Permission monitoring”.\n• MIUI: enable “USB debugging (Security options)”.\n• Android 11+: enable “Disable adb authorization timeout”.</string>
+    <string name="shizuku_help_scope">Shizuku lets XFiles reach Android/data and Android/obb. It cannot reach /data/data or browse the whole filesystem; those require root.</string>
+    <string name="shizuku_app_not_available">Shizuku app is not available</string>
     <string name="about">About</string>
     <string name="app_tagline">Offline, open-source file manager. No network, no telemetry.</string>
     <string name="source_code">Source code</string>
