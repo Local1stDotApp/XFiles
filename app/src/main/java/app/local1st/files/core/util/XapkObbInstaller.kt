@@ -13,6 +13,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.CancellationException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
@@ -120,33 +121,49 @@ object XapkObbInstaller {
         }.distinctBy { it.relativeDestination }
     }
 
-    fun place(context: Context, zip: ZipFile, obbs: List<ObbEntry>): Placement {
+    fun place(
+        context: Context,
+        zip: ZipFile,
+        obbs: List<ObbEntry>,
+        progress: InstallProgress = InstallProgress(),
+    ): Placement {
         if (obbs.isNotEmpty() && !canRequestPackageInstalls(context) && !rootWritable()) {
             throw UnknownSourcesPermissionException(
                 "Enable ‘Install unknown apps’ for XFiles, then retry. The permission cache may also require an XFiles restart.",
             )
         }
+        if (obbs.isNotEmpty()) progress.onPhase(InstallPhase.EXTRACTING_OBB)
         val externalRoot = Environment.getExternalStorageDirectory().canonicalFile
         val written = mutableListOf<File>()
         val backups = mutableListOf<Pair<File, File>>()
+        // Expansion files run to gigabytes, so report one bar across the whole set. A retried
+        // file restarts from the offset it began at, keeping the count monotonic.
+        val totalBytes = obbs.sumOf { it.source.size.coerceAtLeast(0) }
+        var doneBytes = 0L
         try {
             obbs.forEach { obb ->
+                val startedAtBytes = doneBytes
+                doneBytes += obb.source.size.coerceAtLeast(0)
                 val destination = File(externalRoot, obb.relativeDestination).canonicalFile
                 if (!destination.path.startsWith(externalRoot.path + File.separator)) {
                     throw ObbPlacementException("Invalid OBB install path")
                 }
                 val existingSize = destinationSize(destination)
-                if (existingSize == obb.source.size && existingSize >= 0) return@forEach
+                if (existingSize == obb.source.size && existingSize >= 0) {
+                    progress.onBytes(doneBytes, totalBytes)
+                    return@forEach
+                }
                 if (existingSize >= 0) {
                     backups += destination to backUp(destination)
                 }
                 var directFailure: Exception? = null
                 zip.getInputStream(obb.source).use { input ->
                     try {
-                        writeDirect(input, destination)
+                        writeDirect(input, destination, progress, startedAtBytes, totalBytes)
                         written += destination
                         return@forEach
                     } catch (e: Exception) {
+                        if (e is CancellationException) throw e
                         directFailure = e
                     }
                 }
@@ -162,7 +179,7 @@ object XapkObbInstaller {
                     )
                 }
                 val wrote = zip.getInputStream(obb.source).use { input ->
-                    writeWithRoot(input, destination)
+                    writeWithRoot(input, destination, progress, startedAtBytes, totalBytes)
                 }
                 if (!wrote) {
                     throw ObbPlacementException("Root failed to place ${destination.name}", directFailure)
@@ -172,17 +189,26 @@ object XapkObbInstaller {
             return Placement(written, backups)
         } catch (e: Exception) {
             Placement(written, backups).cleanUp()
+            if (e is CancellationException) throw e
             if (e is ObbPlacementException) throw e
             throw ObbPlacementException("Couldn't place OBB: ${e.message ?: "write failed"}", e)
         }
     }
 
-    private fun writeDirect(input: java.io.InputStream, destination: File) {
+    private fun writeDirect(
+        input: java.io.InputStream,
+        destination: File,
+        progress: InstallProgress,
+        doneBytes: Long,
+        totalBytes: Long,
+    ) {
         val parent = destination.parentFile ?: throw IOException("Invalid OBB destination")
         val temp = File(parent, ".${destination.name}.xfiles-${UUID.randomUUID()}.part")
         try {
             if (!parent.isDirectory && !parent.mkdirs()) throw IOException("Cannot create ${parent.path}")
-            FileOutputStream(temp).use { output -> input.copyTo(output) }
+            FileOutputStream(temp).use { output ->
+                copyWithProgress(input, output, progress, doneBytes, totalBytes)
+            }
             Files.move(temp.toPath(), destination.toPath(), StandardCopyOption.REPLACE_EXISTING)
         } catch (e: Exception) {
             temp.delete()
@@ -222,7 +248,13 @@ object XapkObbInstaller {
 
     private fun destinationExists(file: File): Boolean = destinationSize(file) >= 0
 
-    private fun writeWithRoot(input: java.io.InputStream, destination: File): Boolean {
+    private fun writeWithRoot(
+        input: java.io.InputStream,
+        destination: File,
+        progress: InstallProgress,
+        doneBytes: Long,
+        totalBytes: Long,
+    ): Boolean {
         val parent = destination.parentFile ?: throw IOException("Invalid OBB destination")
         val temp = File(parent, ".${destination.name}.xfiles-${UUID.randomUUID()}.part")
         val transport = PrivilegedAccess.active ?: throw IOException("Root access is unavailable")
@@ -231,7 +263,9 @@ object XapkObbInstaller {
         val quotedDestination = shQuote(destination.path)
         transport.exec("mkdir -p -- $quotedParent && chmod 0755 $quotedParent")
         try {
-            transport.openWrite(temp.path).use { output -> input.copyTo(output) }
+            transport.openWrite(temp.path).use { output ->
+                copyWithProgress(input, output, progress, doneBytes, totalBytes)
+            }
             val result = transport.exec(
                 "chmod 0644 $quotedTemp && mv -f -- $quotedTemp $quotedDestination && " +
                     "chmod 0644 $quotedDestination && echo wrote",

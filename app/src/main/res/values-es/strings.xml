@@ -182,6 +182,8 @@
     <string name="building_apks">Creando APK desde el paquete…</string>
     <string name="aab_key_regenerated">La clave de firma AAB se regeneró. Las aplicaciones convertidas anteriormente deben desinstalarse y reinstalarse antes de la próxima actualización.</string>
     <string name="extracting_obb">Extrayendo OBB…</string>
+    <string name="writing_apks">Escribiendo APK…</string>
+    <string name="awaiting_install_confirmation">Esperando confirmación…</string>
     <string name="enable_unknown_apps">Activa «Instalar aplicaciones desconocidas» para XFiles y vuelve a intentarlo</string>
     <string name="install_failed">Error de instalación: %1$s</string>
     <string name="cannot_write">No se puede escribir en %1$s</string>

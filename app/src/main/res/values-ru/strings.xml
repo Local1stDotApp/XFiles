@@ -184,6 +184,8 @@
     <string name="building_apks">Сборка APK из пакета…</string>
     <string name="aab_key_regenerated">Ключ подписи AAB был создан заново. Ранее преобразованные приложения необходимо удалить и переустановить перед следующим обновлением.</string>
     <string name="extracting_obb">Извлечение OBB…</string>
+    <string name="writing_apks">Запись APK…</string>
+    <string name="awaiting_install_confirmation">Ожидание подтверждения…</string>
     <string name="enable_unknown_apps">Включите «Установить неизвестные приложения» для XFiles и повторите попытку.</string>
     <string name="install_failed">Не удалось установить: %1$s.</string>
     <string name="cannot_write">Невозможно записать в %1$s</string>

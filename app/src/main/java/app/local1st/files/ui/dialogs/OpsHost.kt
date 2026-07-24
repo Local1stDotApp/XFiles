@@ -30,20 +30,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import app.local1st.files.R
+import app.local1st.files.core.ops.BackgroundJobs
 import app.local1st.files.core.ops.ConflictChoice
 import app.local1st.files.core.ops.ConflictResolution
 import app.local1st.files.core.ops.OpState
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.components.TooltipIconButton
-import app.local1st.files.ui.main.MainViewModel
 import kotlinx.coroutines.delay
 
-/** Floating progress cards + conflict dialogs for running file operations. */
+/** Floating progress cards + conflict dialogs for running file operations and background jobs. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun OpsHost(vm: MainViewModel) {
+fun OpsHost() {
     val ops by Graph.opEngine.active.collectAsState()
-    val installs by vm.packageInstallProgress.collectAsState()
+    val jobs by BackgroundJobs.active.collectAsState()
 
     Column(
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -51,28 +51,43 @@ fun OpsHost(vm: MainViewModel) {
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 96.dp),
     ) {
-        installs.forEach { (id, install) ->
-            key(id) {
-                val elapsedSeconds by produceState(0L, install.startedAtRealtimeMillis) {
+        jobs.forEach { job ->
+            key(job.id) {
+                val progress by job.progress.collectAsState()
+                val elapsedSeconds by produceState(0L, progress.startedAtRealtimeMillis) {
                     while (true) {
                         value = (android.os.SystemClock.elapsedRealtime() -
-                            install.startedAtRealtimeMillis).coerceAtLeast(0L) / 1_000L
+                            progress.startedAtRealtimeMillis).coerceAtLeast(0L) / 1_000L
                         delay(1_000L)
                     }
                 }
                 Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                        Text(install.label, style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "${install.message}  ${elapsedSeconds / 60}:${(elapsedSeconds % 60).toString().padStart(2, '0')}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        LinearWavyProgressIndicator(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp),
-                        )
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(progress.title, style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "${progress.message}  ${elapsedSeconds / 60}:${(elapsedSeconds % 60).toString().padStart(2, '0')}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            TooltipIconButton(
+                                stringResource(R.string.cancel_operation),
+                                Icons.Outlined.Close,
+                                onClick = { job.cancel() },
+                            )
+                        }
+                        if (progress.indeterminate) {
+                            LinearWavyProgressIndicator(Modifier.fillMaxWidth())
+                        } else {
+                            LinearWavyProgressIndicator(
+                                progress = { progress.fraction },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
             }

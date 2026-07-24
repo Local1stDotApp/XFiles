@@ -182,6 +182,8 @@
     <string name="building_apks">Création de APKs à partir du bundle…</string>
     <string name="aab_key_regenerated">La clé de signature AAB a été régénérée. Les applications précédemment converties doivent être désinstallées et réinstallées avant leur prochaine mise à jour.</string>
     <string name="extracting_obb">Extraction de l\'OBB…</string>
+    <string name="writing_apks">Écriture des APKs…</string>
+    <string name="awaiting_install_confirmation">En attente de confirmation…</string>
     <string name="enable_unknown_apps">Activez « Installer des applications inconnues » pour XFiles et réessayez.</string>
     <string name="install_failed">Échec de l\'installation : %1$s</string>
     <string name="cannot_write">Impossible d\'écrire sur %1$s</string>

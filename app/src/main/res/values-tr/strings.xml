@@ -182,6 +182,8 @@
     <string name="building_apks">Paketten APK oluşturuluyor…</string>
     <string name="aab_key_regenerated">AAB imzalama anahtarı yeniden oluşturuldu. Daha önce dönüştürülen uygulamaların bir sonraki güncellemeden önce kaldırılması ve yeniden yüklenmesi gerekir.</string>
     <string name="extracting_obb">OBB çıkarılıyor…</string>
+    <string name="writing_apks">APK dosyaları yazılıyor…</string>
+    <string name="awaiting_install_confirmation">Onay bekleniyor…</string>
     <string name="enable_unknown_apps">XFiles için \'Bilinmeyen uygulamaları yükle\'yi etkinleştirin ve yeniden deneyin</string>
     <string name="install_failed">Yükleme başarısız oldu: %1$s</string>
     <string name="cannot_write">%1$s\'e yazılamıyor</string>

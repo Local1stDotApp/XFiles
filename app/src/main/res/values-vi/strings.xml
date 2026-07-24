@@ -182,6 +182,8 @@
     <string name="building_apks">Xây dựng APK từ gói…</string>
     <string name="aab_key_regenerated">Khóa ký AAB đã được tạo lại. Các ứng dụng đã chuyển đổi trước đó phải được gỡ cài đặt và cài đặt lại trước bản cập nhật tiếp theo.</string>
     <string name="extracting_obb">Đang trích xuất OBB…</string>
+    <string name="writing_apks">Đang ghi APK…</string>
+    <string name="awaiting_install_confirmation">Đang chờ xác nhận…</string>
     <string name="enable_unknown_apps">Bật \'Cài đặt ứng dụng không xác định\' cho XFiles và thử lại</string>
     <string name="install_failed">Cài đặt không thành công: %1$s</string>
     <string name="cannot_write">Không thể ghi vào %1$s</string>

@@ -8,13 +8,14 @@ import coil3.SingletonImageLoader
 import coil3.gif.AnimatedImageDecoder
 import coil3.request.addLastModifiedToFileCacheKey
 import coil3.video.VideoFrameDecoder
+import app.local1st.files.core.ops.BackgroundJobs
 import app.local1st.files.core.ops.OpsService
 import app.local1st.files.core.thumb.AppIconFetcher
 import app.local1st.files.core.thumb.PrivFileFetcher
 import app.local1st.files.core.thumb.VideoThumbFetcher
 import app.local1st.files.di.Graph
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 class XFilesApp : Application(), SingletonImageLoader.Factory {
@@ -26,11 +27,12 @@ class XFilesApp : Application(), SingletonImageLoader.Factory {
         startOpsServiceWhenBusy()
     }
 
-    /** Bring up the foreground service on the empty→busy edge so ops survive backgrounding. */
+    /** Bring up the foreground service on the empty→busy edge so work survives backgrounding. */
     private fun startOpsServiceWhenBusy() {
         Graph.appScope.launch {
-            Graph.opEngine.active
-                .map { it.isNotEmpty() }
+            combine(Graph.opEngine.active, BackgroundJobs.active) { ops, jobs ->
+                ops.isNotEmpty() || jobs.isNotEmpty()
+            }
                 .distinctUntilChanged()
                 .collect { busy -> if (busy) OpsService.start(this@XFilesApp) }
         }

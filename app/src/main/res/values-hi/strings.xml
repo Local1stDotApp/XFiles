@@ -182,6 +182,8 @@
     <string name="building_apks">बंडल से एपीके बनाना…</string>
     <string name="aab_key_regenerated">AAB साइनिंग कुंजी फिर से बनाई गई है। पहले बदले गए ऐप्स को अगले अपडेट से पहले अनइंस्टॉल करके दोबारा इंस्टॉल करना होगा।</string>
     <string name="extracting_obb">OBB निकाला जा रहा है...</string>
+    <string name="writing_apks">एपीके लिखे जा रहे हैं…</string>
+    <string name="awaiting_install_confirmation">पुष्टि की प्रतीक्षा…</string>
     <string name="enable_unknown_apps">XFiles के लिए \'अज्ञात ऐप्स इंस्टॉल करें\' सक्षम करें और पुनः प्रयास करें</string>
     <string name="install_failed">इंस्टॉल विफल: %1$s</string>
     <string name="cannot_write">%1$s पर नहीं लिख सकते</string>

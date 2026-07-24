@@ -179,6 +179,8 @@
     <string name="building_apks">Building APKs from bundle…</string>
     <string name="aab_key_regenerated">AAB signing key was regenerated. Previously converted apps must be uninstalled and reinstalled before their next update.</string>
     <string name="extracting_obb">Extracting OBB…</string>
+    <string name="writing_apks">Writing APKs…</string>
+    <string name="awaiting_install_confirmation">Waiting for confirmation…</string>
     <string name="enable_unknown_apps">Enable ‘Install unknown apps’ for XFiles and retry</string>
     <string name="install_failed">Install failed: %1$s</string>
     <string name="cannot_write">Cannot write to %1$s</string>

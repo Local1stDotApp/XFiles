@@ -11,6 +11,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import app.local1st.files.MainActivity
 import app.local1st.files.core.util.Format
 import app.local1st.files.di.Graph
 import kotlinx.coroutines.CoroutineScope
@@ -18,16 +19,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
- * Keeps file operations (copy/move/zip/extract) running when the app is backgrounded.
- * The engine itself lives on the app-lifetime scope; this service holds the process alive
- * with a foreground notification + wake lock, and mirrors the running op's progress.
- * It stops itself as soon as no operations remain.
+ * Keeps long work running when the app is backgrounded: file operations (copy/move/zip/extract)
+ * from the [OperationEngine], and [BackgroundJobs] such as the package-install pipeline. Both
+ * live on the app-lifetime scope; this service holds the process alive with a foreground
+ * notification + wake lock and mirrors whatever is running. It stops itself once both are empty.
  */
 class OpsService : Service() {
 
@@ -50,32 +52,34 @@ class OpsService : Service() {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_CANCEL_ALL) {
-            Graph.opEngine.active.value.forEach { it.cancel() }
-        }
+        if (intent?.action == ACTION_CANCEL_ALL) cancelEverything()
 
         // Must call startForeground promptly. Guard the rare race where the app is no longer
-        // foreground-eligible (the op keeps running on the app scope regardless).
-        runCatching {
-            startForeground(NOTIF_ID, buildNotification(Graph.opEngine.active.value.size, null))
-        }
+        // foreground-eligible (the work keeps running on the app scope regardless).
+        runCatching { startForeground(NOTIF_ID, buildNotification(currentNotice())) }
 
         if (!collecting) {
             collecting = true
             scope.launch {
-                Graph.opEngine.active
-                    .flatMapLatest { ops ->
-                        val first = ops.firstOrNull()
-                        if (first == null) flowOf(0 to null)
-                        else first.progress.map { ops.size to it }
+                combine(Graph.opEngine.active, BackgroundJobs.active) { ops, jobs -> ops to jobs }
+                    .flatMapLatest { (ops, jobs) ->
+                        val count = ops.size + jobs.size
+                        val op = ops.firstOrNull()
+                        val job = jobs.firstOrNull()
+                        when {
+                            // Ops carry richer progress, so they lead when both are running.
+                            op != null -> op.progress.map { notice(count, it) }
+                            job != null -> job.progress.map { notice(count, it) }
+                            else -> flowOf(null)
+                        }
                     }
-                    .collect { (count, progress) ->
-                        if (count == 0) {
+                    .collect { notice ->
+                        if (notice == null) {
                             stop()
                         } else {
-                            // Renew the wake lock each tick so ops longer than the timeout keep going.
+                            // Renew the wake lock each tick so work longer than the timeout keeps going.
                             wakeLock?.acquire(WAKELOCK_TIMEOUT_MS)
-                            notificationManager().notify(NOTIF_ID, buildNotification(count, progress))
+                            notificationManager().notify(NOTIF_ID, buildNotification(notice))
                         }
                     }
             }
@@ -84,10 +88,15 @@ class OpsService : Service() {
         return START_NOT_STICKY
     }
 
-    /** Android 14+ dataSync FGS time limit: cancel outstanding ops and stop cleanly. */
+    /** Android 14+ dataSync FGS time limit: cancel outstanding work and stop cleanly. */
     override fun onTimeout(startId: Int) {
-        Graph.opEngine.active.value.forEach { it.cancel() }
+        cancelEverything()
         stop()
+    }
+
+    private fun cancelEverything() {
+        Graph.opEngine.active.value.forEach { it.cancel() }
+        BackgroundJobs.active.value.forEach { it.cancel() }
     }
 
     private fun stop() {
@@ -101,38 +110,70 @@ class OpsService : Service() {
         super.onDestroy()
     }
 
-    private fun buildNotification(count: Int, progress: OpProgress?): android.app.Notification {
-        val title = when {
-            count > 1 -> "$count file operations"
-            progress != null -> progress.title
-            else -> "Working…"
-        }
-        val text = progress?.let {
-            val pct = (it.fraction * 100).toInt()
-            when (it.state) {
-                OpState.SCANNING -> "Scanning… ${it.currentItem}"
-                else -> "$pct%  ·  ${Format.bytes(it.doneBytes)} / ${Format.bytes(it.totalBytes)}"
-            }
-        } ?: ""
+    /** What the one notification shows: [fraction] null means "indeterminate". */
+    private data class Notice(val title: String, val text: String, val fraction: Float?)
 
+    private fun heading(count: Int, single: String) =
+        if (count > 1) "$count background tasks" else single
+
+    private fun notice(count: Int, progress: OpProgress) = Notice(
+        title = heading(count, progress.title),
+        text = when (progress.state) {
+            OpState.SCANNING -> "Scanning… ${progress.currentItem}"
+            else -> "${(progress.fraction * 100).toInt()}%  ·  " +
+                "${Format.bytes(progress.doneBytes)} / ${Format.bytes(progress.totalBytes)}"
+        },
+        fraction = progress.fraction
+            .takeIf { progress.state != OpState.SCANNING && progress.totalBytes > 0 },
+    )
+
+    private fun notice(count: Int, progress: JobProgress) = Notice(
+        title = heading(count, progress.title),
+        text = if (progress.indeterminate) {
+            progress.message
+        } else {
+            "${progress.message}  ·  " +
+                "${Format.bytes(progress.doneBytes)} / ${Format.bytes(progress.totalBytes)}"
+        },
+        fraction = progress.fraction.takeIf { !progress.indeterminate },
+    )
+
+    /** Snapshot for the mandatory first [startForeground], before the collector has ticked. */
+    private fun currentNotice(): Notice {
+        val ops = Graph.opEngine.active.value
+        val jobs = BackgroundJobs.active.value
+        val count = ops.size + jobs.size
+        ops.firstOrNull()?.let { return notice(count, it.progress.value) }
+        jobs.firstOrNull()?.let { return notice(count, it.progress.value) }
+        return Notice("Working…", "", null)
+    }
+
+    private fun buildNotification(notice: Notice): android.app.Notification {
         val cancelIntent = PendingIntent.getService(
             this,
             0,
             Intent(this, OpsService::class.java).setAction(ACTION_CANCEL_ALL),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val openIntent = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle(title)
-            .setContentText(text)
+            .setContentTitle(notice.title)
+            .setContentText(notice.text)
+            .setContentIntent(openIntent)
             .setOngoing(true)
             .setSilent(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .addAction(android.R.drawable.ic_delete, "Cancel", cancelIntent)
 
-        if (progress != null && progress.state != OpState.SCANNING && progress.totalBytes > 0) {
-            builder.setProgress(100, (progress.fraction * 100).toInt(), false)
+        if (notice.fraction != null) {
+            builder.setProgress(100, (notice.fraction * 100).toInt(), false)
         } else {
             builder.setProgress(0, 0, true)
         }
@@ -147,7 +188,7 @@ class OpsService : Service() {
             CHANNEL_ID,
             "File operations",
             NotificationManager.IMPORTANCE_LOW,
-        ).apply { description = "Progress of copy, move, compress and extract" }
+        ).apply { description = "Progress of copy, move, compress, extract and install" }
         notificationManager().createNotificationChannel(channel)
     }
 
@@ -157,11 +198,11 @@ class OpsService : Service() {
         private const val ACTION_CANCEL_ALL = "app.local1st.files.ops.CANCEL_ALL"
         private const val WAKELOCK_TIMEOUT_MS = 60L * 60L * 1000L // 1 hour safety cap
 
-        /** Starts (or refreshes) the foreground service to cover currently-running ops. */
+        /** Starts (or refreshes) the foreground service to cover running ops and jobs. */
         fun start(context: Context) {
             val intent = Intent(context, OpsService::class.java)
-            // Ops are submitted from the foreground, so this is normally allowed; guard the
-            // rare background-start race (ForegroundServiceStartNotAllowedException) — the op
+            // Work is submitted from the foreground, so this is normally allowed; guard the
+            // rare background-start race (ForegroundServiceStartNotAllowedException) — it
             // still runs on the app-lifetime scope even without the service.
             runCatching {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

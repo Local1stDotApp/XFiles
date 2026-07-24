@@ -2,7 +2,6 @@ package app.local1st.files.ui.main
 
 import android.content.Intent
 import android.net.Uri
-import android.os.SystemClock
 import android.provider.Settings
 import app.local1st.files.R
 import androidx.lifecycle.ViewModel
@@ -11,7 +10,10 @@ import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
+import app.local1st.files.core.ops.BackgroundJob
+import app.local1st.files.core.ops.BackgroundJobs
 import app.local1st.files.core.ops.FileOp
+import app.local1st.files.core.ops.OpsService
 import app.local1st.files.core.util.AabConverter
 import app.local1st.files.core.util.ApkInstaller
 import app.local1st.files.core.util.AppComponents
@@ -23,16 +25,20 @@ import app.local1st.files.core.util.FileCategory
 import app.local1st.files.core.util.FileTypes
 import app.local1st.files.core.util.ExternalOpenKind
 import app.local1st.files.core.util.ExternalOpenResolver
+import app.local1st.files.core.util.InstallPhase
+import app.local1st.files.core.util.InstallProgress
 import app.local1st.files.core.util.IntentUtils
 import app.local1st.files.core.util.XapkObbInstaller
 import app.local1st.files.di.Graph
 import java.io.File
 import java.io.FileInputStream
 import java.util.zip.ZipFile
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import app.local1st.files.ui.browser.PaneController
 import app.local1st.files.ui.dialogs.DialogRequest
 import app.local1st.files.ui.viewer.ViewerRequest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -45,15 +51,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
-data class PackageInstallProgress(
-    val label: String,
-    val message: String,
-    val startedAtRealtimeMillis: Long,
-)
+/** How long an install job waits for the user to answer the system's confirmation prompt. */
+private const val CONFIRMATION_TIMEOUT_MS = 5L * 60 * 1000
 
 class MainViewModel : ViewModel() {
     private fun text(@androidx.annotation.StringRes id: Int, vararg formatArgs: Any): String =
@@ -80,9 +83,6 @@ class MainViewModel : ViewModel() {
 
     val snackbar = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
-    /** Long-running package preparation that must remain visible after a Snackbar expires. */
-    val packageInstallProgress = MutableStateFlow<Map<String, PackageInstallProgress>>(emptyMap())
-
     val activeCtrl: PaneController get() = panes[activePane.value]
     val inactiveCtrl: PaneController get() = panes[1 - activePane.value]
 
@@ -91,9 +91,6 @@ class MainViewModel : ViewModel() {
 
     /** True once the auto-saver runs; gates the final flush in [onCleared]. */
     private var persistenceStarted = false
-
-    /** Prevents two install jobs from racing on the same archive/OBB destinations. */
-    private val installsInFlight = ConcurrentHashMap.newKeySet<String>()
 
     init {
         // Without storage access every listing fails, so restoring now would only degrade
@@ -107,6 +104,11 @@ class MainViewModel : ViewModel() {
                 panes.forEach { it.refreshDirty(event.dirtyDirIds) }
                 snackbar.tryEmit(event.message)
             }
+        }
+        // App-scoped jobs (installs) outlive this ViewModel, so whichever instance is on screen
+        // when one finishes shows its outcome.
+        viewModelScope.launch {
+            BackgroundJobs.messages.collect { snackbar.tryEmit(it) }
         }
         // Root browsing is a Settings switch: mirror it into the fs gate (set before reloading,
         // so paneRoots sees the new value) and rebuild pane roots when it flips. Skip the initial
@@ -372,73 +374,54 @@ class MainViewModel : ViewModel() {
     }
 
     /**
-     * Installs an APK, split bundle, XAPK with expansion files, or converts an AAB first. Reads
-     * bytes off the main thread; the system shows its own confirm UI and reports the result.
+     * Installs an APK, split bundle, XAPK with expansion files, or converts an AAB first.
+     *
+     * The pipeline runs on the app scope as a [BackgroundJob] so [OpsService] keeps the process
+     * alive and shows progress: converting a bundle takes about a minute of solid CPU, and
+     * writing a multi-gigabyte XAPK takes longer still — leaving the app used to kill both.
+     * The system shows its own confirm UI and reports the result.
      */
     fun installPackage(entry: XEntry) {
         val path = entry.localPath ?: run { snackbar.tryEmit(text(R.string.nothing_to_install)); return }
-        if (!installsInFlight.add(entry.id)) {
-            snackbar.tryEmit(text(R.string.already_installing, entry.name))
-            return
-        }
         val label = entry.name.substringBeforeLast('.').ifBlank { entry.name }
-        val showPersistentProgress = entry.extension == "aab"
-        if (showPersistentProgress) {
-            packageInstallProgress.update { progress ->
-                progress + (entry.id to PackageInstallProgress(
-                    label = label,
-                    message = text(R.string.building_apks),
-                    startedAtRealtimeMillis = SystemClock.elapsedRealtime(),
-                ))
-            }
-        }
-        viewModelScope.launch(Dispatchers.IO) {
-            var keepGuardUntilResult = false
+        // The registry is app-wide, so it also guards against a second install of the same entry.
+        val job = BackgroundJobs.start(entry.id, label, text(R.string.preparing_install, label))
+            ?: run { snackbar.tryEmit(text(R.string.already_installing, entry.name)); return }
+        // Start the service while the tap that got us here still makes the app foreground-eligible:
+        // once it is backgrounded the system refuses to start new foreground services.
+        OpsService.start(Graph.appContext)
+
+        val work = Graph.appScope.launch(Dispatchers.IO) {
+            val progress = InstallProgress(
+                onPhase = { phase -> job.message(text(phaseMessage(phase))) },
+                onBytes = { done, total -> job.bytes(done, total) },
+                isCancelled = { job.isCancelled() },
+            )
             try {
-                if (!showPersistentProgress) snackbar.tryEmit(text(R.string.preparing_install, label))
                 val file = File(path)
-                if (entry.extension == "apk") {
-                    val source = ApkInstaller.ApkSource(file.name, file.length()) { FileInputStream(file) }
-                    ApkInstaller.install(Graph.appContext, label, listOf(source))
-                } else if (entry.extension == "aab") {
-                    AabConverter.install(Graph.appContext, file, label) {
-                        snackbar.tryEmit(
-                            text(R.string.aab_key_regenerated),
-                        )
+                when (entry.extension) {
+                    "apk" -> {
+                        val source = ApkInstaller.ApkSource(file.name, file.length()) { FileInputStream(file) }
+                        val verdict = CompletableDeferred<Boolean>()
+                        val session = ApkInstaller.install(
+                            Graph.appContext, label, listOf(source), progress,
+                        ) { verdict.complete(it) }
+                        awaitVerdict(job, session, verdict, unwindOnGiveUp = false) {}
                     }
-                } else {
-                    // A bundle: install every APK member (base + splits) together.
-                    ZipFile(file).use { zip ->
-                        val obbs = if (entry.extension == "xapk") XapkObbInstaller.findObbs(zip) else emptyList()
-                        if (obbs.isNotEmpty()) snackbar.tryEmit(text(R.string.extracting_obb))
-                        val placement = XapkObbInstaller.place(Graph.appContext, zip, obbs)
-                        var submitted = false
-                        try {
-                            val apks = buildList {
-                                val entries = zip.entries()
-                                while (entries.hasMoreElements()) {
-                                    val e = entries.nextElement()
-                                    if (!e.isDirectory && e.name.substringAfterLast('/').endsWith(".apk", true)) {
-                                        add(ApkInstaller.ApkSource(e.name, e.size) { zip.getInputStream(e) })
-                                    }
-                                }
-                            }
-                            if (apks.isEmpty()) throw IllegalArgumentException("No APK inside ${entry.name}")
-                            ApkInstaller.install(Graph.appContext, label, apks) { success ->
-                                Graph.appScope.launch(Dispatchers.IO) {
-                                    if (success) placement.commit() else placement.cleanUp()
-                                }
-                                installsInFlight.remove(entry.id)
-                            }
-                            submitted = true
-                            keepGuardUntilResult = true
-                        } finally {
-                            if (!submitted) placement.cleanUp()
-                        }
+                    "aab" -> {
+                        val verdict = CompletableDeferred<Boolean>()
+                        val session = AabConverter.install(
+                            Graph.appContext, file, label, progress,
+                            onResult = { verdict.complete(it) },
+                        ) { BackgroundJobs.messages.tryEmit(text(R.string.aab_key_regenerated)) }
+                        awaitVerdict(job, session, verdict, unwindOnGiveUp = false) {}
                     }
+                    else -> installBundle(entry, file, label, job, progress)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: XapkObbInstaller.UnknownSourcesPermissionException) {
-                snackbar.tryEmit(e.message ?: text(R.string.enable_unknown_apps))
+                BackgroundJobs.messages.tryEmit(e.message ?: text(R.string.enable_unknown_apps))
                 Graph.appContext.startActivity(
                     Intent(
                         Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
@@ -453,14 +436,101 @@ class MainViewModel : ViewModel() {
                     ?.firstOrNull()
                     ?.take(180)
                     ?: text(R.string.generic_error)
-                snackbar.tryEmit(text(R.string.install_failed, message))
+                BackgroundJobs.messages.tryEmit(text(R.string.install_failed, message))
             } finally {
-                if (showPersistentProgress) {
-                    packageInstallProgress.update { progress -> progress - entry.id }
-                }
-                if (!keepGuardUntilResult) installsInFlight.remove(entry.id)
+                BackgroundJobs.finish(job)
             }
         }
+        job.attach(work)
+    }
+
+    /**
+     * Holds the job open until the system reports what the user chose. That keeps the process
+     * (and the duplicate-install guard the job doubles as) alive across the confirmation prompt.
+     *
+     * Giving up — the user cancelled, or nobody answered in [CONFIRMATION_TIMEOUT_MS] — drops the
+     * session when leaving it committed would contradict the state we just unwound
+     * ([unwindOnGiveUp]) or the cancellation the user asked for. An unanswered prompt with
+     * nothing staged behind it is left alone: a late tap should still be able to install.
+     */
+    private suspend fun awaitVerdict(
+        job: BackgroundJob,
+        sessionId: Int,
+        pending: CompletableDeferred<Boolean>,
+        unwindOnGiveUp: Boolean,
+        settle: (Boolean) -> Unit,
+    ) {
+        job.message(text(R.string.awaiting_install_confirmation))
+        var verdict: Boolean? = null
+        try {
+            verdict = withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) { pending.await() }
+        } finally {
+            // Cancelling the deferred routes any later result to the install's own fallback.
+            pending.cancel()
+            when {
+                verdict != null -> settle(verdict)
+                job.isCancelled() || unwindOnGiveUp -> {
+                    ApkInstaller.abandon(Graph.appContext, sessionId)
+                    settle(false)
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    /**
+     * Installs every APK member of a bundle (base + splits) together, placing an XAPK's
+     * expansion files first. With OBBs the job outlives the commit: their backups can only be
+     * finalized once the system reports the outcome, so the process has to stay up until then.
+     */
+    private suspend fun installBundle(
+        entry: XEntry,
+        file: File,
+        label: String,
+        job: BackgroundJob,
+        progress: InstallProgress,
+    ) {
+        ZipFile(file).use { zip ->
+            val obbs = if (entry.extension == "xapk") XapkObbInstaller.findObbs(zip) else emptyList()
+            val placement = XapkObbInstaller.place(Graph.appContext, zip, obbs, progress)
+            var submitted = false
+            try {
+                val apks = buildList {
+                    val entries = zip.entries()
+                    while (entries.hasMoreElements()) {
+                        val e = entries.nextElement()
+                        if (!e.isDirectory && e.name.substringAfterLast('/').endsWith(".apk", true)) {
+                            add(ApkInstaller.ApkSource(e.name, e.size) { zip.getInputStream(e) })
+                        }
+                    }
+                }
+                if (apks.isEmpty()) throw IllegalArgumentException("No APK inside ${entry.name}")
+                val settled = AtomicBoolean(false)
+                fun settle(success: Boolean) {
+                    if (!settled.compareAndSet(false, true)) return
+                    if (success) placement.commit() else placement.cleanUp()
+                }
+                val pending = CompletableDeferred<Boolean>()
+                val session = ApkInstaller.install(Graph.appContext, label, apks, progress) { success ->
+                    // A result that arrives after we stopped waiting still has to land: the
+                    // OBB backups can only be dropped or restored once we know the outcome.
+                    if (!pending.complete(success)) {
+                        Graph.appScope.launch(Dispatchers.IO) { settle(success) }
+                    }
+                }
+                submitted = true
+                awaitVerdict(job, session, pending, unwindOnGiveUp = obbs.isNotEmpty(), settle = ::settle)
+            } finally {
+                if (!submitted) placement.cleanUp()
+            }
+        }
+    }
+
+    @androidx.annotation.StringRes
+    private fun phaseMessage(phase: InstallPhase): Int = when (phase) {
+        InstallPhase.BUILDING_APKS -> R.string.building_apks
+        InstallPhase.EXTRACTING_OBB -> R.string.extracting_obb
+        InstallPhase.WRITING_APKS -> R.string.writing_apks
     }
 
     fun openAsText(entry: XEntry) {

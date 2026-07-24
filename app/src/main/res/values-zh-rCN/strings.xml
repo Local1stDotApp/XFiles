@@ -180,6 +180,8 @@
     <string name="building_apks">正在从 AAB 构建 APK…</string>
     <string name="aab_key_regenerated">AAB 签名密钥已重新生成。此前转换的应用必须先卸载并重新安装，之后才能更新。</string>
     <string name="extracting_obb">正在提取 OBB…</string>
+    <string name="writing_apks">正在写入 APK…</string>
+    <string name="awaiting_install_confirmation">等待确认安装…</string>
     <string name="enable_unknown_apps">请为 XFiles 启用“安装未知应用”，然后重试</string>
     <string name="install_failed">安装失败：%1$s</string>
     <string name="cannot_write">无法写入 %1$s</string>

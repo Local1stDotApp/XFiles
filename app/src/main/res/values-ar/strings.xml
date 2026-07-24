@@ -186,6 +186,8 @@
     <string name="building_apks">إنشاء APKs من الحزمة...</string>
     <string name="aab_key_regenerated">تمت إعادة إنشاء مفتاح التوقيع AAB. يجب إلغاء تثبيت التطبيقات المحولة مسبقًا وإعادة تثبيتها قبل التحديث التالي.</string>
     <string name="extracting_obb">استخراج OBB...</string>
+    <string name="writing_apks">كتابة APKs...</string>
+    <string name="awaiting_install_confirmation">في انتظار التأكيد...</string>
     <string name="enable_unknown_apps">قم بتمكين "تثبيت تطبيقات غير معروفة" لـ XFiles وأعد المحاولة</string>
     <string name="install_failed">فشل التثبيت: %1$s</string>
     <string name="cannot_write">لا يمكن الكتابة إلى %1$s</string>

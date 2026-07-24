@@ -181,6 +181,8 @@
     <string name="building_apks">バンドルから APK を作成中…</string>
     <string name="aab_key_regenerated">AAB 署名鍵が再生成されました。以前に変換したアプリは、次回更新前にアンインストールして再インストールする必要があります。</string>
     <string name="extracting_obb">OBB を展開中…</string>
+    <string name="writing_apks">APK を書き込み中…</string>
+    <string name="awaiting_install_confirmation">確認を待機中…</string>
     <string name="enable_unknown_apps">XFiles の「不明なアプリのインストール」を有効にして、再試行してください</string>
     <string name="install_failed">インストールに失敗しました: %1$s</string>
     <string name="cannot_write">%1$s に書き込めません</string>

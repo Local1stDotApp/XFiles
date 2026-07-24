@@ -21,6 +21,7 @@ import java.security.cert.X509Certificate
 import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Date
 import java.util.UUID
+import java.util.concurrent.CancellationException
 
 object AabConverter {
 
@@ -28,22 +29,28 @@ object AabConverter {
         context: Context,
         bundle: File,
         label: String,
+        progress: InstallProgress = InstallProgress(),
+        onResult: ((success: Boolean) -> Unit)? = null,
         onSigningKeyRegenerated: (() -> Unit)? = null,
-    ) {
+    ): Int {
         val app = context.applicationContext
         val workDir = File(app.cacheDir, "aab-install-${UUID.randomUUID()}")
         if (!workDir.mkdirs()) throw IllegalStateException("Cannot create bundle work directory")
         try {
+            progress.onPhase(InstallPhase.BUILDING_APKS)
             val deviceSpec = deviceSpec(app)
             val signingResult = signingConfiguration(app)
             if (signingResult.regenerated) onSigningKeyRegenerated?.invoke()
             val signing = signingResult.configuration
             val apkFiles = try {
-                buildAndExtract(bundle, workDir, deviceSpec, signing, universal = false)
+                buildAndExtract(bundle, workDir, deviceSpec, signing, universal = false, progress = progress)
             } catch (first: Exception) {
+                // Bundletool can't be interrupted mid-call, so cancellation surfaces here as a
+                // failure of the device-spec build. Retrying universal would burn minutes more.
+                if (first is CancellationException) throw first
                 workDir.listFiles()?.forEach { it.deleteRecursively() }
                 try {
-                    buildAndExtract(bundle, workDir, deviceSpec, signing, universal = true)
+                    buildAndExtract(bundle, workDir, deviceSpec, signing, universal = true, progress = progress)
                 } catch (second: Exception) {
                     second.addSuppressed(first)
                     throw second
@@ -60,12 +67,14 @@ object AabConverter {
                 }
             }
             if (apkFiles.isEmpty()) throw IllegalStateException("Bundletool produced no installable APK")
-            ApkInstaller.install(
+            return ApkInstaller.install(
                 app,
                 label,
                 apkFiles.map { apk ->
                     ApkInstaller.ApkSource(apk.name, apk.length()) { FileInputStream(apk) }
                 },
+                progress,
+                onResult,
             )
         } finally {
             workDir.deleteRecursively()
@@ -78,7 +87,11 @@ object AabConverter {
         deviceSpec: DeviceSpec,
         signing: SigningConfiguration,
         universal: Boolean,
+        progress: InstallProgress,
     ): List<File> {
+        // Each bundletool call runs to completion once started; these are the only points where
+        // a cancelled job can bail out before paying for the next one.
+        if (progress.isCancelled()) throw CancellationException("Install cancelled")
         val apksArchive = File(workDir, if (universal) "universal.apks" else "device.apks")
         val builder = BuildApksCommand.builder()
             .setBundlePath(bundle.toPath())
@@ -95,6 +108,7 @@ object AabConverter {
         }
         builder.build().execute()
 
+        if (progress.isCancelled()) throw CancellationException("Install cancelled")
         val outputDir = File(workDir, if (universal) "universal" else "device")
         val paths = ExtractApksCommand.builder()
             .setApksArchivePath(apksArchive.toPath())

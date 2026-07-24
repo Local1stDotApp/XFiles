@@ -184,6 +184,8 @@
     <string name="building_apks">Tworzenie plików APK z pakietu…</string>
     <string name="aab_key_regenerated">Klucz podpisywania AAB został wygenerowany ponownie. Wcześniej przekonwertowane aplikacje trzeba odinstalować i zainstalować ponownie przed następną aktualizacją.</string>
     <string name="extracting_obb">Wypakowywanie OBB…</string>
+    <string name="writing_apks">Zapisywanie plików APK…</string>
+    <string name="awaiting_install_confirmation">Oczekiwanie na potwierdzenie…</string>
     <string name="enable_unknown_apps">Włącz „Instalowanie nieznanych aplikacji” dla XFiles i spróbuj ponownie</string>
     <string name="install_failed">Instalacja nie powiodła się: %1$s</string>
     <string name="cannot_write">Nie można zapisać w %1$s</string>

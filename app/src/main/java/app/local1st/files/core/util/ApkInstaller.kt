@@ -14,6 +14,8 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import java.io.InputStream
+import java.util.concurrent.CancellationException
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Installs an APK — or a whole split app — through a [PackageInstaller] session.
@@ -30,20 +32,27 @@ object ApkInstaller {
     private const val ACTION_RESULT = "app.local1st.files.INSTALL_RESULT"
     private const val CONFIRM_CHANNEL_ID = "install_confirmation"
 
+    /** Live result receivers by session, so [abandon] can silence one before dropping it. */
+    private val receivers = ConcurrentHashMap<Int, BroadcastReceiver>()
+
     /** One APK to feed into a session: its entry [name], byte [size] (or ≤0 if unknown), bytes. */
     class ApkSource(val name: String, val size: Long, val open: () -> InputStream)
 
     /**
      * Writes every APK in [apks] into a fresh session and commits it as a single package named
      * [label] (for user-facing messages only). Blocking IO — call off the main thread.
+     *
+     * Returns the committed session's id, which [abandon] can drop while its confirmation
+     * prompt is still unanswered.
      */
     @Throws(Exception::class)
     fun install(
         context: Context,
         label: String,
         apks: List<ApkSource>,
+        progress: InstallProgress = InstallProgress(),
         onResult: ((success: Boolean) -> Unit)? = null,
-    ) {
+    ): Int {
         require(apks.isNotEmpty()) { "No APK to install" }
         val app = context.applicationContext
         val installer = app.packageManager.packageInstaller
@@ -51,13 +60,22 @@ object ApkInstaller {
         val sessionId = installer.createSession(params)
         var receiver: BroadcastReceiver? = null
         try {
+            progress.onPhase(InstallPhase.WRITING_APKS)
+            // A split app's members are only sized together; report one bar across all of them.
+            val totalBytes = if (apks.all { it.size > 0 }) apks.sumOf { it.size } else 0L
+            var doneBytes = 0L
             installer.openSession(sessionId).use { session ->
                 apks.forEachIndexed { i, apk ->
                     session.openWrite("apk_$i", 0, if (apk.size > 0) apk.size else -1).use { out ->
-                        apk.open().use { input -> input.copyTo(out) }
+                        apk.open().use { input ->
+                            doneBytes = copyWithProgress(input, out, progress, doneBytes, totalBytes)
+                        }
                         session.fsync(out)
                     }
                 }
+                // The last poll was a whole fsync ago; without this a cancel landing in that
+                // window would still commit the package it was meant to stop.
+                if (progress.isCancelled()) throw CancellationException("Install cancelled")
                 // Registered before commit so the STATUS_PENDING_USER_ACTION prompt isn't missed.
                 receiver = registerResultReceiver(app, sessionId, label, onResult)
                 val callback = PendingIntent.getBroadcast(
@@ -69,10 +87,28 @@ object ApkInstaller {
                 session.commit(callback.intentSender)
             }
         } catch (e: Exception) {
-            receiver?.let { runCatching { app.unregisterReceiver(it) } }
+            receiver?.let { unregister(app, sessionId, it) }
             runCatching { installer.abandonSession(sessionId) }
             throw e
         }
+        return sessionId
+    }
+
+    /**
+     * Drops a committed session whose confirmation prompt is still unanswered. Its receiver is
+     * unregistered first, so tearing the install down on purpose doesn't report itself as a
+     * failure; the caller already knows.
+     */
+    fun abandon(context: Context, sessionId: Int) {
+        val app = context.applicationContext
+        receivers.remove(sessionId)?.let { runCatching { app.unregisterReceiver(it) } }
+        notificationManager(app).cancel(sessionId)
+        runCatching { app.packageManager.packageInstaller.abandonSession(sessionId) }
+    }
+
+    private fun unregister(app: Context, sessionId: Int, receiver: BroadcastReceiver) {
+        receivers.remove(sessionId, receiver)
+        runCatching { app.unregisterReceiver(receiver) }
     }
 
     private fun actionFor(sessionId: Int) = "$ACTION_RESULT.$sessionId"
@@ -118,7 +154,7 @@ object ApkInstaller {
                     }
                 }
                 notificationManager(app).cancel(sessionId)
-                runCatching { app.unregisterReceiver(this) }
+                unregister(app, sessionId, this)
                 runCatching { onResult?.invoke(status == PackageInstaller.STATUS_SUCCESS) }
             }
         }
@@ -129,6 +165,7 @@ object ApkInstaller {
             @Suppress("UnspecifiedRegisterReceiverFlag")
             app.registerReceiver(receiver, filter)
         }
+        receivers[sessionId] = receiver
         return receiver
     }
 

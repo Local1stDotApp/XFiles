@@ -290,7 +290,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             },
         )
 
-        OpsHost(vm)
+        OpsHost()
 
         SnackbarHost(
             snackbarHostState,
