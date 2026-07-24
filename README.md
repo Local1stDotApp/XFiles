@@ -5,8 +5,8 @@
 # XFiles
 
 **An offline, open-source Android file manager with X-plore's workflow** — dual-pane
-tree browsing, archive-as-folder, app manager, root access — on the latest Android
-stack with a Material 3 Expressive UI.
+tree browsing, archive-as-folder, app manager, APK/AAB/XAPK install, root & Shizuku
+access — on the latest Android stack with a Material 3 Expressive UI.
 
 [![Release](https://img.shields.io/github/v/release/Local1stDotApp/XFiles?include_prereleases&sort=semver&label=release)](https://github.com/Local1stDotApp/XFiles/releases)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
@@ -63,7 +63,8 @@ and an icon fallback while loading.
 Multi-select via right-edge checkmarks. **Copy/move/extract go to an explicit
 destination** chosen in a full-screen folder picker — it defaults to the other pane, but
 you can browse anywhere and make new folders — or use `Copy to…`/`Move to…` from the
-long-press menu. Plus delete, rename, new folder.
+long-press menu. Plus delete, rename, new folder. On Android 8–10, writes to SD cards
+and other secondary volumes work through a one-time SAF grant.
 
 A background engine drives it all with progress (the wavy Expressive indicator),
 cancellation, and Skip / Overwrite / Keep-both conflict resolution.
@@ -83,8 +84,8 @@ when idle.
 
 ### Archives as folders
 
-Browse zip/jar/apk, 7z, tar(.gz/.bz2/.xz) and rar read-only; extract by copying out;
-APK install shortcut.
+Browse zip/jar/apk, 7z, tar(.gz/.bz2/.xz) and rar read-only; extract by copying out.
+Anything installable installs from right there — see below.
 
 ### App manager
 
@@ -99,17 +100,36 @@ Drill into a category and each component shows its class name and its real manif
 state — `exported` / `not exported`, `enabled` / `disabled`. Launch activities, create
 shortcuts, and enable/disable components where the system permits.
 
-### Root access
+### Package installer
+
+APKs install with a tap — and so does everything APK-shaped: split bundles
+(`.apks` / `.apkm` / `.xapk`, with XAPK **OBB** expansion files placed where the game
+expects them) and even raw **`.aab`** files. A vendored
+[bundletool](https://github.com/google/bundletool) converts the bundle on the phone
+into split APKs matched to the device and signs them with a built-in certificate — no
+PC, no Play Store. Installs run in the foreground service, so backgrounding the app
+mid-install doesn't kill the session.
+
+### Root & Shizuku
 
 Off by default. Turn on **Root access** in Settings and a **Root** entry (`/`) joins the
-storage roots — with a separate **Read-only** switch that blocks anything needing root
-to write, so you can go look without being able to break your system.
+storage roots — with a separate **Read-only** switch that blocks anything needing
+privilege to write, so you can go look without being able to break your system.
 
-What you get is the real filesystem — `/data` opening up to `adb`, `anr`, `app`,
-`app-private`, `dalvik-cache`, none of which a normal app can even list. XFiles browses
-it as superuser via `su`: list/read/write/mkdir/rename/delete under `/data`, `/system`, …
-Files stream through `su cat` / `cat >`, so the app's own viewers can open protected
-files. Falls back to a read-only `/` view when `su` is unavailable.
+Two interchangeable transports power it, and Settings lets you pick (or leave it on
+auto):
+
+- **`su`** — full superuser on rooted devices. `/data` opens up to `adb`, `anr`, `app`,
+  `app-private`, `dalvik-cache` — directories a normal app can't even list — with
+  list/read/write/mkdir/rename/delete under `/data`, `/system`, …
+- **[Shizuku](https://shizuku.rikka.app/)** — no root required: XFiles binds a Shizuku
+  user service running at shell (ADB) privilege that hands over real file descriptors.
+  Settings walks you through setup and permission.
+
+Whichever transport is live also kicks in transparently where plain file access is
+denied — most notably **`Android/data`** and **`Android/obb`**, which open like any
+other folder. Thumbnails, viewers and even video playback work on privileged paths.
+With no transport available, Root falls back to a read-only `/` view.
 
 The settings screen carries the rest of the preferences too — theme, dynamic color,
 hidden files, folders-first, sort key and direction.
@@ -129,12 +149,25 @@ live preview, drag the compact control card out of the way, or go fullscreen imm
 Live streaming recursive search with `*`/`?` wildcards. Descends into archives, and
 reveals results in the tree on tap.
 
+### Open from other apps
+
+Off by default so XFiles never hijacks anything. Three opt-in toggles in Settings
+register XFiles with the system resolver for **archives**, **images** and **videos** —
+after that, "open with XFiles" from any app lands in the archive tree or the right
+viewer.
+
 ### Material 3 Expressive
 
 `MaterialExpressiveTheme` + expressive motion, dynamic color (Android 12+),
 light/dark/system, floating toolbar, `LoadingIndicator` / `LinearWavyProgressIndicator`.
 True edge-to-edge: no top app bar — content scrolls under the status bar behind a
 gradient scrim, with floating breadcrumb and settings buttons.
+
+### 18 languages
+
+The UI follows the system language: English plus Arabic, Chinese (Simplified and
+Traditional), Dutch, French, German, Hindi, Indonesian, Italian, Japanese, Korean,
+Polish, Portuguese (Brazil), Russian, Spanish, Turkish and Vietnamese.
 
 ## Permissions & privacy
 
@@ -148,9 +181,9 @@ declares, and why:
 | `WRITE_EXTERNAL_STORAGE` *(≤ API 29)* | Legacy write path on older Android |
 | `QUERY_ALL_PACKAGES` | The App manager lists what is installed |
 | `REQUEST_DELETE_PACKAGES` | Uninstall from the App manager |
-| `REQUEST_INSTALL_PACKAGES` | Install an APK you copied out, including split `.apks` bundles |
+| `REQUEST_INSTALL_PACKAGES` | The package installer: APKs, split bundles (`.apks`/`.apkm`/`.xapk`), AABs |
 | `POST_NOTIFICATIONS` | Show the progress notification for long operations |
-| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` | Keep a copy/move running when backgrounded |
+| `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` | Keep a copy/move or install running when backgrounded |
 | `WAKE_LOCK` | Don't sleep mid-operation |
 | **`INTERNET`** | **Not requested.** The app cannot talk to the network at all |
 
@@ -164,10 +197,12 @@ That last row is enforced by the OS, not by policy — verify it yourself in
 |---|---|
 | Language / UI | Kotlin, Jetpack Compose (BOM 2026.06.01), material3 **1.5.0-alpha23** (Expressive APIs) |
 | Build | AGP 9.2.1 (built-in Kotlin, no KGP), Gradle 9.4.1, compileSdk 37 / target 37 / min 26 |
-| Architecture | Single module, MVVM + StateFlow, manual DI composition root (`di/Graph`) |
+| Architecture | MVVM + StateFlow, manual DI composition root (`di/Graph`); app module + a shaded bundletool vendor module |
 | Persistence | DataStore Preferences |
 | Media/Images | Coil 3 (GIF, custom fetchers: app icons, disk-cached video thumbnails), Media3 ExoPlayer |
 | Archives | java.util.zip, commons-compress (+xz), junrar |
+| Privileged access | Shizuku 13.1.5 (user service, real fds) · `su` shell |
+| Package install | PackageInstaller sessions · vendored bundletool 1.18.3 · ARSCLib (in-process aapt2) · minimal self-signed signer |
 
 Note: material3 is pinned to `1.5.0-alpha23` because the Expressive APIs are
 `internal` in the 1.4.0 stable release.
@@ -178,15 +213,19 @@ Note: material3 is pinned to `1.5.0-alpha23` because the Expressive APIs are
 app/src/main/java/app/local1st/files/
 ├── core/
 │   ├── fs/        XEntry model, XId id scheme, XFileSystem + FsRegistry,
-│   │              Local/Archive/Apps/Root filesystems, RootShell (su), storage roots
-│   ├── ops/       OperationEngine (copy/move/delete/compress + conflicts)
+│   │   │          Local/Archive/Apps/Root filesystems, storage roots, legacy SAF writes
+│   │   └── priv/  privileged transports — su shell & Shizuku user service (real fds)
+│   ├── ops/       OperationEngine (copy/move/delete/compress + conflicts), OpsService
 │   ├── search/    recursive SearchEngine
 │   ├── prefs/     DataStore settings
 │   ├── thumb/     Coil fetchers: app icons, disk-cached video thumbnails
-│   └── util/      formatters, mime/category mapping, intents, APK install/inspect
+│   └── util/      formatters, mime/category mapping, intents; package install —
+│                  PackageInstaller sessions, AAB→APKs (bundletool), XAPK/OBB,
+│                  in-process aapt2 (ARSCLib), self-signed signing
 ├── di/            Graph (composition root) + GraphInit wiring
 └── ui/
     ├── browser/   PaneController (tree state machine), PaneView, EntryRow
+    ├── components/ shared Compose bits (tooltips, predictive back)
     ├── main/      MainViewModel, MainScreen (dual pane + floating toolbar), PermissionGate
     ├── dialogs/   rename/new-folder/delete/zip/details, ops progress + conflicts
     ├── viewer/    image / text / hex viewers, audio player, frame-accurate video player
@@ -194,6 +233,8 @@ app/src/main/java/app/local1st/files/
     ├── settings/  settings screen
     ├── appinfo/   app details overlay
     └── theme/     MaterialExpressiveTheme setup
+
+vendor/bundletool-shaded/   Gradle module shading bundletool 1.18.3 + its pinned deps
 ```
 
 Entry ids are URI-like strings: `file:///abs/path`,
