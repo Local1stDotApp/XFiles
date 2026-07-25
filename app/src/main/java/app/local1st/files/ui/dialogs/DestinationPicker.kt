@@ -48,7 +48,7 @@ import app.local1st.files.core.fs.XEntry
 import app.local1st.files.R
 import app.local1st.files.core.fs.XId
 import app.local1st.files.di.Graph
-import app.local1st.files.ui.browser.EntryIcons
+import app.local1st.files.ui.browser.EntryIcon
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.main.MainViewModel
 import kotlinx.coroutines.Dispatchers
@@ -163,18 +163,26 @@ fun DestinationPicker(vm: MainViewModel) {
                         if (current != null) {
                             item("__up__") {
                                 PickerRow(
-                                    icon = Icons.Outlined.ArrowUpward,
                                     label = "..",
                                     onClick = { current?.let { goUp(it) } },
-                                )
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.ArrowUpward,
+                                        null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp),
+                                    )
+                                }
                             }
                         }
                         items(folders, key = { it.id }) { folder ->
-                            PickerRow(
-                                icon = EntryIcons.forEntry(folder),
-                                label = folder.name,
-                                onClick = { current = folder },
-                            )
+                            PickerRow(label = folder.name, onClick = { current = folder }) {
+                                EntryIcon(
+                                    folder,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(24.dp),
+                                )
+                            }
                         }
                         if (folders.isEmpty() && current != null) {
                             item("__empty__") {
@@ -261,15 +269,15 @@ private fun pathLabel(dir: XEntry): String = when (dir.scheme) {
 
 @Composable
 private fun PickerRow(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
     onClick: () -> Unit,
+    leading: @Composable () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+        leading()
         Spacer(Modifier.width(16.dp))
         Text(label, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }

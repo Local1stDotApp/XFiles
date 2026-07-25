@@ -51,7 +51,7 @@ import app.local1st.files.R
 import app.local1st.files.core.search.SearchHit
 import app.local1st.files.core.util.Format
 import app.local1st.files.di.Graph
-import app.local1st.files.ui.browser.EntryIcons
+import app.local1st.files.ui.browser.EntryIcon
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.main.MainViewModel
 import java.io.IOException
@@ -220,9 +220,8 @@ private fun SearchHitRow(hit: SearchHit, onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = EntryIcons.forEntry(entry),
-            contentDescription = null,
+        EntryIcon(
+            entry,
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.size(28.dp),
         )

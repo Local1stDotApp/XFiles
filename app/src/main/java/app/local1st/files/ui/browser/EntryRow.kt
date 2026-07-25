@@ -174,12 +174,12 @@ fun EntryRow(
             } else if (EntryIcons.wantsThumbnail(entry)) {
                 EntryThumbnail(entry)
             } else {
-                Icon(
-                    EntryIcons.forEntry(entry, node.expanded),
-                    contentDescription = null,
+                EntryIcon(
+                    entry,
                     tint = if (entry.isContainer) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(if (isVolume) 28.dp else 24.dp),
+                    expanded = node.expanded,
                 )
             }
         }
