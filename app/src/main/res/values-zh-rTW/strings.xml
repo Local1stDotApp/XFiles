@@ -218,4 +218,16 @@
     <string name="showing_first_8_mb">正在顯示 %1$s 的前 8 MB</string>
     <string name="only_local_files_playable">只能播放已有本機副本的檔案。</string>
     <string name="unknown_artist">未知演出者</string>
+    <string name="open_with_requires_local_file">「開啟方式」需要本機檔案</string>
+    <string name="no_app_can_open">沒有應用程式可以開啟 %1$s</string>
+    <string name="requires_local_file">需要本機檔案</string>
+    <string name="select_file_to_share">請選取要分享的檔案</string>
+    <string name="share_requires_local_files">分享需要本機檔案</string>
+    <string name="cannot_share_files">無法分享所選檔案</string>
+    <string name="pdf_password_protected">%1$s 受密碼保護</string>
+    <string name="pdf_corrupt_or_incomplete">%1$s 已損毀或不完整</string>
+    <string name="pdf_unreadable">無法讀取 %1$s</string>
+    <string name="pdf_page_indicator">第 %1$d / %2$d 頁</string>
+    <string name="pdf_page_render_failed">無法算繪第 %1$d 頁</string>
+    <string name="pdf_page_content_description">第 %1$d 頁</string>
 </resources>

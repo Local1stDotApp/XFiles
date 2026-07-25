@@ -217,4 +217,16 @@
     <string name="showing_first_8_mb">Showing the first 8 MB of %1$s</string>
     <string name="only_local_files_playable">Only files with a local copy can be played.</string>
     <string name="unknown_artist">Unknown artist</string>
+    <string name="open_with_requires_local_file">Open with requires a local file</string>
+    <string name="no_app_can_open">No app can open %1$s</string>
+    <string name="requires_local_file">Requires a local file</string>
+    <string name="select_file_to_share">Select a file to share</string>
+    <string name="share_requires_local_files">Share requires local files</string>
+    <string name="cannot_share_files">Couldn’t share the selected files</string>
+    <string name="pdf_password_protected">%1$s is password-protected</string>
+    <string name="pdf_corrupt_or_incomplete">%1$s is corrupt or incomplete</string>
+    <string name="pdf_unreadable">Cannot read %1$s</string>
+    <string name="pdf_page_indicator">Page %1$d / %2$d</string>
+    <string name="pdf_page_render_failed">Couldn’t render page %1$d</string>
+    <string name="pdf_page_content_description">Page %1$d</string>
 </resources>

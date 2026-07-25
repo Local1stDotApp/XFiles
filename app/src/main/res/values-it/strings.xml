@@ -218,4 +218,16 @@
     <string name="showing_first_8_mb">Mostrati i primi 8 MB di %1$s</string>
     <string name="only_local_files_playable">È possibile riprodurre solo i file con una copia locale.</string>
     <string name="unknown_artist">Artista sconosciuto</string>
+    <string name="open_with_requires_local_file">Apri con richiede un file locale</string>
+    <string name="no_app_can_open">Nessuna app può aprire %1$s</string>
+    <string name="requires_local_file">Richiede un file locale</string>
+    <string name="select_file_to_share">Seleziona un file da condividere</string>
+    <string name="share_requires_local_files">La condivisione richiede file locali</string>
+    <string name="cannot_share_files">Impossibile condividere i file selezionati</string>
+    <string name="pdf_password_protected">%1$s è protetto da password</string>
+    <string name="pdf_corrupt_or_incomplete">%1$s è danneggiato o incompleto</string>
+    <string name="pdf_unreadable">Impossibile leggere %1$s</string>
+    <string name="pdf_page_indicator">Pagina %1$d / %2$d</string>
+    <string name="pdf_page_render_failed">Impossibile visualizzare la pagina %1$d</string>
+    <string name="pdf_page_content_description">Pagina %1$d</string>
 </resources>

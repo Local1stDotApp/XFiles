@@ -235,14 +235,14 @@ private fun EntryMenuContent(
             MenuItem(
                 label = stringResource(R.string.open_with),
                 enabled = hasLocalFile,
-                disabledReason = "Requires a local file",
+                disabledReason = stringResource(R.string.requires_local_file),
             ) { vm.openWith(entry); dismiss() }
             MenuItem(stringResource(R.string.open_as_text)) { vm.openAsText(entry); dismiss() }
             MenuItem(stringResource(R.string.open_as_hex)) { vm.openAsHex(entry); dismiss() }
             MenuItem(
                 label = stringResource(R.string.share),
                 enabled = hasLocalFile,
-                disabledReason = "Requires a local file",
+                disabledReason = stringResource(R.string.requires_local_file),
             ) { vm.shareSelection(listOf(entry)); dismiss() }
         }
         // Explicit copy/move to a chosen folder (works from a single item too).
@@ -262,7 +262,7 @@ private fun EntryMenuContent(
                 MenuItem(
                     label = stringResource(R.string.install),
                     enabled = entry.localPath != null,
-                    disabledReason = "Requires a local file",
+                    disabledReason = stringResource(R.string.requires_local_file),
                 ) { vm.installPackage(entry); dismiss() }
             }
         }

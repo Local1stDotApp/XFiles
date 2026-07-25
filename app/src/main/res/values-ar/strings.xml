@@ -222,4 +222,16 @@
     <string name="showing_first_8_mb">عرض أول 8 MB من %1$s</string>
     <string name="only_local_files_playable">يمكن تشغيل الملفات ذات النسخة المحلية فقط.</string>
     <string name="unknown_artist">فنان غير معروف</string>
+    <string name="open_with_requires_local_file">يتطلب الفتح باستخدام ملفًا محليًا</string>
+    <string name="no_app_can_open">لا يمكن لأي تطبيق فتح %1$s</string>
+    <string name="requires_local_file">يتطلب ملفًا محليًا</string>
+    <string name="select_file_to_share">حدّد ملفًا لمشاركته</string>
+    <string name="share_requires_local_files">تتطلب المشاركة ملفات محلية</string>
+    <string name="cannot_share_files">تعذّرت مشاركة الملفات المحددة</string>
+    <string name="pdf_password_protected">ملف %1$s محمي بكلمة مرور</string>
+    <string name="pdf_corrupt_or_incomplete">ملف %1$s تالف أو غير مكتمل</string>
+    <string name="pdf_unreadable">تتعذّر قراءة %1$s</string>
+    <string name="pdf_page_indicator">الصفحة %1$d من %2$d</string>
+    <string name="pdf_page_render_failed">تعذّر عرض الصفحة %1$d</string>
+    <string name="pdf_page_content_description">الصفحة %1$d</string>
 </resources>

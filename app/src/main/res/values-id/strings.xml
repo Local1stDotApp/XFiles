@@ -218,4 +218,16 @@
     <string name="showing_first_8_mb">Menampilkan 8 MB pertama dari %1$s</string>
     <string name="only_local_files_playable">Hanya file dengan salinan lokal yang dapat diputar.</string>
     <string name="unknown_artist">Artis tidak dikenal</string>
+    <string name="open_with_requires_local_file">Buka dengan memerlukan file lokal</string>
+    <string name="no_app_can_open">Tidak ada aplikasi yang dapat membuka %1$s</string>
+    <string name="requires_local_file">Memerlukan file lokal</string>
+    <string name="select_file_to_share">Pilih file untuk dibagikan</string>
+    <string name="share_requires_local_files">Berbagi memerlukan file lokal</string>
+    <string name="cannot_share_files">File yang dipilih tidak dapat dibagikan</string>
+    <string name="pdf_password_protected">%1$s dilindungi kata sandi</string>
+    <string name="pdf_corrupt_or_incomplete">%1$s rusak atau tidak lengkap</string>
+    <string name="pdf_unreadable">Tidak dapat membaca %1$s</string>
+    <string name="pdf_page_indicator">Halaman %1$d / %2$d</string>
+    <string name="pdf_page_render_failed">Tidak dapat merender halaman %1$d</string>
+    <string name="pdf_page_content_description">Halaman %1$d</string>
 </resources>

@@ -1,6 +1,5 @@
 package app.local1st.files.core.util
 
-import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -27,35 +26,42 @@ object IntentUtils {
     private fun Context.launch(intent: Intent): Boolean = try {
         startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         true
-    } catch (_: ActivityNotFoundException) {
+    } catch (_: Throwable) {
         false
     }
 
     /** Open a local file with an external app chooser. Returns false when nothing handled it. */
-    fun openWith(context: Context, entry: XEntry): Boolean {
+    fun openWith(context: Context, entry: XEntry): Boolean = try {
         val path = entry.localPath ?: return false
         val mime = entry.mime ?: FileTypes.mimeOf(entry.name) ?: "*/*"
         val intent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uriFor(context, path), mime)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        return context.launch(Intent.createChooser(intent, entry.name))
+        context.launch(Intent.createChooser(intent, entry.name))
+    } catch (_: Throwable) {
+        false
     }
 
-    fun share(context: Context, entries: List<XEntry>) {
-        // Never silently share only the local subset of a mixed selection.
-        val uris = entries.map { uriFor(context, it.localPath ?: return) }
-        if (uris.isEmpty()) return
-        val intent = if (uris.size == 1) {
-            Intent(Intent.ACTION_SEND)
-                .setType(entries.first().mime ?: "*/*")
-                .putExtra(Intent.EXTRA_STREAM, uris.first())
-        } else {
-            Intent(Intent.ACTION_SEND_MULTIPLE)
-                .setType("*/*")
-                .putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+    /** Shares local files through the system chooser. Returns false when the handoff fails. */
+    fun share(context: Context, entries: List<XEntry>): Boolean {
+        return try {
+            // Never silently share only the local subset of a mixed selection.
+            val uris = entries.map { uriFor(context, it.localPath ?: return false) }
+            if (uris.isEmpty()) return false
+            val intent = if (uris.size == 1) {
+                Intent(Intent.ACTION_SEND)
+                    .setType(entries.first().mime ?: "*/*")
+                    .putExtra(Intent.EXTRA_STREAM, uris.first())
+            } else {
+                Intent(Intent.ACTION_SEND_MULTIPLE)
+                    .setType("*/*")
+                    .putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+            }
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            context.launch(Intent.createChooser(intent, null))
+        } catch (_: Throwable) {
+            false
         }
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        context.launch(Intent.createChooser(intent, null))
     }
 
     fun uninstall(context: Context, packageName: String) {

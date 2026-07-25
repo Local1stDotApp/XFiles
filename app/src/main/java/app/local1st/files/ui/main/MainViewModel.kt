@@ -275,7 +275,8 @@ class MainViewModel : ViewModel() {
             FileCategory.DATABASE -> viewer.value = ViewerRequest.Hex(entry)
             FileCategory.APK, FileCategory.ARCHIVE ->
                 dialog.value = DialogRequest.EntryMenu(entry)
-            FileCategory.PDF, FileCategory.GENERIC -> {
+            FileCategory.PDF -> viewer.value = ViewerRequest.Pdf(entry)
+            FileCategory.GENERIC -> {
                 if (!IntentUtils.openWith(Graph.appContext, entry)) {
                     viewer.value = ViewerRequest.Hex(entry)
                 }
@@ -289,11 +290,11 @@ class MainViewModel : ViewModel() {
 
     fun openWith(entry: XEntry) {
         if (entry.localPath == null) {
-            snackbar.tryEmit("Open with requires a local file")
+            snackbar.tryEmit(text(R.string.open_with_requires_local_file))
             return
         }
         if (!IntentUtils.openWith(Graph.appContext, entry)) {
-            snackbar.tryEmit("No app can open ${entry.name}")
+            snackbar.tryEmit(text(R.string.no_app_can_open, entry.name))
         }
     }
 
@@ -685,14 +686,16 @@ class MainViewModel : ViewModel() {
     fun shareSelection(entries: List<XEntry> = activeCtrl.selectionEntries()) {
         val files = entries.filter { !it.isDir }
         if (files.isEmpty()) {
-            snackbar.tryEmit("Select a file to share")
+            snackbar.tryEmit(text(R.string.select_file_to_share))
             return
         }
         if (files.any { it.localPath == null }) {
-            snackbar.tryEmit("Share requires local files")
+            snackbar.tryEmit(text(R.string.share_requires_local_files))
             return
         }
-        IntentUtils.share(Graph.appContext, files)
+        if (!IntentUtils.share(Graph.appContext, files)) {
+            snackbar.tryEmit(text(R.string.cannot_share_files))
+        }
     }
 
     fun openSearch() {

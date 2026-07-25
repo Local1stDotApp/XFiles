@@ -220,4 +220,16 @@
     <string name="showing_first_8_mb">Wyświetlanie pierwszych 8 MB z %1$s</string>
     <string name="only_local_files_playable">Można odtwarzać tylko pliki z lokalną kopią.</string>
     <string name="unknown_artist">Nieznany wykonawca</string>
+    <string name="open_with_requires_local_file">Funkcja „Otwórz za pomocą” wymaga pliku lokalnego</string>
+    <string name="no_app_can_open">Żadna aplikacja nie może otworzyć pliku %1$s</string>
+    <string name="requires_local_file">Wymaga pliku lokalnego</string>
+    <string name="select_file_to_share">Wybierz plik do udostępnienia</string>
+    <string name="share_requires_local_files">Udostępnianie wymaga plików lokalnych</string>
+    <string name="cannot_share_files">Nie udało się udostępnić wybranych plików</string>
+    <string name="pdf_password_protected">Plik %1$s jest chroniony hasłem</string>
+    <string name="pdf_corrupt_or_incomplete">Plik %1$s jest uszkodzony lub niekompletny</string>
+    <string name="pdf_unreadable">Nie można odczytać pliku %1$s</string>
+    <string name="pdf_page_indicator">Strona %1$d / %2$d</string>
+    <string name="pdf_page_render_failed">Nie udało się wyświetlić strony %1$d</string>
+    <string name="pdf_page_content_description">Strona %1$d</string>
 </resources>

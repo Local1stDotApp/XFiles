@@ -218,4 +218,16 @@
     <string name="showing_first_8_mb">%1$s के पहले 8 एमबी दिखाए जा रहे हैं</string>
     <string name="only_local_files_playable">केवल स्थानीय प्रतिलिपि वाली फ़ाइलें ही चलाई जा सकती हैं।</string>
     <string name="unknown_artist">अज्ञात कलाकार</string>
+    <string name="open_with_requires_local_file">“इसके साथ खोलें” के लिए स्थानीय फ़ाइल आवश्यक है</string>
+    <string name="no_app_can_open">कोई ऐप %1$s को नहीं खोल सकता</string>
+    <string name="requires_local_file">स्थानीय फ़ाइल आवश्यक है</string>
+    <string name="select_file_to_share">साझा करने के लिए फ़ाइल चुनें</string>
+    <string name="share_requires_local_files">साझा करने के लिए स्थानीय फ़ाइलें आवश्यक हैं</string>
+    <string name="cannot_share_files">चुनी गई फ़ाइलें साझा नहीं की जा सकीं</string>
+    <string name="pdf_password_protected">%1$s पासवर्ड से सुरक्षित है</string>
+    <string name="pdf_corrupt_or_incomplete">%1$s दूषित या अधूरी है</string>
+    <string name="pdf_unreadable">%1$s को पढ़ा नहीं जा सकता</string>
+    <string name="pdf_page_indicator">पृष्ठ %1$d / %2$d</string>
+    <string name="pdf_page_render_failed">पृष्ठ %1$d रेंडर नहीं किया जा सका</string>
+    <string name="pdf_page_content_description">पृष्ठ %1$d</string>
 </resources>

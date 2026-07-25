@@ -265,7 +265,10 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                             TooltipIconButton(stringResource(R.string.delete), Icons.Outlined.Delete) { vm.requestDelete() }
                             TooltipIconButton(stringResource(R.string.zip), Icons.Outlined.Archive) { vm.requestCompress() }
                             TooltipIconButton(
-                                label = if (canShareSelection) stringResource(R.string.share) else "Share requires local files",
+                                label = stringResource(
+                                    if (canShareSelection) R.string.share
+                                    else R.string.share_requires_local_files,
+                                ),
                                 icon = Icons.Outlined.Share,
                                 enabled = canShareSelection,
                             ) { vm.shareSelection() }

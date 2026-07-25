@@ -220,4 +220,16 @@
     <string name="showing_first_8_mb">Показаны первые 8 MB файла %1$s</string>
     <string name="only_local_files_playable">Воспроизводиться могут только файлы с локальной копией.</string>
     <string name="unknown_artist">Неизвестный исполнитель</string>
+    <string name="open_with_requires_local_file">Для действия «Открыть с помощью» нужен локальный файл</string>
+    <string name="no_app_can_open">Ни одно приложение не может открыть %1$s</string>
+    <string name="requires_local_file">Требуется локальный файл</string>
+    <string name="select_file_to_share">Выберите файл для отправки</string>
+    <string name="share_requires_local_files">Для отправки требуются локальные файлы</string>
+    <string name="cannot_share_files">Не удалось отправить выбранные файлы</string>
+    <string name="pdf_password_protected">Файл %1$s защищён паролем</string>
+    <string name="pdf_corrupt_or_incomplete">Файл %1$s повреждён или неполный</string>
+    <string name="pdf_unreadable">Не удалось прочитать %1$s</string>
+    <string name="pdf_page_indicator">Страница %1$d / %2$d</string>
+    <string name="pdf_page_render_failed">Не удалось отобразить страницу %1$d</string>
+    <string name="pdf_page_content_description">Страница %1$d</string>
 </resources>

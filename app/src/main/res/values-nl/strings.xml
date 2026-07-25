@@ -218,4 +218,16 @@
     <string name="showing_first_8_mb">De eerste 8 MB van %1$s worden weergegeven</string>
     <string name="only_local_files_playable">Alleen bestanden met een lokale kopie kunnen worden afgespeeld.</string>
     <string name="unknown_artist">Onbekende artiest</string>
+    <string name="open_with_requires_local_file">Openen met vereist een lokaal bestand</string>
+    <string name="no_app_can_open">Geen app kan %1$s openen</string>
+    <string name="requires_local_file">Vereist een lokaal bestand</string>
+    <string name="select_file_to_share">Selecteer een bestand om te delen</string>
+    <string name="share_requires_local_files">Delen vereist lokale bestanden</string>
+    <string name="cannot_share_files">De geselecteerde bestanden konden niet worden gedeeld</string>
+    <string name="pdf_password_protected">%1$s is beveiligd met een wachtwoord</string>
+    <string name="pdf_corrupt_or_incomplete">%1$s is beschadigd of onvolledig</string>
+    <string name="pdf_unreadable">Kan %1$s niet lezen</string>
+    <string name="pdf_page_indicator">Pagina %1$d / %2$d</string>
+    <string name="pdf_page_render_failed">Kan pagina %1$d niet weergeven</string>
+    <string name="pdf_page_content_description">Pagina %1$d</string>
 </resources>

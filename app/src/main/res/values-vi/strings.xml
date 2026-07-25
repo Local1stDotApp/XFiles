@@ -218,4 +218,16 @@
     <string name="showing_first_8_mb">Hiển thị 8 MB đầu tiên của %1$s</string>
     <string name="only_local_files_playable">Chỉ có thể phát các tập tin có bản sao cục bộ.</string>
     <string name="unknown_artist">Nghệ sĩ không xác định</string>
+    <string name="open_with_requires_local_file">Mở bằng yêu cầu tệp cục bộ</string>
+    <string name="no_app_can_open">Không có ứng dụng nào có thể mở %1$s</string>
+    <string name="requires_local_file">Yêu cầu tệp cục bộ</string>
+    <string name="select_file_to_share">Chọn một tệp để chia sẻ</string>
+    <string name="share_requires_local_files">Chia sẻ yêu cầu các tệp cục bộ</string>
+    <string name="cannot_share_files">Không thể chia sẻ các tệp đã chọn</string>
+    <string name="pdf_password_protected">%1$s được bảo vệ bằng mật khẩu</string>
+    <string name="pdf_corrupt_or_incomplete">%1$s bị hỏng hoặc không đầy đủ</string>
+    <string name="pdf_unreadable">Không thể đọc %1$s</string>
+    <string name="pdf_page_indicator">Trang %1$d / %2$d</string>
+    <string name="pdf_page_render_failed">Không thể kết xuất trang %1$d</string>
+    <string name="pdf_page_content_description">Trang %1$d</string>
 </resources>

@@ -218,4 +218,16 @@
     <string name="showing_first_8_mb">%1$s\'in ilk 8 MB\'i gösteriliyor</string>
     <string name="only_local_files_playable">Yalnızca yerel kopyaya sahip dosyalar oynatılabilir.</string>
     <string name="unknown_artist">Bilinmeyen sanatçı</string>
+    <string name="open_with_requires_local_file">Birlikte açmak için yerel bir dosya gerekir</string>
+    <string name="no_app_can_open">Hiçbir uygulama %1$s dosyasını açamıyor</string>
+    <string name="requires_local_file">Yerel bir dosya gerekir</string>
+    <string name="select_file_to_share">Paylaşmak için bir dosya seçin</string>
+    <string name="share_requires_local_files">Paylaşım için yerel dosyalar gerekir</string>
+    <string name="cannot_share_files">Seçili dosyalar paylaşılamadı</string>
+    <string name="pdf_password_protected">%1$s parola korumalı</string>
+    <string name="pdf_corrupt_or_incomplete">%1$s bozuk veya eksik</string>
+    <string name="pdf_unreadable">%1$s okunamıyor</string>
+    <string name="pdf_page_indicator">Sayfa %1$d / %2$d</string>
+    <string name="pdf_page_render_failed">Sayfa %1$d görüntülenemedi</string>
+    <string name="pdf_page_content_description">Sayfa %1$d</string>
 </resources>

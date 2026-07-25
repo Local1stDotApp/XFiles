@@ -218,4 +218,16 @@
     <string name="showing_first_8_mb">显示 %1$s 的前 8 MB</string>
     <string name="only_local_files_playable">只能播放有本地副本的文件。</string>
     <string name="unknown_artist">未知歌手</string>
+    <string name="open_with_requires_local_file">“打开方式”需要本地文件</string>
+    <string name="no_app_can_open">没有应用可以打开 %1$s</string>
+    <string name="requires_local_file">需要本地文件</string>
+    <string name="select_file_to_share">请选择要分享的文件</string>
+    <string name="share_requires_local_files">分享需要本地文件</string>
+    <string name="cannot_share_files">无法分享所选文件</string>
+    <string name="pdf_password_protected">%1$s 受密码保护</string>
+    <string name="pdf_corrupt_or_incomplete">%1$s 已损坏或不完整</string>
+    <string name="pdf_unreadable">无法读取 %1$s</string>
+    <string name="pdf_page_indicator">第 %1$d / %2$d 页</string>
+    <string name="pdf_page_render_failed">无法渲染第 %1$d 页</string>
+    <string name="pdf_page_content_description">第 %1$d 页</string>
 </resources>
