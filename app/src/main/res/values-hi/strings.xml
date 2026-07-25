@@ -177,7 +177,6 @@
     <string name="lines">%1$d लाइनें</string>
     <string name="edit">संपादित करें</string>
     <string name="stop_editing">संपादन बंद करो</string>
-    <string name="file_too_large">फ़ाइल 2 एमबी से अधिक है - पहले 2 एमबी दिखा रही है (केवल पढ़ने के लिए)</string>
     <string name="decoded_binary_xml">एंड्रॉइड बाइनरी XML से डिकोड किया गया (केवल पढ़ने के लिए)</string>
     <string name="previous_frame">पिछला फ़्रेम</string>
     <string name="next_frame">अगला फ़्रेम</string>

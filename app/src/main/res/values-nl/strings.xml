@@ -177,7 +177,6 @@
     <string name="lines">%1$d regels</string>
     <string name="edit">Bewerking</string>
     <string name="stop_editing">Stop met bewerken</string>
-    <string name="file_too_large">Bestand is groter dan 2 MB: de eerste 2 MB worden weergegeven (alleen-lezen)</string>
     <string name="decoded_binary_xml">Gedecodeerd uit Android binaire XML (alleen-lezen)</string>
     <string name="previous_frame">Vorige frame</string>
     <string name="next_frame">Volgende frame</string>

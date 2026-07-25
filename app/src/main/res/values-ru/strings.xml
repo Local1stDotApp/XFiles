@@ -179,7 +179,6 @@
     <string name="lines">%1$d строк</string>
     <string name="edit">Редактировать</string>
     <string name="stop_editing">Остановить редактирование</string>
-    <string name="file_too_large">Размер файла превышает 2 MB — отображаются первые 2 MB (только для чтения).</string>
     <string name="decoded_binary_xml">Декодировано из двоичного XML-файла Android (только для чтения).</string>
     <string name="previous_frame">Предыдущий кадр</string>
     <string name="next_frame">Следующий кадр</string>

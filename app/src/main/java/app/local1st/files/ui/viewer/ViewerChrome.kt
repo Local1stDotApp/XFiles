@@ -2,11 +2,17 @@ package app.local1st.files.ui.viewer
 
 import android.app.Activity
 import android.content.ContextWrapper
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -14,14 +20,26 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -34,6 +52,15 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+/** Below this many rows a list is short enough to swipe through, and the thumb is just clutter. */
+private const val SCROLLBAR_MIN_ITEMS = 40
+private const val SCROLLBAR_LINGER_MILLIS = 1200L
+private val SCROLLBAR_TOUCH_WIDTH = 28.dp
+private val SCROLLBAR_THUMB_WIDTH = 6.dp
+private val SCROLLBAR_MIN_THUMB = 40.dp
 
 /**
  * Chrome shared by the full-screen viewers.
@@ -106,6 +133,94 @@ fun SystemBarsHidden(hidden: Boolean) {
             insets?.show(WindowInsetsCompat.Type.systemBars())
         }
         onDispose { insets?.show(WindowInsetsCompat.Type.systemBars()) }
+    }
+}
+
+/**
+ * Drag-to-seek scrollbar over a viewer's row list. Millions of rows can never be crossed by
+ * swiping, so for a very large file the thumb is the only practical way through it. It shows up once
+ * the list moves, stays while it is held, and fades out shortly after both stop — an invisible strip
+ * would otherwise swallow swipes along the edge.
+ */
+@Composable
+fun ViewerScrollbar(state: LazyListState, modifier: Modifier = Modifier) {
+    val itemCount = state.layoutInfo.totalItemsCount
+    val onScreen = state.layoutInfo.visibleItemsInfo.size
+    if (itemCount < SCROLLBAR_MIN_ITEMS || onScreen == 0) return
+
+    var dragging by remember { mutableStateOf(false) }
+    var shown by remember { mutableStateOf(false) }
+    LaunchedEffect(state.isScrollInProgress, dragging) {
+        if (state.isScrollInProgress || dragging) {
+            shown = true
+        } else {
+            delay(SCROLLBAR_LINGER_MILLIS)
+            shown = false
+        }
+    }
+    val alpha by animateFloatAsState(if (shown) 1f else 0f)
+    if (alpha == 0f) return
+
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    // Scrolling ends when the last row reaches the bottom, not when it reaches the top.
+    val lastTop = (itemCount - onScreen).coerceAtLeast(1)
+    val progress = (state.firstVisibleItemIndex.toFloat() / lastTop).coerceIn(0f, 1f)
+
+    BoxWithConstraints(modifier.fillMaxHeight().width(SCROLLBAR_TOUCH_WIDTH)) {
+        val thumbHeight =
+            maxOf(SCROLLBAR_MIN_THUMB, maxHeight * (onScreen.toFloat() / itemCount))
+                .coerceAtMost(maxHeight)
+        val travel = maxHeight - thumbHeight
+        val travelPx = with(density) { travel.toPx() }.coerceAtLeast(1f)
+        var held by remember { mutableFloatStateOf(0f) }
+        var sought by remember { mutableStateOf(-1) }
+        // Kept current: a DraggableState remembers its callback, and this one closes over a track
+        // height and row count that change as the list grows.
+        val seek by rememberUpdatedState<(Float) -> Unit> { offset ->
+            held = offset.coerceIn(0f, travelPx)
+            // Clamped, not just rounded: past a few million rows a Float cannot land on every index
+            // and may round past the last one.
+            val row = ((held / travelPx) * lastTop).roundToInt().coerceIn(0, lastTop)
+            if (row != sought) {
+                sought = row
+                scope.launch { state.scrollToItem(row) }
+            }
+        }
+        // Only the thumb seeks. A drag surface spanning the whole strip would, for the second or so
+        // the bar lingers after every scroll, turn a swipe along the screen edge into a jump of
+        // thousands of rows — and the same swipe a moment later would scroll normally.
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .offset(y = if (dragging) with(density) { held.toDp() } else travel * progress)
+                .height(thumbHeight)
+                .width(SCROLLBAR_TOUCH_WIDTH)
+                .draggable(
+                    state = rememberDraggableState { delta -> seek(held + delta) },
+                    orientation = Orientation.Vertical,
+                    // Relative to where the thumb already is, so the list never jumps on touch-down.
+                    onDragStarted = {
+                        held = travelPx * progress
+                        sought = -1
+                        dragging = true
+                    },
+                    onDragStopped = { dragging = false },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .width(SCROLLBAR_THUMB_WIDTH)
+                    .alpha(alpha)
+                    .background(
+                        if (dragging) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        CircleShape,
+                    ),
+            )
+        }
     }
 }
 

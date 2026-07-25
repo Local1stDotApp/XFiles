@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
@@ -221,12 +222,13 @@ private fun HexRowList(
         return
     }
     val hScroll = rememberScrollState()
+    val listState = rememberLazyListState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         // Rows are monospace and unwrapped, so the list is measured unbounded inside the horizontal
         // scroll; the banner is pinned to the viewport width instead of hugging its own text.
         val viewportWidth = maxWidth
         Box(Modifier.fillMaxSize().horizontalScroll(hScroll)) {
-            LazyColumn(Modifier.fillMaxHeight(), contentPadding = chrome) {
+            LazyColumn(Modifier.fillMaxHeight(), state = listState, contentPadding = chrome) {
                 banner?.let { item { HexBanner(it, Modifier.width(viewportWidth)) } }
                 items(rowCount) { row ->
                     Text(
@@ -240,6 +242,13 @@ private fun HexRowList(
                 }
             }
         }
+        // Outside the horizontal scroll: the thumb belongs to the window, not to the dump's width.
+        ViewerScrollbar(
+            listState,
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = chrome.calculateTopPadding(), bottom = chrome.calculateBottomPadding()),
+        )
     }
 }
 

@@ -177,7 +177,6 @@
     <string name="lines">%1$d 行</string>
     <string name="edit">編輯</string>
     <string name="stop_editing">停止編輯</string>
-    <string name="file_too_large">檔案超過 2 MB — 僅顯示前 2 MB（唯讀）</string>
     <string name="decoded_binary_xml">已從 Android 二進位 XML 解碼（唯讀）</string>
     <string name="previous_frame">上一幀</string>
     <string name="next_frame">下一幀</string>

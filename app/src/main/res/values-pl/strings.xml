@@ -179,7 +179,6 @@
     <string name="lines">%1$d wierszy</string>
     <string name="edit">Edytuj</string>
     <string name="stop_editing">Zakończ edycję</string>
-    <string name="file_too_large">Plik przekracza 2 MB — wyświetlane są pierwsze 2 MB (tylko do odczytu)</string>
     <string name="decoded_binary_xml">Zdekodowano z binarnego pliku XML Androida (tylko do odczytu)</string>
     <string name="previous_frame">Poprzednia klatka</string>
     <string name="next_frame">Następna klatka</string>

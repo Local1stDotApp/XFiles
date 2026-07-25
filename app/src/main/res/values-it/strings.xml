@@ -177,7 +177,6 @@
     <string name="lines">%1$d righe</string>
     <string name="edit">Modifica</string>
     <string name="stop_editing">Interrompi la modifica</string>
-    <string name="file_too_large">Il file supera i 2 MB: vengono visualizzati i primi 2 MB (sola lettura)</string>
     <string name="decoded_binary_xml">Decodificato da XML binario Android (sola lettura)</string>
     <string name="previous_frame">Fotogramma precedente</string>
     <string name="next_frame">Fotogramma successivo</string>

@@ -177,7 +177,6 @@
     <string name="lines">%1$d줄</string>
     <string name="edit">편집</string>
     <string name="stop_editing">편집 중지</string>
-    <string name="file_too_large">파일이 2 MB를 초과합니다. 처음 2 MB만 표시합니다(읽기 전용).</string>
     <string name="decoded_binary_xml">Android 바이너리 XML에서 디코딩됨(읽기 전용)</string>
     <string name="previous_frame">이전 프레임</string>
     <string name="next_frame">다음 프레임</string>

@@ -176,7 +176,6 @@
     <string name="lines">%1$d lines</string>
     <string name="edit">Edit</string>
     <string name="stop_editing">Stop editing</string>
-    <string name="file_too_large">File exceeds 2 MB — showing the first 2 MB (read-only)</string>
     <string name="decoded_binary_xml">Decoded from Android binary XML (read-only)</string>
     <string name="previous_frame">Previous frame</string>
     <string name="next_frame">Next frame</string>

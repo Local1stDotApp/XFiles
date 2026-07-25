@@ -181,7 +181,6 @@
     <string name="lines">%1$d سطر</string>
     <string name="edit">تحرير</string>
     <string name="stop_editing">توقف عن التحرير</string>
-    <string name="file_too_large">يتجاوز حجم الملف 2 MB — يتم عرض أول 2 MB فقط (للقراءة فقط)</string>
     <string name="decoded_binary_xml">تم فك ترميز ملف Android XML الثنائي (للقراءة فقط)</string>
     <string name="previous_frame">الإطار السابق</string>
     <string name="next_frame">الإطار التالي</string>

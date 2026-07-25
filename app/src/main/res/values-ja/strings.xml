@@ -176,7 +176,6 @@
     <string name="lines">%1$d 行</string>
     <string name="edit">編集</string>
     <string name="stop_editing">編集を終了</string>
-    <string name="file_too_large">ファイルが 2 MB を超えるため、先頭の 2 MB のみ表示します（読み取り専用）</string>
     <string name="decoded_binary_xml">Android バイナリ XML からデコードしました（読み取り専用）</string>
     <string name="previous_frame">前のフレーム</string>
     <string name="next_frame">次のフレーム</string>
