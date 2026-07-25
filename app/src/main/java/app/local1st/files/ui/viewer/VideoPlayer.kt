@@ -1,7 +1,5 @@
 package app.local1st.files.ui.viewer
 
-import android.app.Activity
-import android.content.ContextWrapper
 import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.os.SystemClock
@@ -82,9 +80,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -137,19 +132,12 @@ fun VideoPlayerScreen(
     var sliderWasPlaying by remember { mutableStateOf(false) }
     var cardDragging by remember { mutableStateOf(false) }
 
-    // Fullscreen: hide the system bars while the video is up. Besides the obvious, this
-    // is what keeps horizontal scrubbing usable — with bars hidden, an edge swipe first
-    // reveals transient bars instead of dispatching the system back gesture.
+    // The system bars belong to the same chrome as the close row and the control card: they go
+    // when it goes and come back with it, rather than being suppressed for the whole session.
+    // Scrubbing stays safe either way — the scrub layer below keeps clear of the back-gesture edge
+    // zones on its own, instead of relying on hidden bars to swallow the first edge swipe.
+    SystemBarsHidden(hidden = !controlsVisible)
     val view = LocalView.current
-    DisposableEffect(view) {
-        val window = generateSequence(view.context) { (it as? ContextWrapper)?.baseContext }
-            .filterIsInstance<Activity>().firstOrNull()?.window
-        val insets = window?.let { WindowCompat.getInsetsController(it, view) }
-        insets?.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        insets?.hide(WindowInsetsCompat.Type.systemBars())
-        onDispose { insets?.show(WindowInsetsCompat.Type.systemBars()) }
-    }
     // Keep the panel lit while playing, and also while inspecting frames: frame work is
     // long stretches of staring at a paused picture.
     DisposableEffect(view, playing, frameMode) {
@@ -240,9 +228,9 @@ fun VideoPlayerScreen(
         }
     }
 
-    // IgnoringVisibility: this screen itself hides the bars, and chrome anchored to the
-    // live insets would collapse into the top/bottom edges (and jump when transient
-    // bars appear). The close row keeps one status-bar height of clearance regardless.
+    // IgnoringVisibility: the bars come and go with this chrome, and chrome anchored to the
+    // live insets would collapse into the top/bottom edges as they leave (and jump when they
+    // or transient bars return). The close row keeps one status-bar height of clearance regardless.
     val statusBarsIns = WindowInsets.statusBarsIgnoringVisibility
     val navBarsIns = WindowInsets.navigationBarsIgnoringVisibility
     val cutout = WindowInsets.displayCutout

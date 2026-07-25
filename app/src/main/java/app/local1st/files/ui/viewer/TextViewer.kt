@@ -3,10 +3,10 @@ package app.local1st.files.ui.viewer
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
@@ -33,6 +33,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -136,79 +137,70 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
         }
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .navigationBarsPadding()
-            .imePadding(),
-    ) {
-        TopAppBar(
-            title = {
-                Column {
-                    Text(entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    val shown = if (editing) editText else text
-                    if (shown != null) {
-                        Text(
-                            stringResource(R.string.lines, countLines(shown)),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+    ViewerChrome(
+        modifier = Modifier.imePadding(),
+        // Pinned while editing: the editor scrolls itself to follow the cursor, and Save must not
+        // ride away with the bar.
+        collapsible = !editing,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val shown = if (editing) editText else text
+                        if (shown != null) {
+                            Text(
+                                stringResource(R.string.lines, countLines(shown)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
-                }
-            },
-            navigationIcon = {
-                TooltipIconButton(stringResource(R.string.close), Icons.Outlined.Close, onClick = onClose)
-            },
-            actions = {
-                if (canEdit && text != null) {
-                    if (editing) {
+                },
+                navigationIcon = {
+                    TooltipIconButton(stringResource(R.string.close), Icons.Outlined.Close, onClick = onClose)
+                },
+                actions = {
+                    if (canEdit && text != null) {
+                        if (editing) {
+                            TooltipIconButton(
+                                stringResource(R.string.save),
+                                Icons.Outlined.Save,
+                                enabled = !saving,
+                                onClick = { save() },
+                            )
+                        }
                         TooltipIconButton(
-                            stringResource(R.string.save),
-                            Icons.Outlined.Save,
-                            enabled = !saving,
-                            onClick = { save() },
+                            stringResource(if (editing) R.string.stop_editing else R.string.edit),
+                            if (editing) Icons.Outlined.EditOff else Icons.Outlined.Edit,
+                            onClick = {
+                                if (!editing) editText = text.orEmpty()
+                                editing = !editing
+                            },
                         )
                     }
-                    TooltipIconButton(
-                        stringResource(if (editing) R.string.stop_editing else R.string.edit),
-                        if (editing) Icons.Outlined.EditOff else Icons.Outlined.Edit,
-                        onClick = {
-                            if (!editing) editText = text.orEmpty()
-                            editing = !editing
-                        },
+                },
+            )
+        },
+    ) { chrome ->
+        // Padding sits inside the scroll modifiers, so text travels under both system bars while
+        // its first and last lines still settle clear of them.
+        val textPadding = PaddingValues(
+            start = 12.dp,
+            top = chrome.calculateTopPadding() + 12.dp,
+            end = 12.dp,
+            bottom = chrome.calculateBottomPadding() + 12.dp,
+        )
+        Box(Modifier.fillMaxSize()) {
+            when {
+                loadError != null -> ViewerNotice(chrome) {
+                    Text(
+                        loadError.orEmpty(),
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(24.dp),
                     )
                 }
-            },
-        )
-
-        if (truncated) {
-            Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    stringResource(R.string.file_too_large),
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
-
-        if (isAxml) {
-            Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    stringResource(R.string.decoded_binary_xml),
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-        }
-
-        Box(Modifier.weight(1f).fillMaxWidth()) {
-            when {
-                loadError != null -> Text(
-                    loadError.orEmpty(),
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                )
-                text == null -> LoadingIndicator(Modifier.align(Alignment.Center))
+                text == null -> ViewerNotice(chrome) { LoadingIndicator() }
                 editing -> BasicTextField(
                     value = editText,
                     onValueChange = { editText = it },
@@ -220,20 +212,43 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                        .padding(12.dp),
+                        .padding(textPadding),
                 )
                 else -> SelectionContainer {
-                    Text(
-                        text.orEmpty(),
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodySmall,
-                        softWrap = false,
-                        modifier = Modifier
+                    // The notices scroll with the text: pinning them would keep the rows from ever
+                    // reaching the space the collapsing bar gives back.
+                    Column(
+                        Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
-                            .horizontalScroll(rememberScrollState())
-                            .padding(12.dp),
-                    )
+                            .padding(
+                                top = chrome.calculateTopPadding(),
+                                bottom = chrome.calculateBottomPadding(),
+                            ),
+                    ) {
+                        if (truncated) {
+                            TextBanner(
+                                stringResource(R.string.file_too_large),
+                                MaterialTheme.colorScheme.tertiaryContainer,
+                            )
+                        }
+                        if (isAxml) {
+                            TextBanner(
+                                stringResource(R.string.decoded_binary_xml),
+                                MaterialTheme.colorScheme.secondaryContainer,
+                            )
+                        }
+                        Text(
+                            text.orEmpty(),
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodySmall,
+                            softWrap = false,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(12.dp),
+                        )
+                    }
                 }
             }
 
@@ -242,7 +257,10 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.inverseSurface,
                     contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = chrome.calculateBottomPadding())
+                        .padding(16.dp),
                 ) {
                     Text(
                         message,
@@ -252,6 +270,18 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+/** Full-width notice above the text: truncation, or "this was compiled binary XML". */
+@Composable
+private fun TextBanner(message: String, color: Color) {
+    Surface(color = color, modifier = Modifier.fillMaxWidth()) {
+        Text(
+            message,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
     }
 }
 

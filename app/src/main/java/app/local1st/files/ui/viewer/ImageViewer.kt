@@ -12,11 +12,14 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
@@ -77,7 +80,7 @@ private const val MAX_IMAGE_BYTES = 64L * 1024 * 1024
  * X-plore style full-screen image browser: swipe between sibling images,
  * pinch/double-tap to zoom, tap to toggle the overlay bar.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ImageViewer(items: List<XEntry>, startIndex: Int, onClose: () -> Unit) {
     if (items.isEmpty()) {
@@ -92,6 +95,10 @@ fun ImageViewer(items: List<XEntry>, startIndex: Int, onClose: () -> Unit) {
     var barsVisible by remember { mutableStateOf(true) }
     val zoomedPages = remember { mutableStateMapOf<Int, Boolean>() }
     val currentZoomed = zoomedPages[pagerState.currentPage] == true
+
+    // The overlay bar and the system bars are one piece of chrome: hiding one and leaving the other
+    // would give the picture the whole screen except a strip it still cannot use.
+    SystemBarsHidden(hidden = !barsVisible)
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
@@ -123,7 +130,9 @@ fun ImageViewer(items: List<XEntry>, startIndex: Int, onClose: () -> Unit) {
                             listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent),
                         ),
                     )
-                    .statusBarsPadding()
+                    // IgnoringVisibility: the status bar is gone while the bar is hidden, and the
+                    // row would otherwise fade back in at the wrong height and then jump.
+                    .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
                     .padding(horizontal = 4.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

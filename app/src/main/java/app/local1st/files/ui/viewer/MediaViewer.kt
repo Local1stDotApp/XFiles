@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
@@ -210,14 +209,19 @@ private fun AudioPlayerScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
-        TopAppBar(
-            title = { Text(stringResource(R.string.music)) },
-            navigationIcon = {
-                TooltipIconButton(stringResource(R.string.close), Icons.Outlined.Close, onClick = onClose)
-            },
-        )
-        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+    // Nothing scrolls here, so the bar stays put; only the background reaches into the system bars.
+    ViewerChrome(
+        collapsible = false,
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.music)) },
+                navigationIcon = {
+                    TooltipIconButton(stringResource(R.string.close), Icons.Outlined.Close, onClick = onClose)
+                },
+            )
+        },
+    ) { chrome ->
+        Box(Modifier.fillMaxSize().padding(chrome), contentAlignment = Alignment.Center) {
             ElevatedCard(Modifier.padding(24.dp).widthIn(max = 440.dp).fillMaxWidth()) {
                 Column(
                     Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 28.dp),

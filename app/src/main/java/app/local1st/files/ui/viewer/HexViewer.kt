@@ -2,12 +2,14 @@ package app.local1st.files.ui.viewer
 
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
@@ -69,36 +71,50 @@ fun HexViewer(entry: XEntry, onClose: () -> Unit) {
         entry.localPath ?: entry.path.takeIf { entry.scheme == XId.SCHEME_FILE }
     }
 
-    Column(Modifier.fillMaxSize().navigationBarsPadding()) {
-        if (localPath != null) {
-            val file = remember(localPath) { File(localPath) }
-            val fileSize = remember(file) { if (entry.size >= 0) entry.size else file.length() }
-            HexTopBar(entry.name, fileSize, onClose)
-            LocalFileHexRows(file, fileSize, Modifier.weight(1f))
-        } else {
-            val loaded by produceState<Result<ByteArray>?>(initialValue = null, entry.id) {
-                value = withContext(Dispatchers.IO) {
-                    runCatching {
-                        Graph.fsRegistry.forId(entry.id).openIn(entry)
-                            .use { it.readUpTo(HEX_STREAM_LIMIT + 1) }
-                    }
+    // Sized outside the chrome so the bar can show it while the rows are still loading.
+    val file = remember(localPath) { localPath?.let(::File) }
+    val fileSize = remember(file) {
+        when {
+            entry.size >= 0 -> entry.size
+            file != null -> file.length()
+            else -> -1L
+        }
+    }
+    val loaded = if (file == null) {
+        produceState<Result<ByteArray>?>(initialValue = null, entry.id) {
+            value = withContext(Dispatchers.IO) {
+                runCatching {
+                    Graph.fsRegistry.forId(entry.id).openIn(entry)
+                        .use { it.readUpTo(HEX_STREAM_LIMIT + 1) }
                 }
             }
-            val loadedSize = loaded?.getOrNull()?.size?.toLong() ?: -1L
-            HexTopBar(entry.name, if (entry.size >= 0) entry.size else loadedSize, onClose)
+        }.value
+    } else {
+        null
+    }
+
+    ViewerChrome(
+        topBar = {
+            val size = if (fileSize >= 0) fileSize else loaded?.getOrNull()?.size?.toLong() ?: -1L
+            HexTopBar(entry.name, size, onClose)
+        },
+    ) { chrome ->
+        if (file != null) {
+            LocalFileHexRows(file, fileSize, chrome)
+        } else {
             when (val result = loaded) {
-                null -> Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    LoadingIndicator()
-                }
+                null -> ViewerNotice(chrome) { LoadingIndicator() }
                 else -> result.fold(
                     onSuccess = { data ->
-                        if (data.size > HEX_STREAM_LIMIT) {
-                            HexBanner(stringResource(R.string.showing_first_8_mb, entry.name))
-                        }
-                        StreamHexRows(data, Modifier.weight(1f))
+                        StreamHexRows(
+                            data,
+                            chrome,
+                            banner = stringResource(R.string.showing_first_8_mb, entry.name)
+                                .takeIf { data.size > HEX_STREAM_LIMIT },
+                        )
                     },
                     onFailure = { e ->
-                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        ViewerNotice(chrome) {
                             Text(
                                 e.message ?: stringResource(R.string.cannot_read, entry.name),
                                 color = MaterialTheme.colorScheme.error,
@@ -114,7 +130,11 @@ fun HexViewer(entry: XEntry, onClose: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HexTopBar(name: String, sizeBytes: Long, onClose: () -> Unit) {
+private fun HexTopBar(
+    name: String,
+    sizeBytes: Long,
+    onClose: () -> Unit,
+) {
     TopAppBar(
         title = {
             Column {
@@ -135,8 +155,8 @@ private fun HexTopBar(name: String, sizeBytes: Long, onClose: () -> Unit) {
 }
 
 @Composable
-private fun HexBanner(message: String) {
-    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = Modifier.fillMaxWidth()) {
+private fun HexBanner(message: String, modifier: Modifier = Modifier.fillMaxWidth()) {
+    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, modifier = modifier) {
         Text(
             message,
             style = MaterialTheme.typography.labelMedium,
@@ -146,7 +166,7 @@ private fun HexBanner(message: String) {
 }
 
 @Composable
-private fun LocalFileHexRows(file: File, fileSize: Long, modifier: Modifier) {
+private fun LocalFileHexRows(file: File, fileSize: Long, chrome: PaddingValues) {
     val cache = remember(file) { HexPageCache(file) }
     DisposableEffect(cache) {
         onDispose { cache.close() }
@@ -156,56 +176,68 @@ private fun LocalFileHexRows(file: File, fileSize: Long, modifier: Modifier) {
     val rowCount = ((fileSize + HEX_ROW_BYTES - 1) / HEX_ROW_BYTES)
         .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 
-    Column(modifier) {
-        error?.let { HexBanner(it) }
-        HexRowList(rowCount, Modifier.weight(1f)) { row ->
-            val offset = row.toLong() * HEX_ROW_BYTES
-            val pageIndex = (offset / HEX_PAGE_SIZE).toInt()
-            val page = cache.pages[pageIndex]
-            // Re-requests after eviction too: SideEffect runs on every recomposition
-            // and request() is a no-op for cached or in-flight pages.
-            SideEffect { cache.request(pageIndex) }
-            if (page == null) {
-                placeholderRow(offset, offsetDigits)
-            } else {
-                val start = (offset % HEX_PAGE_SIZE).toInt()
-                val count = minOf(HEX_ROW_BYTES, page.size - start).coerceAtLeast(0)
-                formatHexRow(offset, page, start, count, offsetDigits)
-            }
+    HexRowList(rowCount, chrome, banner = error) { row ->
+        val offset = row.toLong() * HEX_ROW_BYTES
+        val pageIndex = (offset / HEX_PAGE_SIZE).toInt()
+        val page = cache.pages[pageIndex]
+        // Re-requests after eviction too: SideEffect runs on every recomposition
+        // and request() is a no-op for cached or in-flight pages.
+        SideEffect { cache.request(pageIndex) }
+        if (page == null) {
+            placeholderRow(offset, offsetDigits)
+        } else {
+            val start = (offset % HEX_PAGE_SIZE).toInt()
+            val count = minOf(HEX_ROW_BYTES, page.size - start).coerceAtLeast(0)
+            formatHexRow(offset, page, start, count, offsetDigits)
         }
     }
 }
 
 @Composable
-private fun StreamHexRows(data: ByteArray, modifier: Modifier) {
+private fun StreamHexRows(data: ByteArray, chrome: PaddingValues, banner: String?) {
     val visibleBytes = minOf(data.size, HEX_STREAM_LIMIT)
     val rowCount = (visibleBytes + HEX_ROW_BYTES - 1) / HEX_ROW_BYTES
-    HexRowList(rowCount, modifier) { row ->
+    HexRowList(rowCount, chrome, banner) { row ->
         val offset = row * HEX_ROW_BYTES
         formatHexRow(offset.toLong(), data, offset, minOf(HEX_ROW_BYTES, visibleBytes - offset), 8)
     }
 }
 
+/**
+ * Rows scroll under both system bars; [chrome] only decides where they settle. The [banner] rides
+ * along as the first row so a notice scrolls away with the dump instead of pinning the rows down.
+ */
 @Composable
-private fun HexRowList(rowCount: Int, modifier: Modifier, rowText: @Composable (Int) -> String) {
+private fun HexRowList(
+    rowCount: Int,
+    chrome: PaddingValues,
+    banner: String?,
+    rowText: @Composable (Int) -> String,
+) {
     if (rowCount == 0) {
-        Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        ViewerNotice(chrome) {
             Text(stringResource(R.string.empty_file), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
     val hScroll = rememberScrollState()
-    Box(modifier.fillMaxWidth().horizontalScroll(hScroll)) {
-        LazyColumn(Modifier.fillMaxHeight()) {
-            items(rowCount) { row ->
-                Text(
-                    text = rowText(row),
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                )
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // Rows are monospace and unwrapped, so the list is measured unbounded inside the horizontal
+        // scroll; the banner is pinned to the viewport width instead of hugging its own text.
+        val viewportWidth = maxWidth
+        Box(Modifier.fillMaxSize().horizontalScroll(hScroll)) {
+            LazyColumn(Modifier.fillMaxHeight(), contentPadding = chrome) {
+                banner?.let { item { HexBanner(it, Modifier.width(viewportWidth)) } }
+                items(rowCount) { row ->
+                    Text(
+                        text = rowText(row),
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
+                }
             }
         }
     }
