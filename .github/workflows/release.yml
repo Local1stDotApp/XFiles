@@ -22,6 +22,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # Release notes are built from git history, which needs the commits and the version tags
+          # a shallow clone leaves out.
+          fetch-depth: 0
 
       - name: Decode keystore
         run: |
@@ -74,6 +78,34 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD"     >> "$GITHUB_OUTPUT"
 
+          # Release notes are every commit since the newest version tag. Cutting a stable release
+          # that tag is the previous version; refreshing the nightly it is the current stable — so
+          # the list reads as "what this download adds on top of the last release" either way.
+          # The version bump itself is dropped: the release already says which version it is.
+          SINCE=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          if [ -n "$SINCE" ]; then RANGE="$SINCE..HEAD"; else RANGE=HEAD; fi
+          LOG=$(git log --no-merges --reverse --pretty='format:- %s' "$RANGE" \
+            | grep -v '^- Bump version to ' || true)
+          {
+            echo 'notes<<RELEASE_NOTES'
+            if [ -n "$SINCE" ]; then
+              echo "### Changes since ${SINCE}"
+            else
+              echo "### Changes"
+            fi
+            echo
+            if [ -n "$LOG" ]; then
+              echo "$LOG"
+            else
+              echo "- Rebuild only, no source changes."
+            fi
+            if [ -n "$SINCE" ]; then
+              echo
+              echo "[Full diff](${{ github.server_url }}/${{ github.repository }}/compare/${SINCE}...${{ github.sha }})"
+            fi
+            echo RELEASE_NOTES
+          } >> "$GITHUB_OUTPUT"
+
       - name: Rename artifact
         run: cp app/build/outputs/apk/release/app-release.apk "${{ steps.decide.outputs.apk }}"
 
@@ -85,7 +117,8 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: ${{ steps.decide.outputs.name }}
           prerelease: ${{ steps.decide.outputs.prerelease }}
-          body: >-
-            XFiles ${{ steps.decide.outputs.version }} · build ${{ steps.decide.outputs.build }}
-            (${{ github.sha }}). Offline, open-source file manager — no network, no telemetry.
+          body: |
+            XFiles ${{ steps.decide.outputs.version }} · build ${{ steps.decide.outputs.build }} (${{ github.sha }}). Offline, open-source file manager — no network, no telemetry.
+
+            ${{ steps.decide.outputs.notes }}
           files: ${{ steps.decide.outputs.apk }}
