@@ -21,7 +21,7 @@ jobs:
     runs-on: [self-hosted, macOS]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Decode keystore
         run: |
@@ -41,7 +41,7 @@ jobs:
       # and shipping it alongside the APK would just confuse people. Grab it from the
       # run's artifacts when you need to push a Play build.
       - name: Upload AAB as build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: XFiles-${{ github.run_number }}-play-bundle
           path: app/build/outputs/bundle/release/app-release.aab
@@ -78,7 +78,7 @@ jobs:
         run: cp app/build/outputs/apk/release/app-release.apk "${{ steps.decide.outputs.apk }}"
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           token: ${{ github.token }}
           tag_name: ${{ steps.decide.outputs.tag }}
