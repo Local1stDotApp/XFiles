@@ -1,8 +1,19 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import java.util.zip.ZipFile
 import org.gradle.api.attributes.Bundling
 import org.gradle.api.attributes.Category
 import org.gradle.api.attributes.LibraryElements
 import org.gradle.api.attributes.Usage
+
+// Packages the Android boot classpath owns. A class shipped under one of them shadows a platform
+// type: R8 stops treating it as a library type and minifies it, which is how ARSCLib's copy of
+// android.content.res.XmlResourceParser silently broke FileProvider in release builds. Kept out of
+// the task's configuration so the check below closes over a plain list, not this script.
+val platformPackages = listOf(
+    "android/", "dalvik/", "java/", "javax/crypto/", "javax/net/", "javax/security/", "javax/sql/",
+    "javax/xml/", "junit/", "org/apache/http/", "org/json/", "org/w3c/dom/", "org/xml/sax/",
+    "org/xmlpull/",
+)
 
 plugins {
     `java-library`
@@ -16,6 +27,7 @@ java {
 
 dependencies {
     implementation(libs.bundletool)
+    implementation(libs.arsclib)
     implementation(libs.aapt2.proto)
     implementation(libs.protobuf.java)
     implementation(libs.protobuf.java.util)
@@ -53,6 +65,18 @@ val shadowJar = tasks.named<ShadowJar>("shadowJar") {
     relocate("javax.annotation", "app.local1st.files.vendor.javax.annotation")
     relocate("org.checkerframework", "app.local1st.files.vendor.checkerframework")
     relocate("android.aapt.pb.internal", "app.local1st.files.vendor.aapt.internal")
+    relocate("com.reandroid", "app.local1st.files.vendor.arsclib")
+
+    // ARSCLib compiles copies of six platform types into its jar. Off the boot classpath R8 treats
+    // them as program classes and minifies them: android.content.res.XmlResourceParser became an
+    // interface with no live implementors, so R8 proved every value of that type null and reduced
+    // FileProvider.parsePathStrategy to `throw null` — every open-with and share crashed in release.
+    // Dropping the copies lets ARSCLib's bytecode link against the interfaces the device provides.
+    exclude(
+        "android/content/res/XmlResourceParser.class",
+        "android/util/AttributeSet.class",
+        "org/xmlpull/v1/**",
+    )
 
     // Archive mode carries prebuilt DEX payloads as resources; removing them avoids mixed
     // DEX/class JARs rejected by D8/R8 and intentionally makes ApkBuildMode.ARCHIVE unusable.
@@ -76,6 +100,21 @@ val shadowJar = tasks.named<ShadowJar>("shadowJar") {
     exclude("META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA")
     exclude("META-INF/versions/**/module-info.class", "module-info.class")
     exclude("META-INF/maven/**")
+
+    // A dependency bump must not sneak another platform class back in: relocate it, or exclude it
+    // here if the device already provides that exact type.
+    val shadowedRoots = platformPackages
+    doLast {
+        val shadowed = ZipFile(archiveFile.get().asFile).use { jar ->
+            jar.entries().asSequence()
+                .map { it.name }
+                .filter { name -> name.endsWith(".class") && shadowedRoots.any(name::startsWith) }
+                .toList()
+        }
+        check(shadowed.isEmpty()) {
+            "${archiveFileName.get()} shadows Android platform classes: ${shadowed.joinToString()}"
+        }
+    }
 }
 
 val shadedRuntimeElements by configurations.creating {

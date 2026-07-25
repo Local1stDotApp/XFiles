@@ -1,13 +1,13 @@
 package app.local1st.files.core.util
 
+import app.local1st.files.vendor.arsclib.arsc.chunk.TableBlock
+import app.local1st.files.vendor.arsclib.arsc.chunk.xml.ResXmlDocument
+import app.local1st.files.vendor.arsclib.arsc.value.ValueItem
+import app.local1st.files.vendor.arsclib.arsc.value.ValueType
 import com.android.bundle.Devices.DeviceSpec
 import com.android.tools.build.bundletool.androidtools.Aapt2Command
 import com.android.tools.build.bundletool.commands.BuildApksCommand
 import com.android.tools.build.bundletool.commands.ExtractApksCommand
-import com.reandroid.arsc.chunk.TableBlock
-import com.reandroid.arsc.chunk.xml.ResXmlDocument
-import com.reandroid.arsc.value.ValueItem
-import com.reandroid.arsc.value.ValueType
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path

@@ -5,7 +5,7 @@ import android.os.Build
 import android.os.Environment
 import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.fs.priv.shQuote
-import com.reandroid.arsc.chunk.xml.AndroidManifestBlock
+import app.local1st.files.vendor.arsclib.arsc.chunk.xml.AndroidManifestBlock
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException

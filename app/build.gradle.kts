@@ -115,8 +115,8 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.xz)
     implementation(libs.junrar)
+    // Carries bundletool and ARSCLib, both relocated under app.local1st.files.vendor.
     implementation(project(path = ":vendor:bundletool-shaded", configuration = "shadedRuntimeElements"))
-    implementation(libs.arsclib)
 
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)

@@ -41,6 +41,8 @@ class LocalizationResourcesTest {
         for (index in 0 until root.childNodes.length) {
             val node = root.childNodes.item(index)
             if (node.nodeName !in setOf("string", "plurals")) continue
+            // Brand and command names are marked translatable="false" and only exist in values/.
+            if (node.attributes?.getNamedItem("translatable")?.nodeValue == "false") continue
             val name = node.attributes?.getNamedItem("name")?.nodeValue ?: continue
             val value = if (node.nodeName == "plurals") {
                 buildString {
