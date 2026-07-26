@@ -74,8 +74,15 @@ import kotlinx.coroutines.withContext
 /** Schemes that can only be streamed get this much of their head; a real file gets all of it. */
 private const val STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 
-/** Editing holds the whole text in memory and writes it back whole, so it stays with small files. */
-private const val EDIT_LIMIT_BYTES = 2L * 1024 * 1024
+/**
+ * Editing holds the whole text in memory in one text field, and Compose lays that field out whole —
+ * so what it costs tracks the file, not the screen, and it is paid on the main thread before the
+ * editor appears. Measured on a OnePlus 7 Pro, release build: 200 KB opens in about a second, 512 KB
+ * in ten, 1 MB in half a minute, 2 MB never finishes, and 20 MB exhausts the heap. Half a megabyte
+ * is the last size that still ends in an editor rather than in a wait, so that is where this sits.
+ * Raising it means not laying the whole document out at once — a different editor, not a bigger cap.
+ */
+private const val EDIT_LIMIT_BYTES = 512L * 1024
 
 private const val AXML_PROBE_BYTES = 64
 private const val AXML_LIMIT_BYTES = 8L * 1024 * 1024
