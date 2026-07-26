@@ -175,6 +175,8 @@
     <string name="lines">%1$d 行</string>
     <string name="edit">编辑</string>
     <string name="stop_editing">停止编辑</string>
+    <string name="wrap_lines">自动换行</string>
+    <string name="stop_wrapping">取消自动换行</string>
     <string name="decoded_binary_xml">已从 Android 二进制 XML 解码（只读）</string>
     <string name="previous_frame">上一帧</string>
     <string name="next_frame">下一帧</string>

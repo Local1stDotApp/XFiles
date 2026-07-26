@@ -177,6 +177,8 @@
     <string name="lines">%1$d줄</string>
     <string name="edit">편집</string>
     <string name="stop_editing">편집 중지</string>
+    <string name="wrap_lines">줄 바꿈</string>
+    <string name="stop_wrapping">줄 바꿈 해제</string>
     <string name="decoded_binary_xml">Android 바이너리 XML에서 디코딩됨(읽기 전용)</string>
     <string name="previous_frame">이전 프레임</string>
     <string name="next_frame">다음 프레임</string>

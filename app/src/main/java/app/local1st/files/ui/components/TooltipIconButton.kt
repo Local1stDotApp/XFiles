@@ -3,6 +3,8 @@ package app.local1st.files.ui.components
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TooltipBox
@@ -15,6 +17,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 /**
  * An icon-only button that reveals its [label] on long-press (and on hover), so every
  * icon is self-explanatory. The label doubles as the accessibility description.
+ *
+ * Pass [selected] for a button that toggles something on and off and has no second icon to say so:
+ * it takes the accent colour while the thing is on. The [label] still names what a tap would do.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -23,6 +28,7 @@ fun TooltipIconButton(
     icon: ImageVector,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    selected: Boolean = false,
     onClick: () -> Unit,
 ) {
     TooltipBox(
@@ -30,7 +36,16 @@ fun TooltipIconButton(
         tooltip = { PlainTooltip { Text(label) } },
         state = rememberTooltipState(),
     ) {
-        IconButton(onClick = onClick, enabled = enabled, modifier = modifier) {
+        IconButton(
+            onClick = onClick,
+            enabled = enabled,
+            modifier = modifier,
+            colors = if (selected) {
+                IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+            } else {
+                IconButtonDefaults.iconButtonColors()
+            },
+        ) {
             Icon(icon, contentDescription = label)
         }
     }

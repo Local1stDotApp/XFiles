@@ -177,6 +177,8 @@
     <string name="lines">%1$d baris</string>
     <string name="edit">Sunting</string>
     <string name="stop_editing">Berhenti mengedit</string>
+    <string name="wrap_lines">Bungkus baris</string>
+    <string name="stop_wrapping">Berhenti membungkus</string>
     <string name="decoded_binary_xml">Didekodekan dari XML biner Android (hanya baca)</string>
     <string name="previous_frame">Bingkai sebelumnya</string>
     <string name="next_frame">Bingkai berikutnya</string>

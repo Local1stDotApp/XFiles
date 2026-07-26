@@ -176,6 +176,8 @@
     <string name="lines">%1$d 行</string>
     <string name="edit">編集</string>
     <string name="stop_editing">編集を終了</string>
+    <string name="wrap_lines">行を折り返す</string>
+    <string name="stop_wrapping">折り返しをやめる</string>
     <string name="decoded_binary_xml">Android バイナリ XML からデコードしました（読み取り専用）</string>
     <string name="previous_frame">前のフレーム</string>
     <string name="next_frame">次のフレーム</string>

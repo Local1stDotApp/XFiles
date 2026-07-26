@@ -1,12 +1,17 @@
 package app.local1st.files.ui.viewer
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -14,6 +19,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.WrapText
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EditOff
@@ -29,7 +35,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,10 +47,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.local1st.files.R
@@ -116,6 +127,7 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
     var preparingEdit by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val wrap by Graph.settings.textWrap.collectAsState(initial = false)
 
     val file = remember(entry.id) { pageableFile(entry) }
     val document = remember(entry.id, reloads) { TextDocument(entry, file) }
@@ -229,6 +241,18 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
                     TooltipIconButton(stringResource(R.string.close), Icons.Outlined.Close, onClick = onClose)
                 },
                 actions = {
+                    // Not while editing: the field wraps whatever this says, so offering the choice
+                    // there would be offering one that does not exist.
+                    if (!editing) {
+                        TooltipIconButton(
+                            stringResource(if (wrap) R.string.stop_wrapping else R.string.wrap_lines),
+                            Icons.AutoMirrored.Outlined.WrapText,
+                            selected = wrap,
+                            // The app scope, not the viewer's: closing the viewer on the same tap
+                            // would otherwise cancel the write and lose the choice.
+                            onClick = { Graph.appScope.launch { Graph.settings.setTextWrap(!wrap) } },
+                        )
+                    }
                     if (canEdit) {
                         if (editing) {
                             TooltipIconButton(
@@ -287,7 +311,7 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
                 rowCount == 0 -> ViewerNotice(chrome) {
                     Text(stringResource(R.string.empty_file), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                else -> TextRows(entry, document, rowCount, chrome)
+                else -> TextRows(entry, document, rowCount, chrome, wrap)
             }
 
             feedback?.let { message ->
@@ -312,9 +336,18 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
 }
 
 /**
- * One row per list item, decoded from the document's page cache as it scrolls past. Rows wrap
- * instead of scrolling sideways: a shared horizontal offset cannot be measured without laying out
- * every row, which is exactly what a file this size rules out.
+ * One row per list item, decoded from the document's page cache as it scrolls past.
+ *
+ * Unwrapped by default: a line runs off the right edge and the list scrolls sideways as a whole, so
+ * indentation and column alignment survive — which is the only way XML, JSON or source reads as it
+ * was written. What that costs is knowing how wide to be: finding the longest line means laying out
+ * every row, and not doing that is why this viewer opens a gigabyte at once. So the width is the
+ * widest row laid out *so far*, and it only ever grows. Growing costs one re-layout when a longer
+ * line first comes into view; shrinking would slide the text sideways under a reader who scrolled
+ * into a narrow stretch of the file, so it is never allowed. The floor is the window's own width,
+ * or the list would only take scroll gestures over the strip its text happens to cover.
+ *
+ * With [wrap] on, rows break to the window instead and there is nothing to scroll sideways.
  *
  * Notices ride along as the first items so they scroll away with the text instead of pinning it.
  *
@@ -324,54 +357,99 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
  * document — is the thing this viewer exists to avoid.
  */
 @Composable
-private fun TextRows(entry: XEntry, document: TextDocument, rowCount: Int, chrome: PaddingValues) {
+private fun TextRows(
+    entry: XEntry,
+    document: TextDocument,
+    rowCount: Int,
+    chrome: PaddingValues,
+    wrap: Boolean,
+) {
     val listState = rememberLazyListState()
-    Box(Modifier.fillMaxSize()) {
+    val horizontal = rememberScrollState()
+    var widest by remember { mutableIntStateOf(0) }
+    val baseStyle = MaterialTheme.typography.bodySmall
+    val rowStyle = remember(baseStyle, wrap) {
+        // Hanging indent, and only where it means something: what a line wraps onto stays
+        // distinguishable from the next line, which is most of what unwrapped text gives for free.
+        if (wrap) baseStyle.copy(textIndent = TextIndent(restLine = 16.sp)) else baseStyle
+    }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val contentWidth = with(LocalDensity.current) { maxOf(widest, constraints.maxWidth).toDp() }
+        val rowModifier = if (wrap) {
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+        } else {
+            Modifier.padding(horizontal = 12.dp)
+        }
         SelectionContainer {
-            LazyColumn(
-                Modifier.fillMaxSize(),
-                state = listState,
-                contentPadding = PaddingValues(
-                    top = chrome.calculateTopPadding() + 8.dp,
-                    bottom = chrome.calculateBottomPadding() + 8.dp,
-                ),
+            Box(
+                if (wrap) Modifier.fillMaxSize()
+                else Modifier.fillMaxSize().horizontalScroll(horizontal),
             ) {
-                document.error.value?.let { message ->
-                    item { TextBanner(message, MaterialTheme.colorScheme.errorContainer) }
-                }
-                if (document.axml.value) {
-                    item {
-                        TextBanner(
-                            stringResource(R.string.decoded_binary_xml),
-                            MaterialTheme.colorScheme.secondaryContainer,
+                LazyColumn(
+                    if (wrap) {
+                        Modifier.fillMaxSize()
+                    } else {
+                        // Measured against an unbounded width, so the list comes out as wide as its
+                        // widest composed row — with the running maximum as a floor, which is what
+                        // keeps the sideways offset still when that row scrolls out of sight.
+                        Modifier
+                            .fillMaxHeight()
+                            .widthIn(min = contentWidth)
+                            .onSizeChanged { if (it.width > widest) widest = it.width }
+                    },
+                    state = listState,
+                    contentPadding = PaddingValues(
+                        top = chrome.calculateTopPadding() + 8.dp,
+                        bottom = chrome.calculateBottomPadding() + 8.dp,
+                    ),
+                ) {
+                    document.error.value?.let { message ->
+                        item {
+                            TextBanner(
+                                message,
+                                MaterialTheme.colorScheme.errorContainer,
+                                contentWidth,
+                                wrap,
+                            )
+                        }
+                    }
+                    if (document.axml.value) {
+                        item {
+                            TextBanner(
+                                stringResource(R.string.decoded_binary_xml),
+                                MaterialTheme.colorScheme.secondaryContainer,
+                                contentWidth,
+                                wrap,
+                            )
+                        }
+                    }
+                    if (document.truncated.value) {
+                        item {
+                            TextBanner(
+                                stringResource(R.string.showing_first_8_mb, entry.name),
+                                MaterialTheme.colorScheme.tertiaryContainer,
+                                contentWidth,
+                                wrap,
+                            )
+                        }
+                    }
+                    items(rowCount) { row ->
+                        // Re-requests after eviction too: SideEffect runs on every recomposition and
+                        // request() is a no-op for a cached or in-flight page.
+                        SideEffect { document.request(row) }
+                        Text(
+                            document.row(row) ?: "",
+                            fontFamily = FontFamily.Monospace,
+                            style = rowStyle,
+                            softWrap = wrap,
+                            maxLines = if (wrap) Int.MAX_VALUE else 1,
+                            modifier = rowModifier,
                         )
                     }
-                }
-                if (document.truncated.value) {
-                    item {
-                        TextBanner(
-                            stringResource(R.string.showing_first_8_mb, entry.name),
-                            MaterialTheme.colorScheme.tertiaryContainer,
-                        )
-                    }
-                }
-                items(rowCount) { row ->
-                    // Re-requests after eviction too: SideEffect runs on every recomposition and
-                    // request() is a no-op for a cached or in-flight page.
-                    SideEffect { document.request(row) }
-                    Text(
-                        document.row(row) ?: "",
-                        fontFamily = FontFamily.Monospace,
-                        // Hanging indent: what a line wraps onto stays distinguishable from the
-                        // next line, which is most of what unwrapped text bought.
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            textIndent = TextIndent(restLine = 16.sp),
-                        ),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    )
                 }
             }
         }
+        // Outside the horizontal scroll: the thumb belongs to the window, not to the text's width.
         ViewerScrollbar(
             listState,
             Modifier
@@ -391,10 +469,14 @@ private fun documentSubtitle(document: TextDocument): String {
     return head + lines + tail
 }
 
-/** Full-width notice above the text: a read error, truncation, or "this was compiled binary XML". */
+/**
+ * Full-width notice above the text: a read error, truncation, or "this was compiled binary XML".
+ * Unwrapped, the width to fill is the list's rather than the window's — filling a width that was
+ * never bounded would leave the notice hugging its own text.
+ */
 @Composable
-private fun TextBanner(message: String, color: Color) {
-    Surface(color = color, modifier = Modifier.fillMaxWidth()) {
+private fun TextBanner(message: String, color: Color, width: Dp, wrap: Boolean) {
+    Surface(color = color, modifier = if (wrap) Modifier.fillMaxWidth() else Modifier.width(width)) {
         Text(
             message,
             style = MaterialTheme.typography.labelMedium,

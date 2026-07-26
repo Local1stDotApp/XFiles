@@ -7,8 +7,16 @@ import java.io.RandomAccessFile
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
-/** Row content longer than this is broken up, so one absurd line can still be laid out. */
-const val MAX_ROW_BYTES = 2048
+/**
+ * Row content longer than this is broken up, so one absurd line can still be laid out.
+ *
+ * A hard ceiling, not a preference: unwrapped, a row is laid out at its full width, and Compose
+ * cannot represent a layout dimension over 262143 px — one past that throws rather than clipping.
+ * At the viewer's monospace body size that is around 9900 characters on a normal screen and half
+ * that at the largest font scale, so 4096 is the widest round number that survives any of them.
+ * A line longer than this arrives as several rows; [lineCount] still counts it once.
+ */
+const val MAX_ROW_BYTES = 4096
 
 private const val SCAN_BUFFER = 1 shl 18
 private const val READ_BUFFER = 1 shl 16

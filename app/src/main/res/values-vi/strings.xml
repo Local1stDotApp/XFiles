@@ -177,6 +177,8 @@
     <string name="lines">%1$d dòng</string>
     <string name="edit">Chỉnh sửa</string>
     <string name="stop_editing">Dừng chỉnh sửa</string>
+    <string name="wrap_lines">Ngắt dòng</string>
+    <string name="stop_wrapping">Ngừng ngắt dòng</string>
     <string name="decoded_binary_xml">Đã giải mã từ XML nhị phân của Android (chỉ đọc)</string>
     <string name="previous_frame">Khung hình trước</string>
     <string name="next_frame">Khung hình tiếp theo</string>

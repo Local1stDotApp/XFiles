@@ -177,6 +177,8 @@
     <string name="lines">%1$d linhas</string>
     <string name="edit">Editar</string>
     <string name="stop_editing">Pare de editar</string>
+    <string name="wrap_lines">Quebrar linhas</string>
+    <string name="stop_wrapping">Parar de quebrar</string>
     <string name="decoded_binary_xml">Decodificado do XML binário Android (somente leitura)</string>
     <string name="previous_frame">Quadro anterior</string>
     <string name="next_frame">Próximo quadro</string>

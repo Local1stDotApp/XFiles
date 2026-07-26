@@ -51,6 +51,7 @@ class SettingsRepo(private val context: Context) {
     private val keyDirsFirst = booleanPreferencesKey("dirs_first")
     private val keyThemeMode = stringPreferencesKey("theme_mode")
     private val keyDynamicColor = booleanPreferencesKey("dynamic_color")
+    private val keyTextWrap = booleanPreferencesKey("text_wrap")
     private val keyRootEnabled = booleanPreferencesKey("root_enabled")
     private val keyRootReadOnly = booleanPreferencesKey("root_read_only")
     private val keyPrivilegedTransport = stringPreferencesKey("privileged_transport")
@@ -86,6 +87,12 @@ class SettingsRepo(private val context: Context) {
     val themeMode: Flow<ThemeMode> =
         setting { runCatching { ThemeMode.valueOf(it[keyThemeMode] ?: "") }.getOrDefault(ThemeMode.SYSTEM) }
     val dynamicColor: Flow<Boolean> = setting { it[keyDynamicColor] ?: true }
+
+    /**
+     * Whether the text viewer breaks long lines to the window. Off by default: wrapping is what
+     * destroys the shape of indented text, and XML, JSON and source are most of what gets opened.
+     */
+    val textWrap: Flow<Boolean> = setting { it[keyTextWrap] ?: false }
 
     /** Root browsing is off until the user opts in (dangerous, so default false). */
     val rootEnabled: Flow<Boolean> = setting { it[keyRootEnabled] ?: false }
@@ -170,6 +177,7 @@ class SettingsRepo(private val context: Context) {
     suspend fun setDirsFirst(value: Boolean) = context.dataStore.edit { it[keyDirsFirst] = value }
     suspend fun setThemeMode(value: ThemeMode) = context.dataStore.edit { it[keyThemeMode] = value.name }
     suspend fun setDynamicColor(value: Boolean) = context.dataStore.edit { it[keyDynamicColor] = value }
+    suspend fun setTextWrap(value: Boolean) = context.dataStore.edit { it[keyTextWrap] = value }
     suspend fun setRootEnabled(value: Boolean) = context.dataStore.edit { it[keyRootEnabled] = value }
     suspend fun setRootReadOnly(value: Boolean) = context.dataStore.edit { it[keyRootReadOnly] = value }
     suspend fun setPrivilegedTransport(value: TransportPref) = context.dataStore.edit {

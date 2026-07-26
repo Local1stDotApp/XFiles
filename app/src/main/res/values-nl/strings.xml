@@ -177,6 +177,8 @@
     <string name="lines">%1$d regels</string>
     <string name="edit">Bewerking</string>
     <string name="stop_editing">Stop met bewerken</string>
+    <string name="wrap_lines">Regels afbreken</string>
+    <string name="stop_wrapping">Afbreken stoppen</string>
     <string name="decoded_binary_xml">Gedecodeerd uit Android binaire XML (alleen-lezen)</string>
     <string name="previous_frame">Vorige frame</string>
     <string name="next_frame">Volgende frame</string>

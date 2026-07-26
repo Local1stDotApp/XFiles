@@ -177,6 +177,8 @@
     <string name="lines">%1$d लाइनें</string>
     <string name="edit">संपादित करें</string>
     <string name="stop_editing">संपादन बंद करो</string>
+    <string name="wrap_lines">पंक्तियाँ लपेटें</string>
+    <string name="stop_wrapping">लपेटना बंद करें</string>
     <string name="decoded_binary_xml">एंड्रॉइड बाइनरी XML से डिकोड किया गया (केवल पढ़ने के लिए)</string>
     <string name="previous_frame">पिछला फ़्रेम</string>
     <string name="next_frame">अगला फ़्रेम</string>
