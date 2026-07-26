@@ -65,9 +65,10 @@ fun PaneView(
     val listState = rememberLazyListState()
 
     LaunchedEffect(controller) {
-        controller.scrollTo.collect { id ->
-            val index = controller.state.value.nodes.indexOfFirst { it.entry.id == id }
-            if (index >= 0) listState.animateScrollToItem(index)
+        controller.scrollTo.collect { request ->
+            val index = controller.state.value.nodes.indexOfFirst { it.entry.id == request.id }
+            if (index < 0) return@collect
+            if (request.animate) listState.animateScrollToItem(index) else listState.scrollToItem(index)
         }
     }
 

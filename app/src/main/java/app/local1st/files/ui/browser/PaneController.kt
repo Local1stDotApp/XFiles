@@ -22,6 +22,16 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * A row to bring on screen, and whether getting there is worth watching.
+ *
+ * A reveal the user asked for animates, because the travel is what tells them where the row they
+ * asked about lives. Restoring a session jumps: nobody asked to move, the list is still filling in
+ * as the saved tree expands, and an animation started against those half-settled measurements plays
+ * out later — on the first touch — as a scroll from a position that was never on screen.
+ */
+data class ScrollRequest(val id: String, val animate: Boolean)
+
 private data class SortSpec(
     val by: SortBy = SortBy.NAME,
     val descending: Boolean = false,
@@ -52,8 +62,8 @@ class PaneController(
     // during construction, so everything flatten touches must already be initialized.
     private val sortedListings = HashMap<String, SortedListing>()
 
-    /** Entry id the pane list should scroll to (consumed by the UI). */
-    val scrollTo = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    /** A row the pane list should bring on screen (consumed by the UI). */
+    val scrollTo = MutableSharedFlow<ScrollRequest>(extraBufferCapacity = 1)
 
     private val sortSpec: StateFlow<SortSpec> = combine(
         Graph.settings.sortBy,
@@ -155,7 +165,7 @@ class PaneController(
 
         val target = savedFocused?.let { nearestExisting(it) }?.takeIf { reachable(it) }
         when {
-            target != null -> revealPath(target)
+            target != null -> revealPath(target, animate = false)
             !restoredAny -> expandFirstRoot()
             // else: tree restored but focus lost; focusedDirEntry() falls back to the first root.
         }
@@ -295,8 +305,8 @@ class PaneController(
         focusedDirId.value = if (entry.isContainer) entry.id else XId.parent(entry.id)
     }
 
-    /** Expand the ancestor chain of [id], then scroll to it. */
-    fun revealPath(id: String) {
+    /** Expand the ancestor chain of [id], then scroll to it. See [ScrollRequest] for [animate]. */
+    fun revealPath(id: String, animate: Boolean = true) {
         scope.launch {
             val chain = generateSequence(XId.parent(id)) { XId.parent(it) }.toList().reversed()
             for (ancestorId in chain) {
@@ -313,7 +323,7 @@ class PaneController(
                 }
             }
             focusedDirId.value = findEntry(id)?.takeIf { it.isContainer }?.id ?: XId.parent(id)
-            scrollTo.tryEmit(id)
+            scrollTo.tryEmit(ScrollRequest(id, animate))
         }
     }
 
@@ -333,7 +343,7 @@ class PaneController(
             expanded.update { it + apk.id }
             loadNow(apk)
             focusedDirId.value = apk.id
-            scrollTo.tryEmit(apk.id)
+            scrollTo.tryEmit(ScrollRequest(apk.id, animate = true))
         }
     }
 
