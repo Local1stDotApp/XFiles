@@ -1,8 +1,8 @@
-First public release.
+What's new in 1.3
 
-Dual-pane tree browser with in-place folder expansion, inline image and video
-thumbnails, archives browsable as folders, an app manager with per-app components
-and split APKs, optional read-only root access, and viewers for image, text, hex,
-audio and video (with frame-accurate stepping).
-
-No network permission. Nothing leaves your device.
+• Text viewer pages large files instead of loading everything at once
+• Long lines scroll sideways instead of wrapping
+• Safer PDF viewing — bitmaps no longer recycled mid-draw
+• Opening editable text is limited to a size that finishes quickly
+• Restored folder position jumps straight to the row
+• Platform-owned directories are marked clearly
