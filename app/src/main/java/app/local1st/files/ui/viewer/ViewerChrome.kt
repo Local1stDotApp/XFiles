@@ -2,6 +2,7 @@ package app.local1st.files.ui.viewer
 
 import android.app.Activity
 import android.content.ContextWrapper
+import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
@@ -48,6 +49,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -111,28 +113,52 @@ fun ViewerChrome(
 }
 
 /**
- * Hides the system bars while [hidden] and brings them back when it flips or the viewer leaves, so a
- * viewer that hides its own chrome can go properly full-screen instead of keeping a status bar the
- * content is not allowed to use.
+ * Hides the system bars while [hidden] so a viewer that hides its own chrome can go properly
+ * full-screen. Touches the window **only** while [hidden] is true; on exit the pre-hide state is
+ * restored (not a forced "normal").
  *
- * Transient-bars behaviour is what keeps a hidden bar recoverable: an edge swipe reveals the bars
- * instead of dispatching the system back gesture.
+ * **API 28–29 (pre-R):** immersive [hide] is skipped. Restoring `systemUiVisibility` after
+ * immersive correctly fixes the platform flags, but Compose's
+ * [WindowInsets.navigationBarsIgnoringVisibility] stays at 0 afterwards (platform `stable`
+ * insets remain 144px — only Compose's IgnoringVisibility cache is wrong). That is what drops
+ * MainScreen's bottom safe area after returning from the image/video viewer even though cold
+ * start is fine. App chrome still toggles; system bars stay put on pre-R.
+ *
+ * **API 30+:** hide/show via [WindowInsetsControllerCompat] with snapshot/restore of visibility
+ * and [systemBarsBehavior].
  */
 @Composable
 fun SystemBarsHidden(hidden: Boolean) {
+    // Pre-R: do not call hide/show — see KDoc. Keeps IgnoringVisibility alive for MainScreen.
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+
     val view = LocalView.current
     DisposableEffect(view, hidden) {
-        val window = generateSequence(view.context) { (it as? ContextWrapper)?.baseContext }
-            .filterIsInstance<Activity>().firstOrNull()?.window
-        val insets = window?.let { WindowCompat.getInsetsController(it, view) }
-        insets?.systemBarsBehavior =
-            WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        if (hidden) {
-            insets?.hide(WindowInsetsCompat.Type.systemBars())
+        if (!hidden) {
+            onDispose { }
         } else {
-            insets?.show(WindowInsetsCompat.Type.systemBars())
+            val window = generateSequence(view.context) { (it as? ContextWrapper)?.baseContext }
+                .filterIsInstance<Activity>().firstOrNull()?.window
+            val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+
+            val previousBehavior = controller?.systemBarsBehavior
+                ?: WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+            val wasVisible = ViewCompat.getRootWindowInsets(view)
+                ?.isVisible(WindowInsetsCompat.Type.systemBars()) != false
+            controller?.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller?.hide(WindowInsetsCompat.Type.systemBars())
+            onDispose {
+                if (controller == null) return@onDispose
+                if (wasVisible) {
+                    controller.show(WindowInsetsCompat.Type.systemBars())
+                } else {
+                    controller.hide(WindowInsetsCompat.Type.systemBars())
+                }
+                controller.systemBarsBehavior = previousBehavior
+                view.post { ViewCompat.requestApplyInsets(view) }
+            }
         }
-        onDispose { insets?.show(WindowInsetsCompat.Type.systemBars()) }
     }
 }
 
