@@ -1,15 +1,20 @@
 package app.local1st.files.core.util
 
+import android.Manifest
 import android.app.ActivityManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -26,6 +31,10 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * The system shows its own confirmation UI (and, if the user hasn't allowed this app to install
  * unknown apps, routes them to grant it first). The final result surfaces as a toast.
+ *
+ * Nested [Intent.EXTRA_INTENT] values from the session callback are validated before launch so
+ * a spoofed callback cannot use this app as an intent-redirection trampoline (Play Device and
+ * Network Abuse / Intent Redirection policy).
  */
 object ApkInstaller {
 
@@ -127,23 +136,29 @@ object ApkInstaller {
         label: String,
         onResult: ((success: Boolean) -> Unit)?,
     ): BroadcastReceiver {
+        val expectedAction = actionFor(sessionId)
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context, intent: Intent) {
+                // Session-scoped action + setPackage on the PendingIntent already constrain who
+                // can deliver this; reject mismatches so a spoofed broadcast is a no-op.
+                if (intent.action != expectedAction) return
                 val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, Int.MIN_VALUE)
                 when (status) {
                     PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                        confirmIntent(intent)?.let { confirm ->
-                            confirm.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            val canNotify = NotificationManagerCompat.from(app).areNotificationsEnabled()
-                            if (isAppForeground()) {
-                                if (runCatching { app.startActivity(confirm) }.isFailure && canNotify) {
-                                    postConfirmationNotification(app, sessionId, label, confirm)
-                                }
-                            } else if (canNotify) {
+                        val confirm = trustedConfirmIntent(app, extractNestedIntent(intent))
+                        if (confirm == null) {
+                            toast(app, "Install confirmation unavailable")
+                            return
+                        }
+                        val canNotify = NotificationManagerCompat.from(app).areNotificationsEnabled()
+                        if (isAppForeground()) {
+                            if (runCatching { app.startActivity(confirm) }.isFailure && canNotify) {
                                 postConfirmationNotification(app, sessionId, label, confirm)
-                            } else {
-                                runCatching { app.startActivity(confirm) }
                             }
+                        } else if (canNotify) {
+                            postConfirmationNotification(app, sessionId, label, confirm)
+                        } else {
+                            runCatching { app.startActivity(confirm) }
                         }
                         return // Not terminal: keep listening for the real outcome.
                     }
@@ -158,7 +173,7 @@ object ApkInstaller {
                 runCatching { onResult?.invoke(status == PackageInstaller.STATUS_SUCCESS) }
             }
         }
-        val filter = IntentFilter(actionFor(sessionId))
+        val filter = IntentFilter(expectedAction)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             app.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
         } else {
@@ -170,12 +185,63 @@ object ApkInstaller {
     }
 
     @Suppress("DEPRECATION")
-    private fun confirmIntent(intent: Intent): Intent? =
+    private fun extractNestedIntent(intent: Intent): Intent? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
         } else {
             intent.getParcelableExtra(Intent.EXTRA_INTENT)
         }
+
+    /**
+     * Returns a launchable copy of PackageInstaller's nested confirm intent only when it resolves
+     * to a trusted system UI (package installer or Settings unknown-sources grant). Rejects
+     * third-party targets so this app cannot be used for intent redirection.
+     */
+    private fun trustedConfirmIntent(context: Context, nested: Intent?): Intent? {
+        if (nested == null) return null
+        val pm = context.packageManager
+        val resolved = pm.resolveActivity(nested, PackageManager.MATCH_DEFAULT_ONLY) ?: return null
+        val activityInfo = resolved.activityInfo ?: return null
+        val appInfo = activityInfo.applicationInfo ?: return null
+        if (!isSystemApp(appInfo)) return null
+        if (!isAllowedInstallConfirmTarget(pm, nested, activityInfo.packageName)) return null
+
+        // Pin the resolved component and drop a selector so the intent cannot be retargeted after
+        // validation (a common intent-redirection trick).
+        return Intent(nested).apply {
+            component = ComponentName(activityInfo.packageName, activityInfo.name)
+            selector = null
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
+    /** System image packages only (includes updated system apps). */
+    private fun isSystemApp(appInfo: ApplicationInfo): Boolean =
+        (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+
+    /**
+     * Legitimate PackageInstaller follow-ups are either the privileged installer UI (holds
+     * [Manifest.permission.INSTALL_PACKAGES]) or Settings routes that ask the user to allow
+     * installs from this app.
+     */
+    private fun isAllowedInstallConfirmTarget(
+        pm: PackageManager,
+        confirm: Intent,
+        packageName: String,
+    ): Boolean {
+        if (pm.checkPermission(Manifest.permission.INSTALL_PACKAGES, packageName) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return true
+        }
+        if (confirm.action == Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES) {
+            return true
+        }
+        // Some OEMs open an explicit Settings component without the public action string.
+        // Still limited to system packages by [isSystemApp].
+        return packageName == "com.android.settings" ||
+            packageName.endsWith(".settings")
+    }
 
     private fun toast(context: Context, message: String) {
         Toast.makeText(context, message, Toast.LENGTH_LONG).show()
