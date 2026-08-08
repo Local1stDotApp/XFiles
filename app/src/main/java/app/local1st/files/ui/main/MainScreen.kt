@@ -24,6 +24,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
+import androidx.compose.material.icons.automirrored.outlined.NoteAdd
 import androidx.compose.material.icons.outlined.Archive
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
@@ -266,6 +267,12 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                         } else {
                             TooltipIconButton(stringResource(R.string.new_folder), Icons.Outlined.CreateNewFolder) {
                                 vm.requestNewFolder()
+                            }
+                            TooltipIconButton(
+                                stringResource(R.string.new_text_file),
+                                Icons.AutoMirrored.Outlined.NoteAdd,
+                            ) {
+                                vm.requestNewTextFile()
                             }
                             TooltipIconButton(
                                 stringResource(R.string.search),

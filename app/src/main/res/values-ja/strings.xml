@@ -16,6 +16,7 @@
     <string name="refresh">更新</string>
     <string name="more">その他</string>
     <string name="new_folder">新しいフォルダ</string>
+    <string name="new_text_file">新しいテキストファイル</string>
     <string name="collapse">折りたたむ</string>
     <string name="expand">展開</string>
     <string name="select">選択</string>
@@ -161,6 +162,7 @@
     <string name="move_here">ここに移動</string>
     <string name="copy_here">ここにコピー</string>
     <string name="cannot_create_folder">フォルダを作成できません</string>
+    <string name="cannot_create_file">ファイルを作成できません</string>
     <string name="cancel_operation">キャンセル</string>
     <string name="cannot_play">%1$s を再生できません</string>
     <string name="music">音楽</string>

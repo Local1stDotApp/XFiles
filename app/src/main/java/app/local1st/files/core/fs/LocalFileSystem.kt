@@ -9,8 +9,10 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
 
 /**
@@ -68,7 +70,7 @@ class LocalFileSystem(
     }
 
     override fun openOut(parentDir: XEntry, name: String): OutputStream {
-        requireSafeName(name)
+        requireSafeEntryName(name)
         val parent = File(parentDir.path)
         if (!parent.isDirectory && !parent.mkdirs()) {
             val directError = IOException("Cannot create folder ${parent.absolutePath}")
@@ -98,8 +100,33 @@ class LocalFileSystem(
         }
     }
 
+    override fun createFile(parentDir: XEntry, name: String): XEntry {
+        requireSafeEntryName(name)
+        val file = File(parentDir.path, name)
+        try {
+            createEmptyFileExclusive(file)
+        } catch (e: FileAlreadyExistsException) {
+            // Never turn a create action into an accidental truncate, including when the
+            // existing item is a directory.
+            throw e
+        } catch (e: IOException) {
+            val directError = IOException("Cannot create file $name in ${parentDir.name}", e)
+            return withSafWrite(file, directError) { saf, volume, tree ->
+                val parent = saf.resolve(volume, tree, File(parentDir.path)) ?: throw directError
+                val document = saf.createFile(
+                    tree,
+                    parent,
+                    name,
+                    FileTypes.mimeOf(name) ?: "text/plain",
+                )
+                toEntry(file, document)
+            }
+        }
+        return toEntry(file, readAttrs(file))
+    }
+
     override fun mkdir(parentDir: XEntry, name: String): XEntry {
-        requireSafeName(name)
+        requireSafeEntryName(name)
         val dir = File(parentDir.path, name)
         // Idempotent: copy ops re-create destination subfolders that may already exist.
         if (dir.isDirectory) return toEntry(dir, readAttrs(dir))
@@ -133,7 +160,7 @@ class LocalFileSystem(
     }
 
     override fun rename(entry: XEntry, newName: String): XEntry {
-        requireSafeName(newName)
+        requireSafeEntryName(newName)
         val file = File(entry.path)
         val parent = file.parentFile
             ?: throw IOException("Cannot rename ${entry.name}")
@@ -196,15 +223,6 @@ class LocalFileSystem(
     fun supportsDirectBulkWrites(entry: XEntry): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ||
             legacySaf?.secondaryVolumeFor(File(entry.path)) == null
-
-    /** Reject names that would escape the parent directory (path traversal / injection). */
-    private fun requireSafeName(name: String) {
-        if (name.isEmpty() || name == "." || name == ".." ||
-            name.contains('/') || name.contains('\\')
-        ) {
-            throw IOException("Invalid name: $name")
-        }
-    }
 
     private fun deleteRecursively(file: File) {
         // Never descend through symlinks; delete only the link itself.
@@ -287,10 +305,21 @@ class LocalFileSystem(
         val tree = saf.validatedTreeOrRequest(volume) ?: throw directError
         return try {
             write(saf, volume, tree)
+        } catch (e: FileAlreadyExistsException) {
+            throw e
         } catch (e: IOException) {
             throw IOException(directError.message, e)
         } catch (e: RuntimeException) {
             throw IOException(directError.message, e)
         }
     }
+}
+
+/** CREATE_NEW is the invariant behind the UI's promise that creating never overwrites. */
+internal fun createEmptyFileExclusive(file: File) {
+    Files.newOutputStream(
+        file.toPath(),
+        StandardOpenOption.CREATE_NEW,
+        StandardOpenOption.WRITE,
+    ).use { }
 }

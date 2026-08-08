@@ -16,6 +16,7 @@
     <string name="refresh">Vernieuwen</string>
     <string name="more">Meer</string>
     <string name="new_folder">Nieuwe map</string>
+    <string name="new_text_file">Nieuw tekstbestand</string>
     <string name="collapse">Inklappen</string>
     <string name="expand">Uitklappen</string>
     <string name="select">Selecteren</string>
@@ -162,6 +163,7 @@
     <string name="move_here">Verplaats hierheen</string>
     <string name="copy_here">Kopieer hier</string>
     <string name="cannot_create_folder">Kan geen map maken</string>
+    <string name="cannot_create_file">Kan geen bestand maken</string>
     <string name="cancel_operation">Annuleren</string>
     <string name="cannot_play">Kan %1$s niet afspelen</string>
     <string name="music">Muziek</string>

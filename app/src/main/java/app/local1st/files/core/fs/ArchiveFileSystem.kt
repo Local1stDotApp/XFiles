@@ -97,6 +97,8 @@ class ArchiveFileSystem : XFileSystem {
 
     override fun openOut(parentDir: XEntry, name: String): OutputStream = throw readOnly()
 
+    override fun createFile(parentDir: XEntry, name: String): XEntry = throw readOnly()
+
     override fun mkdir(parentDir: XEntry, name: String): XEntry = throw readOnly()
 
     override fun delete(entry: XEntry) {

@@ -16,6 +16,7 @@
     <string name="refresh">重新整理</string>
     <string name="more">更多</string>
     <string name="new_folder">新增資料夾</string>
+    <string name="new_text_file">新增文字檔案</string>
     <string name="collapse">收合</string>
     <string name="expand">展開</string>
     <string name="select">選取</string>
@@ -162,6 +163,7 @@
     <string name="move_here">移動到這裡</string>
     <string name="copy_here">複製到這裡</string>
     <string name="cannot_create_folder">無法建立資料夾</string>
+    <string name="cannot_create_file">無法建立檔案</string>
     <string name="cancel_operation">取消</string>
     <string name="cannot_play">無法播放 %1$s</string>
     <string name="music">音樂</string>

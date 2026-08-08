@@ -16,6 +16,7 @@
     <string name="refresh">Обновить</string>
     <string name="more">Подробнее</string>
     <string name="new_folder">Новая папка</string>
+    <string name="new_text_file">Новый текстовый файл</string>
     <string name="collapse">Свернуть</string>
     <string name="expand">Развернуть</string>
     <string name="select">Выбрать</string>
@@ -164,6 +165,7 @@
     <string name="move_here">Переместить сюда</string>
     <string name="copy_here">Копировать сюда</string>
     <string name="cannot_create_folder">Не могу создать папку</string>
+    <string name="cannot_create_file">Не удалось создать файл</string>
     <string name="cancel_operation">Отмена</string>
     <string name="cannot_play">Не могу воспроизвести %1$s</string>
     <string name="music">Музыка</string>

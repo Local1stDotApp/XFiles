@@ -19,7 +19,11 @@ fun ViewerScreen(vm: MainViewModel, request: ViewerRequest, onBack: () -> Unit) 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         when (req) {
             is ViewerRequest.Image -> ImageViewer(req.items, req.startIndex, close)
-            is ViewerRequest.Text -> TextViewer(req.entry, close)
+            is ViewerRequest.Text -> TextViewer(
+                entry = req.entry,
+                startEditing = req.startEditing,
+                onClose = close,
+            )
             is ViewerRequest.Hex -> HexViewer(req.entry, close)
             is ViewerRequest.Pdf -> PdfViewer(req.entry, close) { vm.openWith(req.entry) }
             is ViewerRequest.Media -> MediaViewer(req.entry, req.playlist, close)

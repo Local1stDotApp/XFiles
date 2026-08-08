@@ -31,6 +31,7 @@ import app.local1st.files.core.util.XapkObbInstaller
 import app.local1st.files.di.Graph
 import java.io.File
 import java.io.FileInputStream
+import java.nio.file.FileAlreadyExistsException
 import java.util.zip.ZipFile
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -816,6 +817,43 @@ class MainViewModel : ViewModel() {
         }
     }
 
+    fun requestNewTextFile() {
+        requestNewTextFile(activeCtrl.focusedDirEntry())
+    }
+
+    fun requestNewTextFile(parent: XEntry?) {
+        val target = parent ?: return
+        if (!canCreateFileIn(target)) {
+            snackbar.tryEmit(text(R.string.cannot_write, target.name))
+            return
+        }
+        dialog.value = DialogRequest.NewTextFile(target)
+    }
+
+    fun performNewTextFile(parent: XEntry, name: String) {
+        dialog.value = null
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { Graph.fsRegistry.forEntry(parent).createFile(parent, name) }
+            }
+            result.fold(
+                onSuccess = { entry ->
+                    activeCtrl.expand(parent)
+                    panes.forEach { it.refresh(parent.id) }
+                    showViewer(ViewerRequest.Text(entry, startEditing = true))
+                },
+                onFailure = { error ->
+                    val alreadyExists = generateSequence(error) { it.cause }
+                        .any { it is FileAlreadyExistsException }
+                    snackbar.tryEmit(
+                        if (alreadyExists) text(R.string.already_exists, name)
+                        else text(R.string.cannot_create_file),
+                    )
+                },
+            )
+        }
+    }
+
     fun requestRename(entry: XEntry) {
         dialog.value = DialogRequest.Rename(entry)
     }
@@ -861,8 +899,11 @@ class MainViewModel : ViewModel() {
         activeCtrl.revealPath(entryId)
     }
 
+    fun canCreateFileIn(parent: XEntry): Boolean = isValidDest(parent)
+
     private fun isValidDest(dest: XEntry): Boolean =
-        dest.canWrite && dest.kind != EntryKind.APPS_ROOT && dest.kind != EntryKind.APP
+        dest.isDir && dest.canWrite &&
+            (dest.scheme == XId.SCHEME_FILE || dest.scheme == XId.SCHEME_ROOT)
 }
 
 /** A copy/move/extract/compress whose destination folder is being chosen. */

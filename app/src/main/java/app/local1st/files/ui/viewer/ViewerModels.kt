@@ -5,7 +5,7 @@ import app.local1st.files.core.fs.XEntry
 /** Payload carried by the Navigation 3 viewer destination. */
 sealed interface ViewerRequest {
     data class Image(val items: List<XEntry>, val startIndex: Int) : ViewerRequest
-    data class Text(val entry: XEntry) : ViewerRequest
+    data class Text(val entry: XEntry, val startEditing: Boolean = false) : ViewerRequest
     data class Hex(val entry: XEntry) : ViewerRequest
     /** A PDF rendered inside XFiles without requiring an installed reader app. */
     data class Pdf(val entry: XEntry) : ViewerRequest

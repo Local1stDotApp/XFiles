@@ -16,6 +16,7 @@
     <string name="refresh">Aggiorna</string>
     <string name="more">Altro</string>
     <string name="new_folder">Nuova cartella</string>
+    <string name="new_text_file">Nuovo file di testo</string>
     <string name="collapse">Comprimi</string>
     <string name="expand">Espandi</string>
     <string name="select">Seleziona</string>
@@ -162,6 +163,7 @@
     <string name="move_here">Sposta qui</string>
     <string name="copy_here">Copia qui</string>
     <string name="cannot_create_folder">Impossibile creare la cartella</string>
+    <string name="cannot_create_file">Impossibile creare il file</string>
     <string name="cancel_operation">Annulla</string>
     <string name="cannot_play">Impossibile riprodurre %1$s</string>
     <string name="music">Musica</string>

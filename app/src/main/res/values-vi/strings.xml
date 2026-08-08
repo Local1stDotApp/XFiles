@@ -16,6 +16,7 @@
     <string name="refresh">Làm mới</string>
     <string name="more">Tùy chọn khác</string>
     <string name="new_folder">Thư mục mới</string>
+    <string name="new_text_file">Tệp văn bản mới</string>
     <string name="collapse">Thu gọn</string>
     <string name="expand">Mở rộng</string>
     <string name="select">Chọn</string>
@@ -162,6 +163,7 @@
     <string name="move_here">Di chuyển vào đây</string>
     <string name="copy_here">Sao chép vào đây</string>
     <string name="cannot_create_folder">Không thể tạo thư mục</string>
+    <string name="cannot_create_file">Không thể tạo tệp</string>
     <string name="cancel_operation">Hủy bỏ</string>
     <string name="cannot_play">Không chơi được %1$s</string>
     <string name="music">Âm nhạc</string>

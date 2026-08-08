@@ -16,6 +16,8 @@
     <string name="refresh">Refresh</string>
     <string name="more">More</string>
     <string name="new_folder">New folder</string>
+    <string name="new_text_file">New text file</string>
+    <string name="default_text_file_name" translatable="false">untitled.txt</string>
     <string name="collapse">Collapse</string>
     <string name="expand">Expand</string>
     <string name="select">Select</string>
@@ -161,6 +163,7 @@
     <string name="move_here">Move here</string>
     <string name="copy_here">Copy here</string>
     <string name="cannot_create_folder">Cannot create folder</string>
+    <string name="cannot_create_file">Cannot create file</string>
     <string name="cancel_operation">Cancel</string>
     <string name="cannot_play">Cannot play %1$s</string>
     <string name="music">Music</string>

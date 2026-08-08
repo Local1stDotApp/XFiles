@@ -16,6 +16,7 @@
     <string name="refresh">Atualizar</string>
     <string name="more">Mais</string>
     <string name="new_folder">Nova pasta</string>
+    <string name="new_text_file">Novo arquivo de texto</string>
     <string name="collapse">Recolher</string>
     <string name="expand">Expandir</string>
     <string name="select">Selecionar</string>
@@ -162,6 +163,7 @@
     <string name="move_here">Mover para cá</string>
     <string name="copy_here">Copiar para cá</string>
     <string name="cannot_create_folder">Não é possível criar pasta</string>
+    <string name="cannot_create_file">Não é possível criar o arquivo</string>
     <string name="cancel_operation">Cancelar</string>
     <string name="cannot_play">Não é possível reproduzir %1$s</string>
     <string name="music">Música</string>

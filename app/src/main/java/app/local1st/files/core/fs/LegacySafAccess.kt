@@ -14,6 +14,7 @@ import app.local1st.files.core.prefs.SettingsRepo
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
+import java.nio.file.FileAlreadyExistsException
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -206,6 +207,31 @@ class LegacySafAccess(
             name,
         ) ?: throw IOException("Provider did not create $name")
         return queryDocument(uri) ?: throw IOException("Cannot read created folder $name")
+    }
+
+    /** Creates an empty document and refuses the provider's usual auto-rename-on-conflict path. */
+    internal fun createFile(
+        treeUri: Uri,
+        parent: SafDocument,
+        name: String,
+        mimeType: String,
+    ): SafDocument {
+        if (child(treeUri, parent, name) != null) throw FileAlreadyExistsException(name)
+        val uri = DocumentsContract.createDocument(resolver, parent.uri, mimeType, name)
+            ?: throw IOException("Provider did not create $name")
+        val document = queryDocument(uri) ?: throw IOException("Cannot read created file $name")
+        if (document.name != name) {
+            // ExternalStorageProvider may choose a free suffix instead of failing. That is useful
+            // for imports, but surprising for an explicit name: remove only the document this
+            // call just created and report the conflict.
+            try {
+                delete(document)
+            } catch (e: Exception) {
+                throw IOException("Provider created ${document.name} instead of $name", e)
+            }
+            throw FileAlreadyExistsException(name)
+        }
+        return document
     }
 
     internal fun openOutput(

@@ -16,6 +16,7 @@
     <string name="refresh">Segarkan</string>
     <string name="more">Lainnya</string>
     <string name="new_folder">Folder baru</string>
+    <string name="new_text_file">File teks baru</string>
     <string name="collapse">Ciutkan</string>
     <string name="expand">Perluas</string>
     <string name="select">Pilih</string>
@@ -162,6 +163,7 @@
     <string name="move_here">Pindah ke sini</string>
     <string name="copy_here">Salin di sini</string>
     <string name="cannot_create_folder">Tidak dapat membuat folder</string>
+    <string name="cannot_create_file">Tidak dapat membuat file</string>
     <string name="cancel_operation">Batalkan</string>
     <string name="cannot_play">Tidak dapat memutar %1$s</string>
     <string name="music">Musik</string>

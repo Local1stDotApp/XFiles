@@ -16,6 +16,7 @@
     <string name="refresh">تحديث</string>
     <string name="more">المزيد</string>
     <string name="new_folder">مجلد جديد</string>
+    <string name="new_text_file">ملف نصي جديد</string>
     <string name="collapse">طي</string>
     <string name="expand">توسيع</string>
     <string name="select">تحديد</string>
@@ -166,6 +167,7 @@
     <string name="move_here">نقل إلى هنا</string>
     <string name="copy_here">نسخ إلى هنا</string>
     <string name="cannot_create_folder">لا يمكن إنشاء مجلد</string>
+    <string name="cannot_create_file">لا يمكن إنشاء ملف</string>
     <string name="cancel_operation">إلغاء</string>
     <string name="cannot_play">لا يمكن تشغيل %1$s</string>
     <string name="music">موسيقى</string>

@@ -287,6 +287,9 @@ class AppsFileSystem(private val context: Context) : XFileSystem {
     override fun openOut(parentDir: XEntry, name: String): OutputStream =
         throw IOException("Not supported")
 
+    override fun createFile(parentDir: XEntry, name: String): XEntry =
+        throw IOException("Not supported")
+
     override fun mkdir(parentDir: XEntry, name: String): XEntry =
         throw IOException("Not supported")
 

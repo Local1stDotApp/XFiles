@@ -16,6 +16,7 @@
     <string name="refresh">새로고침</string>
     <string name="more">더보기</string>
     <string name="new_folder">새 폴더</string>
+    <string name="new_text_file">새 텍스트 파일</string>
     <string name="collapse">접기</string>
     <string name="expand">펼치기</string>
     <string name="select">선택</string>
@@ -162,6 +163,7 @@
     <string name="move_here">여기로 이동</string>
     <string name="copy_here">여기로 복사</string>
     <string name="cannot_create_folder">폴더를 생성할 수 없습니다</string>
+    <string name="cannot_create_file">파일을 생성할 수 없습니다</string>
     <string name="cancel_operation">취소</string>
     <string name="cannot_play">%1$s을 재생할 수 없습니다.</string>
     <string name="music">음악</string>

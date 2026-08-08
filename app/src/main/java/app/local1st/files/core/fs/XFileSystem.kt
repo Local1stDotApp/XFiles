@@ -25,6 +25,10 @@ interface XFileSystem {
     @Throws(java.io.IOException::class)
     fun openOut(parentDir: XEntry, name: String): OutputStream
 
+    /** Create one empty file without replacing an existing entry of the same name. */
+    @Throws(java.io.IOException::class)
+    fun createFile(parentDir: XEntry, name: String): XEntry
+
     @Throws(java.io.IOException::class)
     fun mkdir(parentDir: XEntry, name: String): XEntry
 
@@ -35,8 +39,17 @@ interface XFileSystem {
     @Throws(java.io.IOException::class)
     fun rename(entry: XEntry, newName: String): XEntry
 
-    /** Whether write ops (openOut/mkdir/delete/rename) can work for this entry. */
+    /** Whether write ops (openOut/createFile/mkdir/delete/rename) can work for this entry. */
     fun canWrite(entry: XEntry): Boolean
+}
+
+/** Reject names that could escape the requested parent directory. */
+internal fun requireSafeEntryName(name: String) {
+    if (name.isEmpty() || name == "." || name == ".." ||
+        name.contains('/') || name.contains('\\')
+    ) {
+        throw java.io.IOException("Invalid name: $name")
+    }
 }
 
 /** Registry mapping id schemes to filesystems. Populated at app start (see Graph). */

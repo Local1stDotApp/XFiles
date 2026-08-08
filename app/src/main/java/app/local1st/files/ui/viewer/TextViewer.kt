@@ -47,8 +47,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextIndent
@@ -116,7 +119,7 @@ private const val MAX_CACHED_ROW_PAGES = 32
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun TextViewer(entry: XEntry, onClose: () -> Unit) {
+fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit) {
     val cannotRead = stringResource(R.string.cannot_read, entry.name)
     val saveFailed = stringResource(R.string.save_failed)
     val saved = stringResource(R.string.saved, entry.name)
@@ -126,10 +129,13 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
     var saving by remember { mutableStateOf(false) }
     var preparingEdit by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf<String?>(null) }
+    var initialEditPending by remember(entry.id, startEditing) { mutableStateOf(startEditing) }
     val scope = rememberCoroutineScope()
+    val editorFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     val wrap by Graph.settings.textWrap.collectAsState(initial = false)
 
-    val file = remember(entry.id) { pageableFile(entry) }
+    val file = remember(entry.id, startEditing) { pageableFile(entry, allowEmpty = startEditing) }
     val document = remember(entry.id, reloads) { TextDocument(entry, file) }
     DisposableEffect(document) {
         document.start()
@@ -214,6 +220,19 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
         }
     }
 
+    LaunchedEffect(initialEditPending, canEdit, opened) {
+        if (initialEditPending && canEdit && opened) {
+            initialEditPending = false
+            toggleEditing()
+        }
+    }
+    LaunchedEffect(editing) {
+        if (editing) {
+            editorFocus.requestFocus()
+            keyboard?.show()
+        }
+    }
+
     ViewerChrome(
         modifier = Modifier.imePadding(),
         // Pinned while editing: the editor scrolls itself to follow the cursor, and Save must not
@@ -288,6 +307,7 @@ fun TextViewer(entry: XEntry, onClose: () -> Unit) {
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     modifier = Modifier
                         .fillMaxSize()
+                        .focusRequester(editorFocus)
                         .verticalScroll(rememberScrollState())
                         // Inside the scroll, so the text travels under both system bars while its
                         // first and last lines still settle clear of them.
@@ -490,13 +510,15 @@ private fun TextBanner(message: String, color: Color, width: Dp, wrap: Boolean) 
  * else — archive members, su paths, an unreadable path on a legacy secondary volume — has no
  * seekable handle, so it is read as a leading window instead.
  *
- * A length of zero also goes the streaming way: /proc and /sys nodes report no length but hand over
- * plenty of bytes when read, and paging trusts the length. A file that really is empty reads as
- * empty either way.
+ * A length of zero also normally goes the streaming way: /proc and /sys nodes report no length but
+ * hand over plenty of bytes when read, and paging trusts the length. [allowEmpty] is reserved for
+ * a newly created local file that is opening straight into the editor.
  */
-private fun pageableFile(entry: XEntry): File? {
+private fun pageableFile(entry: XEntry, allowEmpty: Boolean = false): File? {
     val path = entry.localPath ?: entry.path.takeIf { entry.scheme == XId.SCHEME_FILE } ?: return null
-    return File(path).takeIf { it.isFile && it.canRead() && it.length() > 0L }
+    return File(path).takeIf {
+        it.isFile && it.canRead() && (allowEmpty || it.length() > 0L)
+    }
 }
 
 /**

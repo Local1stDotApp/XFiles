@@ -7,6 +7,7 @@ sealed interface DialogRequest {
     data class ConfirmDelete(val entries: List<XEntry>) : DialogRequest
     data class Rename(val entry: XEntry) : DialogRequest
     data class NewFolder(val parent: XEntry) : DialogRequest
+    data class NewTextFile(val parent: XEntry) : DialogRequest
     data class CompressTo(val sources: List<XEntry>, val destDir: XEntry) : DialogRequest
     data class Details(val entry: XEntry) : DialogRequest
 

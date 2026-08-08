@@ -7,6 +7,7 @@ import app.local1st.files.core.util.FileTypes
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.file.FileAlreadyExistsException
 
 /**
  * Superuser filesystem for `root://` ids, backed by `su` shell commands (X-plore's
@@ -101,6 +102,31 @@ class RootFileSystem : XFileSystem {
     override fun openOut(parentDir: XEntry, name: String): OutputStream {
         requireWritable()
         return activeTransport().openWrite(XId.joinPath(parentDir.path, name))
+    }
+
+    override fun createFile(parentDir: XEntry, name: String): XEntry {
+        requireWritable()
+        requireSafeEntryName(name)
+        val childPath = XId.joinPath(parentDir.path, name)
+        val output = activeTransport().exec(buildString {
+            append("p=").append(shQuote(childPath)).append('\n')
+            append("if [ -e \"\$p\" ] || [ -L \"\$p\" ]; then echo __XF_EXISTS__; exit 0; fi\n")
+            // noclobber makes the create exclusive even if another process wins after the check.
+            append("if (set -C; : > \"\$p\") 2>/dev/null; then echo __XF_CREATED__; ")
+            append("elif [ -e \"\$p\" ] || [ -L \"\$p\" ]; then echo __XF_EXISTS__; ")
+            append("else exit 1; fi\n")
+        })
+        return when (output.lineSequence().firstOrNull()) {
+            "__XF_CREATED__" -> toEntry(
+                parentDir.path,
+                name,
+                isDir = false,
+                size = 0L,
+                mtime = System.currentTimeMillis(),
+            )
+            "__XF_EXISTS__" -> throw FileAlreadyExistsException(name)
+            else -> throw IOException("Cannot create file $name in ${parentDir.name}")
+        }
     }
 
     override fun mkdir(parentDir: XEntry, name: String): XEntry {

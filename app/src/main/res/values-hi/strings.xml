@@ -16,6 +16,7 @@
     <string name="refresh">ताज़ा करें</string>
     <string name="more">अधिक</string>
     <string name="new_folder">नया फ़ोल्डर</string>
+    <string name="new_text_file">नई टेक्स्ट फ़ाइल</string>
     <string name="collapse">समेटें</string>
     <string name="expand">विस्तार करें</string>
     <string name="select">चयन करें</string>
@@ -162,6 +163,7 @@
     <string name="move_here">यहाँ स्थानांतरित करें</string>
     <string name="copy_here">यहां कॉपी करें</string>
     <string name="cannot_create_folder">फ़ोल्डर नहीं बनाया जा सकता</string>
+    <string name="cannot_create_file">फ़ाइल नहीं बनाई जा सकती</string>
     <string name="cancel_operation">रद्द करें</string>
     <string name="cannot_play">%1$s नहीं चल सकता</string>
     <string name="music">संगीत</string>

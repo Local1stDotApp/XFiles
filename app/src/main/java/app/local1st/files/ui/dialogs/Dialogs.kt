@@ -11,6 +11,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,10 +19,15 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import app.local1st.files.R
 import app.local1st.files.core.fs.EntryKind
@@ -79,6 +85,15 @@ fun MainDialogs(vm: MainViewModel) {
             onConfirm = { vm.performNewFolder(req.parent, it) },
         )
 
+        is DialogRequest.NewTextFile -> NameDialog(
+            title = stringResource(R.string.new_text_file),
+            initial = stringResource(R.string.default_text_file_name),
+            confirmLabel = stringResource(R.string.create),
+            selectStem = true,
+            onDismiss = dismiss,
+            onConfirm = { vm.performNewTextFile(req.parent, it) },
+        )
+
         is DialogRequest.CompressTo -> NameDialog(
             title = stringResource(R.string.create_zip_in, req.destDir.name),
             initial = (req.sources.firstOrNull()?.name?.substringBeforeLast('.') ?: "archive") + ".zip",
@@ -112,25 +127,43 @@ private fun NameDialog(
     title: String,
     initial: String,
     confirmLabel: String,
+    selectStem: Boolean = false,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
 ) {
-    var text by remember { mutableStateOf(initial) }
+    var value by remember(initial, selectStem) {
+        val cursor = if (selectStem) initial.substringBeforeLast('.', initial).length else initial.length
+        mutableStateOf(
+            TextFieldValue(
+                text = initial,
+                selection = if (selectStem) TextRange(0, cursor) else TextRange(cursor),
+            ),
+        )
+    }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(selectStem) {
+        if (selectStem) {
+            focusRequester.requestFocus()
+            keyboard?.show()
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
             OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
+                value = value,
+                onValueChange = { value = it },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.focusRequester(focusRequester).fillMaxWidth(),
             )
         },
         confirmButton = {
             Button(
-                enabled = text.isNotBlank() && !text.contains('/'),
-                onClick = { onConfirm(text.trim()) },
+                enabled = value.text.isNotBlank() &&
+                    !value.text.contains('/') && !value.text.contains('\\'),
+                onClick = { onConfirm(value.text.trim()) },
             ) { Text(confirmLabel) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
@@ -209,6 +242,11 @@ private fun EntryMenuContent(
         }
 
         MenuItem(stringResource(R.string.details)) { vm.dialog.value = DialogRequest.Details(entry) }
+        if (entry.isDir && vm.canCreateFileIn(entry)) {
+            // Replaces the bottom-sheet request with the naming dialog. Calling dismiss after it
+            // would immediately clear that new request again.
+            MenuItem(stringResource(R.string.new_text_file)) { vm.requestNewTextFile(entry) }
+        }
 
         // Pin files/folders/archives as top-level shortcuts. Anything already at the
         // top level (volumes, App manager, Root — including the DIR-kinded read-only

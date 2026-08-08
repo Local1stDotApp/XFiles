@@ -16,6 +16,7 @@
     <string name="refresh">Yenile</string>
     <string name="more">Daha Fazla</string>
     <string name="new_folder">Yeni klasör</string>
+    <string name="new_text_file">Yeni metin dosyası</string>
     <string name="collapse">Daralt</string>
     <string name="expand">Genişlet</string>
     <string name="select">Seç</string>
@@ -162,6 +163,7 @@
     <string name="move_here">Buraya taşı</string>
     <string name="copy_here">Buraya kopyala</string>
     <string name="cannot_create_folder">Klasör oluşturulamıyor</string>
+    <string name="cannot_create_file">Dosya oluşturulamıyor</string>
     <string name="cancel_operation">İptal</string>
     <string name="cannot_play">%1$s oynatılamıyor</string>
     <string name="music">Müzik</string>
