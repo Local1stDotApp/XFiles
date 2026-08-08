@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">Incluir archivos con punto y carpetas ocultas</string>
     <string name="folders_first">Carpetas primero</string>
     <string name="folders_first_summary">Mostrar carpetas antes que archivos</string>
+    <string name="collapse_sibling_folders">Mantener abierta una sola carpeta del mismo nivel</string>
+    <string name="collapse_sibling_folders_summary">Al expandir una carpeta, se contraen las demás del mismo nivel</string>
     <string name="sort_by">Ordenar por</string>
     <string name="sort_name">Nombre</string>
     <string name="sort_size">Tamaño</string>

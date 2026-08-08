@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">Puntbestanden en verborgen mappen opnemen</string>
     <string name="folders_first">Mappen eerst</string>
     <string name="folders_first_summary">Geef mappen weer vóór bestanden</string>
+    <string name="collapse_sibling_folders">Per niveau slechts één map openhouden</string>
+    <string name="collapse_sibling_folders_summary">Bij het uitvouwen van een map worden de andere mappen op hetzelfde niveau ingeklapt</string>
     <string name="sort_by">Sorteer op</string>
     <string name="sort_name">Naam</string>
     <string name="sort_size">Maat</string>

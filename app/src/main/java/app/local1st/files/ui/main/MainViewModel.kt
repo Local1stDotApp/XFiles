@@ -19,7 +19,6 @@ import app.local1st.files.core.util.ApkInstaller
 import app.local1st.files.core.util.AppComponents
 import app.local1st.files.core.util.ComponentType
 import app.local1st.files.core.prefs.Favorite
-import app.local1st.files.core.prefs.SessionPane
 import app.local1st.files.core.prefs.SessionState
 import app.local1st.files.core.util.FileCategory
 import app.local1st.files.core.util.FileTypes
@@ -34,7 +33,9 @@ import java.io.File
 import java.io.FileInputStream
 import java.util.zip.ZipFile
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import app.local1st.files.ui.browser.PaneController
+import app.local1st.files.ui.browser.RestoreListingSession
 import app.local1st.files.ui.dialogs.DialogRequest
 import app.local1st.files.ui.viewer.ViewerRequest
 import kotlinx.coroutines.CancellationException
@@ -54,22 +55,44 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.channels.Channel
 
 /** How long an install job waits for the user to answer the system's confirmation prompt. */
 private const val CONFIRMATION_TIMEOUT_MS = 5L * 60 * 1000
+private const val WIDE_PANES_MIN_WIDTH_DP = 700
+private const val INITIAL_PANE_LAYOUT_TIMEOUT_MS = 1_000L
+
+private data class PaneInitialLayout(val pane: Int, val treeVersion: Long)
 
 class MainViewModel : ViewModel() {
     private fun text(@androidx.annotation.StringRes id: Int, vararg formatArgs: Any): String =
         Graph.appContext.getString(id, *formatArgs)
 
-
-    val panes = listOf(
-        PaneController(0, viewModelScope),
-        PaneController(1, viewModelScope),
-    )
+    private val startupSessionLoad = Graph.claimStartupSession()
+    private val preloadedSession = startupSessionLoad?.snapshot
+    private val preloadedActivePane = preloadedSession?.activePane?.coerceIn(0, 1) ?: 0
+    private val phoneStartupSnapshot = Graph.appContext.resources.configuration.screenWidthDp <
+        WIDE_PANES_MIN_WIDTH_DP
 
     /** Index of the pane operations act from (its selection) and into (the other one). */
-    val activePane = MutableStateFlow(0)
+    val activePane = MutableStateFlow(preloadedActivePane)
+
+    val panes = listOf(
+        PaneController(
+            paneId = 0,
+            scope = viewModelScope,
+            initialRenderSnapshot = preloadedSession?.panes?.getOrNull(0)?.renderSnapshot
+                ?.takeIf { phoneStartupSnapshot && preloadedActivePane == 0 },
+            initialFocusedId = preloadedSession?.panes?.getOrNull(0)?.focusedId,
+        ),
+        PaneController(
+            paneId = 1,
+            scope = viewModelScope,
+            initialRenderSnapshot = preloadedSession?.panes?.getOrNull(1)?.renderSnapshot
+                ?.takeIf { phoneStartupSnapshot && preloadedActivePane == 1 },
+            initialFocusedId = preloadedSession?.panes?.getOrNull(1)?.focusedId,
+        ),
+    )
 
     val dialog = MutableStateFlow<DialogRequest?>(null)
     val viewer = MutableStateFlow<ViewerRequest?>(null)
@@ -88,6 +111,14 @@ class MainViewModel : ViewModel() {
 
     /** Startup restore, or null while storage access is still missing (see [onStorageAccessGranted]). */
     private var restoreJob: Job? = null
+
+    /** The active pane's critical restore is published; the startup overlay may now settle. */
+    val sessionReady = MutableStateFlow(
+        phoneStartupSnapshot && panes[preloadedActivePane].state.value.snapshotOnly,
+    )
+
+    /** Buffered because a PaneView can finish layout just before the restore coroutine awaits it. */
+    private val paneInitialLayouts = Channel<PaneInitialLayout>(Channel.BUFFERED)
 
     /** True once the auto-saver runs; gates the final flush in [onCleared]. */
     private var persistenceStarted = false
@@ -157,10 +188,28 @@ class MainViewModel : ViewModel() {
             restoreJob = viewModelScope.launch { restoreSession() }
             return
         }
+        sessionReady.value = false
         viewModelScope.launch {
-            started.join()
-            coroutineScope {
-                panes.forEach { pane -> launch { pane.restoreAfterGrant() } }
+            try {
+                started.join()
+                restorePaneCriticalPaths { _, pane, paneRoots, listings ->
+                    pane.restoreAfterGrant(paneRoots, listings)
+                }
+            } finally {
+                sessionReady.value = true
+            }
+        }
+    }
+
+    fun onPaneInitialLayoutReady(pane: Int, treeVersion: Long) {
+        paneInitialLayouts.trySend(PaneInitialLayout(pane, treeVersion))
+    }
+
+    private suspend fun awaitPaneInitialLayout(pane: Int, treeVersion: Long) {
+        withTimeoutOrNull(INITIAL_PANE_LAYOUT_TIMEOUT_MS) {
+            while (true) {
+                val ready = paneInitialLayouts.receive()
+                if (ready.pane == pane && ready.treeVersion == treeVersion) return@withTimeoutOrNull
             }
         }
     }
@@ -172,20 +221,111 @@ class MainViewModel : ViewModel() {
      * state never overwrites the saved one.
      */
     private suspend fun restoreSession() {
-        // Restore inputs must be settled first: the root gate (a saved root:// position
-        // stats through it) and the favorites cache (saved ids may live under a pinned root).
-        PrivilegedAccess.enabled = Graph.settings.rootEnabled.first()
-        PrivilegedAccess.preference = Graph.settings.privilegedTransport.first()
-        Graph.favorites.first { it != null }
-        val session = Graph.settings.loadSession()
-        activePane.value = session.activePane.coerceIn(0, panes.lastIndex)
-        coroutineScope {
-            panes.forEachIndexed { i, pane ->
-                val saved = session.panes.getOrNull(i)
-                launch { pane.restore(saved?.expandedIds.orEmpty(), saved?.focusedId) }
+        try {
+            val session = startupSessionLoad?.deferred?.await() ?: Graph.settings.loadSession()
+            activePane.value = session.activePane.coerceIn(0, panes.lastIndex)
+
+            // On phones the visual cache is safe to show before any filesystem result: its rows
+            // are non-interactive and fresh restore below replaces them. Waiting for its measured
+            // frame prevents the fresh tree from overtaking the frame it was meant to accelerate.
+            if (Graph.appContext.resources.configuration.screenWidthDp < WIDE_PANES_MIN_WIDTH_DP) {
+                val active = activePane.value
+                val saved = session.panes.getOrNull(active)
+                val snapshotVersion = panes[active].showSessionRenderSnapshot(
+                    snapshot = saved?.renderSnapshot,
+                    savedFocused = saved?.focusedId,
+                )
+                if (snapshotVersion != null) {
+                    sessionReady.value = true
+                    awaitPaneInitialLayout(active, snapshotVersion)
+                }
             }
+
+            // Restore inputs must be settled first: the root gate (a saved root:// position
+            // stats through it) and the favorites cache (saved ids may live under a pinned root).
+            PrivilegedAccess.enabled = Graph.settings.rootEnabled.first()
+            PrivilegedAccess.preference = Graph.settings.privilegedTransport.first()
+            Graph.favorites.first { it != null }
+            restorePaneCriticalPaths { i, pane, paneRoots, listings ->
+                val saved = session.panes.getOrNull(i)
+                pane.restore(
+                    savedExpanded = saved?.expandedIds.orEmpty(),
+                    savedFocused = saved?.focusedId,
+                    savedDirectories = saved?.directories.orEmpty(),
+                    paneRoots = paneRoots,
+                    listings = listings,
+                )
+            }
+            startSessionPersistence()
+        } finally {
+            // Do not leave the app behind a permanent loading surface if a future restore input
+            // starts throwing unexpectedly; each pane already degrades individual IO failures.
+            sessionReady.value = true
         }
-        startSessionPersistence()
+    }
+
+    /**
+     * Loads the common root snapshot once and gives both panes one cold-start listing generation.
+     * A phone exposes the active pane as soon as its focused path is ready; its inactive pane then
+     * hydrates behind that first usable frame. Wide layouts wait for both visible critical paths.
+     */
+    private suspend fun restorePaneCriticalPaths(
+        restorePane: suspend (
+            index: Int,
+            pane: PaneController,
+            paneRoots: List<XEntry>,
+            listings: RestoreListingSession,
+        ) -> Job?,
+    ) {
+        val paneRoots = withContext(Dispatchers.IO) {
+            runCatching { Graph.roots.paneRoots() }.getOrDefault(emptyList())
+        }
+        val listings = RestoreListingSession(
+            keyOf = { entry ->
+                "${Graph.fsRegistry.resolveScheme(entry)}\u0000${entry.id}"
+            },
+            readFresh = { entry ->
+                runCatching { Graph.fsRegistry.forEntry(entry).list(entry) }
+            },
+        )
+        var listingsHandedOff = false
+        try {
+            val background = arrayOfNulls<Job>(panes.size)
+            val wide = Graph.appContext.resources.configuration.screenWidthDp >=
+                WIDE_PANES_MIN_WIDTH_DP
+            if (wide) {
+                coroutineScope {
+                    panes.forEachIndexed { index, pane ->
+                        launch {
+                            background[index] = restorePane(index, pane, paneRoots, listings)
+                        }
+                    }
+                }
+                sessionReady.value = true
+            } else {
+                val active = activePane.value.coerceIn(0, panes.lastIndex)
+                background[active] = restorePane(active, panes[active], paneRoots, listings)
+                sessionReady.value = true
+                awaitPaneInitialLayout(active, panes[active].state.value.treeVersion)
+                val inactive = 1 - active
+                background[inactive] = restorePane(inactive, panes[inactive], paneRoots, listings)
+            }
+            val pending = background.filterNotNull()
+            if (pending.isNotEmpty()) {
+                // A slow off-path directory must not keep restoreSession alive: doing so delays
+                // both the auto-saver and any later storage re-grant forever. Completion handlers
+                // retain this one fresh-listing generation until every background merge is done.
+                listingsHandedOff = true
+                val remaining = AtomicInteger(pending.size)
+                pending.forEach { job ->
+                    job.invokeOnCompletion {
+                        if (remaining.decrementAndGet() == 0) listings.close()
+                    }
+                }
+            }
+        } finally {
+            if (!listingsHandedOff) listings.close()
+        }
     }
 
     @OptIn(FlowPreview::class)
@@ -194,10 +334,7 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             combine(panes[0].sessionState, panes[1].sessionState, activePane) { p0, p1, active ->
                 SessionState(
-                    panes = listOf(
-                        SessionPane(p0.first, p0.second),
-                        SessionPane(p1.first, p1.second),
-                    ),
+                    panes = listOf(p0, p1),
                     activePane = active,
                 )
             }
@@ -216,7 +353,7 @@ class MainViewModel : ViewModel() {
         // and a blank flush would erase the real saved session).
         if (!persistenceStarted) return
         val state = SessionState(
-            panes = panes.map { val (e, f) = it.sessionSnapshot(); SessionPane(e, f) },
+            panes = panes.map(PaneController::sessionSnapshot),
             activePane = activePane.value,
         )
         Graph.appScope.launch { runCatching { Graph.settings.saveSession(state) } }

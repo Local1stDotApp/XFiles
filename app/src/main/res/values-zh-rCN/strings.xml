@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">包含点文件和隐藏文件夹</string>
     <string name="folders_first">文件夹优先</string>
     <string name="folders_first_summary">在文件之前列出文件夹</string>
+    <string name="collapse_sibling_folders">同级只展开一个文件夹</string>
+    <string name="collapse_sibling_folders_summary">展开文件夹时，自动收起同级的其他文件夹</string>
     <string name="sort_by">排序方式</string>
     <string name="sort_name">名称</string>
     <string name="sort_size">大小</string>

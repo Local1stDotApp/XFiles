@@ -32,4 +32,12 @@ data class PaneUiState(
     val selection: Set<String> = emptySet(),
     val focusedDirId: String? = null,
     val loadingRoots: Boolean = true,
+    /** Initial LazyColumn row, available only with the matching settled tree snapshot. */
+    val initialScrollIndex: Int? = null,
+    /** Internal barrier used to publish a fully restored tree and its initial row together. */
+    val treeVersion: Long = 0,
+    /** False while saved off-path branches are still reconciling behind the first frame. */
+    val startupSettled: Boolean = false,
+    /** True only while rows come from the visual cache and must not be used for file actions. */
+    val snapshotOnly: Boolean = false,
 )

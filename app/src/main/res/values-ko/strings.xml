@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">도트 파일 및 숨겨진 폴더 포함</string>
     <string name="folders_first">폴더 먼저</string>
     <string name="folders_first_summary">파일 앞에 폴더 나열</string>
+    <string name="collapse_sibling_folders">같은 단계에서는 폴더 하나만 펼치기</string>
+    <string name="collapse_sibling_folders_summary">폴더를 펼치면 같은 단계의 다른 폴더를 접습니다</string>
     <string name="sort_by">정렬 기준</string>
     <string name="sort_name">이름</string>
     <string name="sort_size">크기</string>

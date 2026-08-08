@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">Bao gồm các tập tin dấu chấm và các thư mục ẩn</string>
     <string name="folders_first">Thư mục đầu tiên</string>
     <string name="folders_first_summary">Liệt kê các thư mục trước tập tin</string>
+    <string name="collapse_sibling_folders">Chỉ mở một thư mục cùng cấp</string>
+    <string name="collapse_sibling_folders_summary">Mở rộng một thư mục sẽ thu gọn các thư mục khác cùng cấp</string>
     <string name="sort_by">Sắp xếp theo</string>
     <string name="sort_name">Tên</string>
     <string name="sort_size">Kích thước</string>

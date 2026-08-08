@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">包含點號開頭的檔案與隱藏資料夾</string>
     <string name="folders_first">資料夾優先</string>
     <string name="folders_first_summary">先列出資料夾，再列出檔案</string>
+    <string name="collapse_sibling_folders">同層只展開一個資料夾</string>
+    <string name="collapse_sibling_folders_summary">展開資料夾時，自動收合其他同層資料夾</string>
     <string name="sort_by">排序依據</string>
     <string name="sort_name">名稱</string>
     <string name="sort_size">大小</string>

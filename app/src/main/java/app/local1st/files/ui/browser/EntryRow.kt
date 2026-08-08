@@ -1,13 +1,14 @@
 package app.local1st.files.ui.browser
 
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -73,6 +74,8 @@ fun EntryRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onToggleSelect: () -> Unit,
+    enabled: Boolean = true,
+    richContent: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val entry = node.entry
@@ -90,6 +93,19 @@ fun EntryRow(
         focused -> MaterialTheme.colorScheme.surfaceContainerHigh
         else -> Color.Transparent
     }
+    if (!richContent) {
+        StartupEntryRow(
+            node = node,
+            selected = selected,
+            focused = focused,
+            onClick = onClick,
+            enabled = enabled,
+            selectable = selectable,
+            isVolume = isVolume,
+            modifier = modifier,
+        )
+        return
+    }
     val guideColor = MaterialTheme.colorScheme.outlineVariant
 
     Row(
@@ -99,7 +115,11 @@ fun EntryRow(
             .height(RowHeight)
             .clip(RoundedCornerShape(12.dp))
             .background(background)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            .combinedClickable(
+                enabled = enabled,
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
     ) {
         // Tree guide lines + connector elbow. The ancestor spines show the full nesting path —
         // parent, grandparent, and so on up to the root.
@@ -150,7 +170,8 @@ fun EntryRow(
 
         // Expand chevron for containers, aligned space for leaves.
         if (entry.isContainer) {
-            val rotation by animateFloatAsState(if (node.expanded) 90f else 0f, label = "chevron")
+            val targetRotation = if (node.expanded) 90f else 0f
+            val rotation by animateFloatAsState(targetRotation, label = "chevron")
             Icon(
                 Icons.Outlined.ChevronRight,
                 contentDescription = stringResource(if (node.expanded) R.string.collapse else R.string.expand),
@@ -165,13 +186,14 @@ fun EntryRow(
 
         // Icon or thumbnail (selection is the trailing control, to avoid mis-taps here).
         Box(Modifier.padding(start = 2.dp, end = 10.dp), contentAlignment = Alignment.Center) {
+            val wantsThumbnail = EntryIcons.wantsThumbnail(entry)
             if (entry.kind == EntryKind.APP) {
                 AsyncImage(
                     model = AppIcon(entry.path),
                     contentDescription = null,
                     modifier = Modifier.size(32.dp),
                 )
-            } else if (EntryIcons.wantsThumbnail(entry)) {
+            } else if (wantsThumbnail) {
                 EntryThumbnail(entry)
             } else {
                 EntryIcon(
@@ -186,7 +208,7 @@ fun EntryRow(
 
         // Name + details. Weight expresses hierarchy: navigable containers read heavier than
         // plain files, volumes heaviest — the M3 Expressive variable-weight cue.
-        Column(Modifier.weight(1f).animateContentSize()) {
+        Column(Modifier.weight(1f)) {
             Text(
                 entry.name,
                 style = if (isVolume) MaterialTheme.typography.titleMedium
@@ -229,10 +251,116 @@ fun EntryRow(
         }
 
         if (selectable) {
-            IconButton(onClick = onToggleSelect) {
+            val icon = if (selected) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked
+            val description = stringResource(if (selected) R.string.deselect else R.string.select)
+            val tint = if (selected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outlineVariant
+            IconButton(onClick = onToggleSelect, enabled = enabled) {
+                Icon(
+                    icon,
+                    contentDescription = description,
+                    tint = tint,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * First-draw row: same geometry and useful text, without Canvas guides, long-press machinery,
+ * ripple/selection buttons, thumbnail painters, or animation nodes. The full row replaces it
+ * after the lightweight list has already produced a visible frame.
+ */
+@Composable
+private fun StartupEntryRow(
+    node: TreeNode,
+    selected: Boolean,
+    focused: Boolean,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    selectable: Boolean,
+    isVolume: Boolean,
+    modifier: Modifier,
+) {
+    val entry = node.entry
+    val background = when {
+        selected -> MaterialTheme.colorScheme.secondaryContainer
+        focused -> MaterialTheme.colorScheme.surfaceContainerHigh
+        else -> Color.Transparent
+    }
+    val wantsThumbnail = EntryIcons.wantsThumbnail(entry)
+    val iconSize = when {
+        entry.kind == EntryKind.APP -> 32.dp
+        wantsThumbnail -> 36.dp
+        isVolume -> 28.dp
+        else -> 24.dp
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = modifier
+            .fillMaxWidth()
+            .height(RowHeight)
+            .clip(RoundedCornerShape(12.dp))
+            .background(background)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+    ) {
+        if (node.depth > 0) Spacer(Modifier.width(IndentWidth * node.depth))
+        if (entry.isContainer) {
+            Icon(
+                Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .size(20.dp)
+                    .rotate(if (node.expanded) 90f else 0f),
+            )
+        } else {
+            Spacer(Modifier.size(20.dp))
+        }
+        Box(
+            Modifier.padding(start = 2.dp, end = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                EntryIcons.forEntry(entry, expanded = node.expanded),
+                contentDescription = null,
+                tint = if (entry.isContainer) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(iconSize),
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                entry.name,
+                style = if (isVolume) MaterialTheme.typography.titleMedium
+                else MaterialTheme.typography.bodyLarge,
+                fontWeight = when {
+                    isVolume -> FontWeight.SemiBold
+                    entry.isContainer -> FontWeight.Medium
+                    else -> FontWeight.Normal
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            val details = entryDetails(node)
+            if (details.isNotEmpty()) {
+                Text(
+                    details,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (selectable) {
+            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                 Icon(
                     if (selected) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
-                    contentDescription = stringResource(if (selected) R.string.deselect else R.string.select),
+                    contentDescription = null,
                     tint = if (selected) MaterialTheme.colorScheme.primary
                     else MaterialTheme.colorScheme.outlineVariant,
                     modifier = Modifier.size(22.dp),

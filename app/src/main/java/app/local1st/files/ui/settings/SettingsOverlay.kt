@@ -87,6 +87,7 @@ fun SettingsOverlay(vm: MainViewModel) {
     val dynamicColor by settings.dynamicColor.collectAsState(initial = true)
     val showHidden by settings.showHidden.collectAsState(initial = false)
     val dirsFirst by settings.dirsFirst.collectAsState(initial = true)
+    val collapseSiblingFolders by settings.collapseSiblingFolders.collectAsState(initial = true)
     val sortBy by settings.sortBy.collectAsState(initial = SortBy.NAME)
     val sortDescending by settings.sortDescending.collectAsState(initial = false)
     val rootEnabled by settings.rootEnabled.collectAsState(initial = false)
@@ -174,6 +175,14 @@ fun SettingsOverlay(vm: MainViewModel) {
                     subtitle = stringResource(R.string.folders_first_summary),
                     checked = dirsFirst,
                     onCheckedChange = { scope.launch { settings.setDirsFirst(it) } },
+                )
+                SwitchRow(
+                    title = stringResource(R.string.collapse_sibling_folders),
+                    subtitle = stringResource(R.string.collapse_sibling_folders_summary),
+                    checked = collapseSiblingFolders,
+                    onCheckedChange = {
+                        scope.launch { settings.setCollapseSiblingFolders(it) }
+                    },
                 )
                 RadioOptionsRow(
                     title = stringResource(R.string.sort_by),

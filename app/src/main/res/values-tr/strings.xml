@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">Nokta dosyalarını ve gizli klasörleri dahil et</string>
     <string name="folders_first">Önce klasörler</string>
     <string name="folders_first_summary">Dosyalardan önce klasörleri listele</string>
+    <string name="collapse_sibling_folders">Aynı düzeyde yalnızca bir klasörü açık tut</string>
+    <string name="collapse_sibling_folders_summary">Bir klasör genişletildiğinde aynı düzeydeki diğer klasörler daraltılır</string>
     <string name="sort_by">Sırala</string>
     <string name="sort_name">İsim</string>
     <string name="sort_size">Boyut</string>

@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">تضمين الملفات النقطية والمجلدات المخفية</string>
     <string name="folders_first">المجلدات أولا</string>
     <string name="folders_first_summary">قائمة المجلدات قبل الملفات</string>
+    <string name="collapse_sibling_folders">إبقاء مجلد واحد فقط مفتوحًا في المستوى نفسه</string>
+    <string name="collapse_sibling_folders_summary">يؤدي توسيع مجلد إلى طي المجلدات الأخرى في المستوى نفسه</string>
     <string name="sort_by">الترتيب حسب</string>
     <string name="sort_name">الاسم</string>
     <string name="sort_size">الحجم</string>

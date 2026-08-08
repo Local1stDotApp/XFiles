@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">ドットファイルと隠しフォルダを含める</string>
     <string name="folders_first">フォルダを先に表示</string>
     <string name="folders_first_summary">ファイルより先にフォルダを表示</string>
+    <string name="collapse_sibling_folders">同じ階層で開くフォルダは1つだけ</string>
+    <string name="collapse_sibling_folders_summary">フォルダを展開すると、同じ階層のほかのフォルダを閉じます</string>
     <string name="sort_by">並べ替え</string>
     <string name="sort_name">名前</string>
     <string name="sort_size">サイズ</string>

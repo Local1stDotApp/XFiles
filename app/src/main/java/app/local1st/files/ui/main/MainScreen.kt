@@ -45,6 +45,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SnackbarHost
@@ -57,13 +58,17 @@ import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -93,12 +98,16 @@ import kotlinx.coroutines.withContext
 )
 @Composable
 fun MainScreen(vm: MainViewModel = viewModel()) {
+    val sessionReady by vm.sessionReady.collectAsStateWithLifecycle()
     val activePane by vm.activePane.collectAsStateWithLifecycle()
-    val pane0State by vm.panes[0].state.collectAsStateWithLifecycle()
-    val pane1State by vm.panes[1].state.collectAsStateWithLifecycle()
+    val activeState by vm.panes[activePane].state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    var initiallyLaidOutPanes by remember(vm) { mutableStateOf<Set<Int>>(emptySet()) }
+    var startupContentReady by remember(vm) {
+        mutableStateOf(sessionReady && activeState.snapshotOnly)
+    }
+    val wideLayout = LocalConfiguration.current.screenWidthDp >= 700
 
-    val activeState = if (activePane == 0) pane0State else pane1State
     val selectionCount = activeState.selection.size
     val selectedFiles = if (selectionCount > 0) {
         vm.activeCtrl.selectionEntries().filter { !it.isDir }
@@ -113,11 +122,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 
     // Without POST_NOTIFICATIONS the foreground-service progress notification is silently
     // hidden on Android 13+, so ask for it once.
-    RequestNotificationPermission()
+    if (sessionReady) RequestNotificationPermission()
 
     // This host is inert on API 30+. On API 26-29 it launches only after an actual direct
     // File write to a secondary volume failed and LocalFileSystem requested that volume.
-    LegacySafGrantHost(vm)
+    if (sessionReady) LegacySafGrantHost(vm)
 
     BackHandler(enabled = selectionCount > 0) {
         vm.activeCtrl.clearSelection()
@@ -126,7 +135,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     // No top app bar at all: the panes extend under the status bar, and the few former
     // top-bar actions live elsewhere (search in the bottom toolbar, sorting in Settings,
     // settings as a floating button). The explicit background paints the pane gutters
-    // and rounded-corner gaps that Scaffold used to cover (the window itself is black).
+    // and rounded-corner gaps that Scaffold used to cover.
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         val listPadding = PaddingValues(bottom = 120.dp)
 
@@ -141,6 +150,10 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                             onActivate = { vm.setActivePane(index) },
                             onOpenEntry = { vm.openEntry(pane, it) },
                             onEntryMenu = { vm.dialog.value = DialogRequest.EntryMenu(it) },
+                            onInitialLayoutReady = { version ->
+                                initiallyLaidOutPanes = initiallyLaidOutPanes + index
+                                vm.onPaneInitialLayoutReady(index, version)
+                            },
                             contentPadding = listPadding,
                             modifier = Modifier
                                 .weight(1f)
@@ -150,19 +163,24 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 }
             } else {
                 val pagerState = rememberPagerState(initialPage = activePane) { 2 }
-                LaunchedEffect(pagerState) {
+                LaunchedEffect(pagerState, sessionReady) {
+                    if (!sessionReady) return@LaunchedEffect
                     snapshotFlow { pagerState.currentPage }.collect { vm.setActivePane(it) }
                 }
                 LaunchedEffect(activePane) {
                     if (pagerState.currentPage != activePane &&
                         !pagerState.isScrollInProgress
                     ) {
-                        pagerState.animateScrollToPage(activePane)
+                        if (sessionReady) pagerState.animateScrollToPage(activePane)
+                        else pagerState.scrollToPage(activePane)
                     }
                 }
                 HorizontalPager(
                     state = pagerState,
-                    beyondViewportPageCount = 1,
+                    // The inactive pane's data restores off the critical path, but composing its
+                    // full tree here would still charge that work to phone startup. Pager will
+                    // compose it naturally when the user begins to swipe toward it.
+                    beyondViewportPageCount = 0,
                     modifier = Modifier.fillMaxSize(),
                 ) { page ->
                     val pane = vm.panes[page]
@@ -172,6 +190,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                         onActivate = { vm.setActivePane(page) },
                         onOpenEntry = { vm.openEntry(pane, it) },
                         onEntryMenu = { vm.dialog.value = DialogRequest.EntryMenu(it) },
+                        onInitialLayoutReady = { version ->
+                            initiallyLaidOutPanes = initiallyLaidOutPanes + page
+                            vm.onPaneInitialLayoutReady(page, version)
+                            if (page == activePane) startupContentReady = true
+                        },
                         contentPadding = listPadding,
                         modifier = Modifier.padding(horizontal = 4.dp),
                     )
@@ -301,6 +324,32 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility),
         )
+
+        val requiredPanes = if (wideLayout) vm.panes.indices else listOf(activePane)
+        val currentLayoutReady = requiredPanes.all { index ->
+            index in initiallyLaidOutPanes
+        }
+        LaunchedEffect(sessionReady, currentLayoutReady) {
+            if (sessionReady && currentLayoutReady) startupContentReady = true
+        }
+        if (!sessionReady || !startupContentReady) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitPointerEvent().changes.forEach { it.consume() }
+                            }
+                        }
+                    },
+                color = MaterialTheme.colorScheme.surface,
+            ) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    LoadingIndicator()
+                }
+            }
+        }
     }
 
     MainDialogs(vm)

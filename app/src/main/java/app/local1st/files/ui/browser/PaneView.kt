@@ -29,6 +29,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
@@ -38,6 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
+import kotlinx.coroutines.flow.first
 
 /**
  * The box the breadcrumb pill and the floating settings button both occupy. Sharing one
@@ -58,13 +64,57 @@ fun PaneView(
     onActivate: () -> Unit,
     onOpenEntry: (XEntry) -> Unit,
     onEntryMenu: (XEntry) -> Unit,
+    onInitialLayoutReady: (treeVersion: Long) -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
     val state by controller.state.collectAsStateWithLifecycle()
-    val listState = rememberLazyListState()
+    val initialScrollIndex = state.initialScrollIndex
+    if (initialScrollIndex == null) {
+        Surface(
+            modifier = modifier.fillMaxSize(),
+            color = if (active) MaterialTheme.colorScheme.surface
+            else MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = RoundedCornerShape(16.dp),
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                LoadingIndicator()
+            }
+        }
+        return
+    }
 
-    LaunchedEffect(controller) {
+    // This state is first created only after PaneController has published the fully restored tree.
+    // LazyColumn therefore lays out the restored row on its first frame; there is no row-0 frame
+    // followed by a corrective scroll (animated or otherwise).
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialScrollIndex)
+    val currentOnInitialLayoutReady by rememberUpdatedState(onInitialLayoutReady)
+    var richRowsEnabled by remember(controller) { mutableStateOf(false) }
+    var itemAnimationsEnabled by remember(controller) { mutableStateOf(false) }
+
+    // A measured lightweight list is already a valid first frame. Remove the startup cover now;
+    // thumbnail painters and animation nodes are enabled only after that frame is safely visible.
+    LaunchedEffect(controller, listState, state.treeVersion) {
+        snapshotFlow { listState.layoutInfo.viewportSize.height }.first { it > 0 }
+        currentOnInitialLayoutReady(state.treeVersion)
+        if (!richRowsEnabled) {
+            withFrameNanos { }
+            withFrameNanos { }
+            richRowsEnabled = true
+        }
+    }
+
+    // A background restore may insert saved off-path branches. Let stable item keys preserve the
+    // scroll anchor, and enable placement animation only on a later frame after reconciliation.
+    LaunchedEffect(state.startupSettled, richRowsEnabled) {
+        itemAnimationsEnabled = false
+        if (state.startupSettled && richRowsEnabled) {
+            withFrameNanos { }
+            itemAnimationsEnabled = true
+        }
+    }
+
+    LaunchedEffect(controller, listState) {
         controller.scrollTo.collect { request ->
             val index = controller.state.value.nodes.indexOfFirst { it.entry.id == request.id }
             if (index < 0) return@collect
@@ -120,9 +170,14 @@ fun PaneView(
                                 onActivate()
                                 controller.toggleSelect(node.entry)
                             },
+                            enabled = !state.snapshotOnly,
+                            richContent = richRowsEnabled,
                             modifier = Modifier
                                 .padding(horizontal = 4.dp)
-                                .animateItem(),
+                                .then(
+                                    if (itemAnimationsEnabled) Modifier.animateItem()
+                                    else Modifier,
+                                ),
                         )
                     }
                 }

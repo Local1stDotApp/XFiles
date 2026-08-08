@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">Inclui arquivos ponto e pastas ocultas</string>
     <string name="folders_first">Pastas primeiro</string>
     <string name="folders_first_summary">Liste as pastas antes dos arquivos</string>
+    <string name="collapse_sibling_folders">Manter apenas uma pasta do mesmo nível aberta</string>
+    <string name="collapse_sibling_folders_summary">Expandir uma pasta recolhe as outras pastas do mesmo nível</string>
     <string name="sort_by">Classificar por</string>
     <string name="sort_name">Nome</string>
     <string name="sort_size">Tamanho</string>

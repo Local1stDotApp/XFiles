@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">डॉट-फ़ाइलें और छिपे हुए फ़ोल्डर शामिल करें</string>
     <string name="folders_first">फ़ोल्डर्स पहले</string>
     <string name="folders_first_summary">फ़ाइलों से पहले फ़ोल्डरों की सूची बनाएं</string>
+    <string name="collapse_sibling_folders">एक ही स्तर का केवल एक फ़ोल्डर खुला रखें</string>
+    <string name="collapse_sibling_folders_summary">किसी फ़ोल्डर को खोलने पर उसी स्तर के अन्य फ़ोल्डर बंद हो जाते हैं</string>
     <string name="sort_by">क्रमबद्ध करें</string>
     <string name="sort_name">नाम</string>
     <string name="sort_size">आकार</string>

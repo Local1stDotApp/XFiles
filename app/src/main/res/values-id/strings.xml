@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">Sertakan file bertitik dan folder tersembunyi</string>
     <string name="folders_first">Folder terlebih dahulu</string>
     <string name="folders_first_summary">Daftar folder sebelum file</string>
+    <string name="collapse_sibling_folders">Biarkan hanya satu folder setingkat terbuka</string>
+    <string name="collapse_sibling_folders_summary">Membuka folder akan menutup folder lain pada tingkat yang sama</string>
     <string name="sort_by">Urutkan berdasarkan</string>
     <string name="sort_name">Nama</string>
     <string name="sort_size">Ukuran</string>

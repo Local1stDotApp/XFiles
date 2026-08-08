@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">Uwzględniaj pliki z kropką i ukryte foldery</string>
     <string name="folders_first">Najpierw foldery</string>
     <string name="folders_first_summary">Wyświetlaj foldery przed plikami</string>
+    <string name="collapse_sibling_folders">Tylko jeden otwarty folder na tym samym poziomie</string>
+    <string name="collapse_sibling_folders_summary">Rozwinięcie folderu zwija pozostałe foldery na tym samym poziomie</string>
     <string name="sort_by">Sortuj według</string>
     <string name="sort_name">Nazwy</string>
     <string name="sort_size">Rozmiaru</string>

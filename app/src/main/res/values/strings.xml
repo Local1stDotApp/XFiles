@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">Include dot-files and hidden folders</string>
     <string name="folders_first">Folders first</string>
     <string name="folders_first_summary">List folders before files</string>
+    <string name="collapse_sibling_folders">Keep only one sibling folder open</string>
+    <string name="collapse_sibling_folders_summary">Expanding a folder collapses the other folders beside it</string>
     <string name="sort_by">Sort by</string>
     <string name="sort_name">Name</string>
     <string name="sort_size">Size</string>

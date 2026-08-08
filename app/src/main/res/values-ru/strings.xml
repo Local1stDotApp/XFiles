@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">Включить точечные файлы и скрытые папки</string>
     <string name="folders_first">Сначала папки</string>
     <string name="folders_first_summary">Перечислять папки перед файлами</string>
+    <string name="collapse_sibling_folders">Оставлять открытой только одну папку на уровне</string>
+    <string name="collapse_sibling_folders_summary">При раскрытии папки другие папки того же уровня сворачиваются</string>
     <string name="sort_by">Сортировать по</string>
     <string name="sort_name">Имя</string>
     <string name="sort_size">Размер</string>

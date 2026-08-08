@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">Punktdateien und versteckte Ordner einbeziehen</string>
     <string name="folders_first">Ordner zuerst</string>
     <string name="folders_first_summary">Ordner vor Dateien auflisten</string>
+    <string name="collapse_sibling_folders">Nur einen Ordner derselben Ebene geöffnet lassen</string>
+    <string name="collapse_sibling_folders_summary">Beim Aufklappen eines Ordners werden die anderen Ordner derselben Ebene zugeklappt</string>
     <string name="sort_by">Sortieren nach</string>
     <string name="sort_name">Name</string>
     <string name="sort_size">Größe</string>

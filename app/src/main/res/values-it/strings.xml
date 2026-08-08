@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">Includi file punto e cartelle nascoste</string>
     <string name="folders_first">Prima le cartelle</string>
     <string name="folders_first_summary">Elenca le cartelle prima dei file</string>
+    <string name="collapse_sibling_folders">Mantieni aperta una sola cartella dello stesso livello</string>
+    <string name="collapse_sibling_folders_summary">L’espansione di una cartella comprime le altre dello stesso livello</string>
     <string name="sort_by">Ordina per</string>
     <string name="sort_name">Nome</string>
     <string name="sort_size">Dimensioni</string>

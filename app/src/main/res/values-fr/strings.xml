@@ -75,6 +75,8 @@
     <string name="show_hidden_summary">Inclure les fichiers commençant par un point et les dossiers cachés</string>
     <string name="folders_first">Les dossiers d\'abord</string>
     <string name="folders_first_summary">Lister les dossiers avant les fichiers</string>
+    <string name="collapse_sibling_folders">Ne garder ouvert qu’un dossier de même niveau</string>
+    <string name="collapse_sibling_folders_summary">Développer un dossier replie les autres dossiers du même niveau</string>
     <string name="sort_by">Trier par</string>
     <string name="sort_name">Nom</string>
     <string name="sort_size">Taille</string>
