@@ -11,10 +11,10 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.io.RandomAccessFile
-import java.util.zip.ZipFile
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
 import org.apache.commons.compress.archivers.sevenz.SevenZFile
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.archivers.zip.ZipFile
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
@@ -258,7 +258,7 @@ class ArchiveFileSystem : XFileSystem {
 
     private fun parseZip(archiveFile: File, builder: TreeBuilder) {
         newZipFile(archiveFile).use { zip ->
-            val entries = zip.entries()
+            val entries = zip.entries
             while (entries.hasMoreElements()) {
                 val e = entries.nextElement()
                 builder.add(
@@ -483,11 +483,12 @@ class ArchiveFileSystem : XFileSystem {
         return file
     }
 
+    /** Android's ZipFile rejects duplicate names; Commons Compress safely exposes the first one. */
     private fun newZipFile(archiveFile: File): ZipFile = try {
-        ZipFile(archiveFile)
+        ZipFile.builder().setFile(archiveFile).get()
     } catch (_: IllegalArgumentException) {
-        // Legacy zips with non-UTF-8 entry names; latin-1 accepts any byte sequence.
-        ZipFile(archiveFile, Charsets.ISO_8859_1)
+        // Legacy ZIPs with non-UTF-8 entry names; Latin-1 accepts any byte sequence.
+        ZipFile.builder().setFile(archiveFile).setCharset(Charsets.ISO_8859_1).get()
     }
 
     /** 7z can store a single unnamed entry; fall back to the archive's own base name. */
