@@ -48,6 +48,60 @@ class PaneExpansionPolicyTest {
     }
 
     @Test
+    fun openingAppCollapsesOnlyOtherAppsAndKeepsInstalledCategoryOpen() {
+        val appsRoot = "apps://"
+        val installed = "apps://@user"
+        val firstApp = "apps://com.example.first"
+        val secondApp = "apps://com.example.second"
+        val visualParents = visualParentsOf(
+            mapOf(
+                appsRoot to listOf(XEntry(installed, "Installed", isDir = true)),
+                installed to listOf(
+                    XEntry(firstApp, "First", isDir = false, kind = EntryKind.APP),
+                    XEntry(secondApp, "Second", isDir = false, kind = EntryKind.APP),
+                ),
+            ),
+        )
+
+        val updated = expandWithCollapsedSiblings(
+            expandedIds = setOf(appsRoot, installed, firstApp),
+            openingId = secondApp,
+            topLevelIds = setOf(appsRoot),
+            visualParents = visualParents,
+        )
+
+        assertEquals(setOf(appsRoot, installed, secondApp), updated)
+    }
+
+    @Test
+    fun enablingPolicyKeepsVisualCategoryContainingFocusedApp() {
+        val appsRoot = "apps://"
+        val installed = "apps://@user"
+        val system = "apps://@system"
+        val app = "apps://com.example.app"
+        val visualParents = visualParentsOf(
+            mapOf(
+                appsRoot to listOf(
+                    XEntry(installed, "Installed", isDir = true),
+                    XEntry(system, "System", isDir = true),
+                ),
+                installed to listOf(
+                    XEntry(app, "Example", isDir = false, kind = EntryKind.APP),
+                ),
+            ),
+        )
+
+        val updated = retainOneExpandedSiblingPerGroup(
+            expandedIds = setOf(appsRoot, installed, system, app),
+            focusedId = app,
+            topLevelIds = setOf(appsRoot),
+            visualParents = visualParents,
+        )
+
+        assertEquals(setOf(appsRoot, installed, app), updated)
+    }
+
+    @Test
     fun enablingPolicyKeepsFocusedBranchAtEveryLoadedLevel() {
         val volume = "file:///volume"
         val apps = "apps://"

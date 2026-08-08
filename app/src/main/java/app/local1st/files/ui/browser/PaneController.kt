@@ -168,30 +168,52 @@ internal class RestoreListingSession(
     fun close() = workerScope.cancel()
 }
 
+/**
+ * Actual row parents from the loaded tree. Most files match [XId.parent], but virtual filesystems
+ * can insert visual containers that are not encoded in a child's id. For example, an installed
+ * app (`apps://<package>`) is displayed below `apps://@user`, not directly below `apps://`.
+ */
+internal fun visualParentsOf(children: Map<String, List<XEntry>>): Map<String, String> = buildMap {
+    children.forEach { (parentId, entries) ->
+        entries.forEach { entry ->
+            if (entry.id !in this) put(entry.id, parentId)
+        }
+    }
+}
+
 /** The visual parent of an expansion. Pane roots are siblings even when their URI parents differ. */
-private fun expansionParent(id: String, topLevelIds: Set<String>): ExpansionGroup =
+private fun expansionParent(
+    id: String,
+    topLevelIds: Set<String>,
+    visualParents: Map<String, String>,
+): ExpansionGroup =
     if (id in topLevelIds) ExpansionGroup(paneRoots = true, parentId = null)
-    else ExpansionGroup(paneRoots = false, parentId = XId.parent(id))
+    else ExpansionGroup(paneRoots = false, parentId = visualParents[id] ?: XId.parent(id))
 
 /** Expands [openingId] and closes every other expanded directory beside it. */
 internal fun expandWithCollapsedSiblings(
     expandedIds: Set<String>,
     openingId: String,
     topLevelIds: Set<String>,
+    visualParents: Map<String, String> = emptyMap(),
 ): Set<String> {
-    val parent = expansionParent(openingId, topLevelIds)
+    val parent = expansionParent(openingId, topLevelIds, visualParents)
     return expandedIds.filterTo(LinkedHashSet()) { id ->
-        id == openingId || expansionParent(id, topLevelIds) != parent
+        id == openingId || expansionParent(id, topLevelIds, visualParents) != parent
     } + openingId
 }
 
 /** Number of parent steps from [id] to [ancestor], or null when it is not an ancestor. */
-private fun ancestorDistance(ancestor: String, id: String): Int? {
+private fun ancestorDistance(
+    ancestor: String,
+    id: String,
+    visualParents: Map<String, String>,
+): Int? {
     var current: String? = id
     var distance = 0
     while (current != null) {
         if (current == ancestor) return distance
-        current = XId.parent(current)
+        current = visualParents[current] ?: XId.parent(current)
         distance++
     }
     return null
@@ -205,11 +227,12 @@ internal fun retainOneExpandedSiblingPerGroup(
     expandedIds: Set<String>,
     focusedId: String?,
     topLevelIds: Set<String>,
+    visualParents: Map<String, String> = emptyMap(),
 ): Set<String> = buildSet {
-    expandedIds.groupBy { expansionParent(it, topLevelIds) }.values.forEach { siblings ->
+    expandedIds.groupBy { expansionParent(it, topLevelIds, visualParents) }.values.forEach { siblings ->
         val keep = siblings.minWithOrNull(
             compareBy<String> { id ->
-                focusedId?.let { ancestorDistance(id, it) } ?: Int.MAX_VALUE
+                focusedId?.let { ancestorDistance(id, it, visualParents) } ?: Int.MAX_VALUE
             }.thenBy { it },
         )
         if (keep != null) add(keep)
@@ -468,18 +491,22 @@ class PaneController(
                 if (enabled) {
                     val topLevelIds = tree.value.roots.mapTo(HashSet()) { it.id }
                     tree.update { current ->
+                        val visualParents = visualParentsOf(current.children)
                         current.copy(
                             expanded = retainOneExpandedSiblingPerGroup(
                                 expandedIds = current.expanded,
                                 focusedId = focusedDirId.value,
                                 topLevelIds = topLevelIds,
+                                visualParents = visualParents,
                             ),
                         )
                     }
+                    val current = tree.value
                     sessionExpanded.value = retainOneExpandedSiblingPerGroup(
                         expandedIds = sessionExpanded.value,
                         focusedId = focusedDirId.value,
                         topLevelIds = topLevelIds,
+                        visualParents = visualParentsOf(current.children),
                     )
                 }
             }
@@ -635,6 +662,7 @@ class PaneController(
                 expandedIds = desiredExpanded,
                 focusedId = target?.id,
                 topLevelIds = topLevelIds,
+                visualParents = visualParentsOf(buffer.children),
             )
             criticalExpanded.retainAll(desiredExpanded)
         }
@@ -646,7 +674,12 @@ class PaneController(
             if (first != null) {
                 target = first
                 desiredExpanded = if (collapseSiblings) {
-                    expandWithCollapsedSiblings(desiredExpanded, first.id, topLevelIds)
+                    expandWithCollapsedSiblings(
+                        expandedIds = desiredExpanded,
+                        openingId = first.id,
+                        topLevelIds = topLevelIds,
+                        visualParents = visualParentsOf(buffer.children),
+                    )
                 } else {
                     desiredExpanded + first.id
                 }
@@ -934,6 +967,7 @@ class PaneController(
                     expandedIds = expanded,
                     openingId = id,
                     topLevelIds = roots.mapTo(HashSet()) { it.id },
+                    visualParents = visualParentsOf(children),
                 )
             } else {
                 expanded + id
