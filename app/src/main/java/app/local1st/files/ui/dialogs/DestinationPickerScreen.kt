@@ -31,7 +31,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +50,7 @@ import app.local1st.files.di.Graph
 import app.local1st.files.ui.browser.EntryIcon
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.main.MainViewModel
+import app.local1st.files.ui.main.PendingTransfer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -62,9 +62,12 @@ import kotlinx.coroutines.withContext
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun DestinationPicker(vm: MainViewModel) {
-    val transfer by vm.pendingTransfer.collectAsState()
-    val t = transfer ?: return
+fun DestinationPickerScreen(
+    vm: MainViewModel,
+    transfer: PendingTransfer,
+    onBack: () -> Unit,
+) {
+    val t = transfer
     val scope = rememberCoroutineScope()
 
     // null = the top-level roots list; otherwise the directory being shown.
@@ -79,9 +82,10 @@ fun DestinationPicker(vm: MainViewModel) {
         scope.launch { current = withContext(Dispatchers.IO) { parentOf(from) } }
     }
 
-    BackHandler {
-        val cur = current
-        if (cur == null) vm.cancelTransfer() else goUp(cur)
+    // Nested folder navigation consumes Back locally. At the picker root NavDisplay handles it,
+    // including the system predictive-back animation to the browser destination.
+    BackHandler(enabled = current != null) {
+        current?.let(::goUp)
     }
 
     LaunchedEffect(t) {
@@ -141,7 +145,7 @@ fun DestinationPicker(vm: MainViewModel) {
                     TooltipIconButton(
                         stringResource(R.string.cancel),
                         Icons.AutoMirrored.Outlined.ArrowBack,
-                        onClick = { vm.cancelTransfer() },
+                        onClick = onBack,
                     )
                 },
             )

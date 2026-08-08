@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -89,8 +90,10 @@ fun PaneView(
     // followed by a corrective scroll (animated or otherwise).
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialScrollIndex)
     val currentOnInitialLayoutReady by rememberUpdatedState(onInitialLayoutReady)
-    var richRowsEnabled by remember(controller) { mutableStateOf(false) }
-    var itemAnimationsEnabled by remember(controller) { mutableStateOf(false) }
+    // NavDisplay removes covered destinations from composition. Save these booleans with the
+    // browser entry so returning from Settings/Search does not replay the lightweight-row phase.
+    var richRowsEnabled by rememberSaveable(controller) { mutableStateOf(false) }
+    var itemAnimationsEnabled by rememberSaveable(controller) { mutableStateOf(false) }
 
     // A measured lightweight list is already a valid first frame. Remove the startup cover now;
     // thumbnail painters and animation nodes are enabled only after that frame is safely visible.

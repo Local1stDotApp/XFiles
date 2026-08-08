@@ -95,14 +95,25 @@ class MainViewModel : ViewModel() {
     )
 
     val dialog = MutableStateFlow<DialogRequest?>(null)
-    val viewer = MutableStateFlow<ViewerRequest?>(null)
-    val showSettings = MutableStateFlow(false)
 
-    /** Package name whose rich app-details screen is showing, or null when closed. */
-    val appDetails = MutableStateFlow<String?>(null)
+    private val navigation = AppNavigationState()
+    val screenBackStack = navigation.backStack
 
-    /** Root container for the search overlay, or null when search is closed. */
-    val searchRoot = MutableStateFlow<XEntry?>(null)
+    fun navigateBack(expectedEntryId: Long? = null): Boolean =
+        navigation.navigateBack(expectedEntryId)
+
+    fun openSettings() {
+        navigation.navigate(AppScreen.Settings)
+    }
+
+    private fun showViewer(request: ViewerRequest) {
+        val replacingViewer = screenBackStack.last().screen is AppScreen.Viewer
+        navigation.navigate(AppScreen.Viewer(request), replaceTop = replacingViewer)
+    }
+
+    private fun showDestinationPicker(transfer: PendingTransfer) {
+        navigation.navigate(AppScreen.DestinationPicker(transfer))
+    }
 
     val snackbar = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
@@ -399,30 +410,34 @@ class MainViewModel : ViewModel() {
         when (FileTypes.categoryOf(entry.name, entry.mime)) {
             FileCategory.IMAGE -> {
                 val siblings = pane.siblings(entry, FileCategory.IMAGE)
-                viewer.value = ViewerRequest.Image(
-                    items = siblings,
-                    startIndex = siblings.indexOfFirst { it.id == entry.id }.coerceAtLeast(0),
+                showViewer(
+                    ViewerRequest.Image(
+                        items = siblings,
+                        startIndex = siblings.indexOfFirst { it.id == entry.id }.coerceAtLeast(0),
+                    ),
                 )
             }
-            FileCategory.TEXT -> viewer.value = ViewerRequest.Text(entry)
-            FileCategory.AUDIO -> viewer.value =
-                ViewerRequest.Media(entry, pane.siblings(entry, FileCategory.AUDIO))
-            FileCategory.VIDEO -> viewer.value =
-                ViewerRequest.Media(entry, pane.siblings(entry, FileCategory.VIDEO))
-            FileCategory.DATABASE -> viewer.value = ViewerRequest.Hex(entry)
+            FileCategory.TEXT -> showViewer(ViewerRequest.Text(entry))
+            FileCategory.AUDIO -> showViewer(
+                ViewerRequest.Media(entry, pane.siblings(entry, FileCategory.AUDIO)),
+            )
+            FileCategory.VIDEO -> showViewer(
+                ViewerRequest.Media(entry, pane.siblings(entry, FileCategory.VIDEO)),
+            )
+            FileCategory.DATABASE -> showViewer(ViewerRequest.Hex(entry))
             FileCategory.APK, FileCategory.ARCHIVE ->
                 dialog.value = DialogRequest.EntryMenu(entry)
-            FileCategory.PDF -> viewer.value = ViewerRequest.Pdf(entry)
+            FileCategory.PDF -> showViewer(ViewerRequest.Pdf(entry))
             FileCategory.GENERIC -> {
                 if (!IntentUtils.openWith(Graph.appContext, entry)) {
-                    viewer.value = ViewerRequest.Hex(entry)
+                    showViewer(ViewerRequest.Hex(entry))
                 }
             }
         }
     }
 
     fun openAsHex(entry: XEntry) {
-        viewer.value = ViewerRequest.Hex(entry)
+        showViewer(ViewerRequest.Hex(entry))
     }
 
     fun openWith(entry: XEntry) {
@@ -446,8 +461,8 @@ class MainViewModel : ViewModel() {
                 onSuccess = { (kind, entry) ->
                     when (kind) {
                         ExternalOpenKind.ARCHIVE -> dialog.value = DialogRequest.EntryMenu(entry)
-                        ExternalOpenKind.IMAGE -> viewer.value = ViewerRequest.Image(listOf(entry), 0)
-                        ExternalOpenKind.VIDEO -> viewer.value = ViewerRequest.Media(entry, listOf(entry))
+                        ExternalOpenKind.IMAGE -> showViewer(ViewerRequest.Image(listOf(entry), 0))
+                        ExternalOpenKind.VIDEO -> showViewer(ViewerRequest.Media(entry, listOf(entry)))
                     }
                 },
                 onFailure = { error ->
@@ -464,7 +479,7 @@ class MainViewModel : ViewModel() {
 
     /** Open the rich in-app details screen for an installed app. */
     fun showAppDetails(packageName: String) {
-        appDetails.value = packageName
+        navigation.navigate(AppScreen.AppInfo(packageName))
     }
 
     /** Launch a single activity component (from the component row's menu). */
@@ -672,13 +687,10 @@ class MainViewModel : ViewModel() {
     }
 
     fun openAsText(entry: XEntry) {
-        viewer.value = ViewerRequest.Text(entry)
+        showViewer(ViewerRequest.Text(entry))
     }
 
     // ---- file operations ----
-
-    /** A copy/move awaiting a destination folder chosen in the [DestinationPicker]. */
-    val pendingTransfer = MutableStateFlow<PendingTransfer?>(null)
 
     /**
      * Opens the destination picker for the current selection. The picker starts at the
@@ -687,21 +699,20 @@ class MainViewModel : ViewModel() {
      */
     fun copySelection(move: Boolean, sources: List<XEntry> = activeCtrl.selectionEntries()) {
         if (sources.isEmpty()) return
-        pendingTransfer.value = PendingTransfer(
-            sources = sources,
-            move = move,
-            startDirId = inactiveCtrl.focusedDirEntry()?.id,
+        showDestinationPicker(
+            PendingTransfer(
+                sources = sources,
+                move = move,
+                startDirId = inactiveCtrl.focusedDirEntry()?.id,
+            ),
         )
-    }
-
-    fun cancelTransfer() {
-        pendingTransfer.value = null
     }
 
     /** Called by the picker once the user confirms a destination folder. */
     fun confirmTransfer(destDir: XEntry) {
-        val transfer = pendingTransfer.value ?: return
-        pendingTransfer.value = null
+        val current = screenBackStack.last()
+        val transfer = (current.screen as? AppScreen.DestinationPicker)?.transfer ?: return
+        navigateBack(current.id)
         if (!isValidDest(destDir)) {
             snackbar.tryEmit(text(R.string.cannot_write, destDir.name))
             return
@@ -752,11 +763,13 @@ class MainViewModel : ViewModel() {
     /** Pick a destination folder for a new zip (like copy/move), then ask for its name. */
     fun requestCompress(sources: List<XEntry> = activeCtrl.selectionEntries()) {
         if (sources.isEmpty()) return
-        pendingTransfer.value = PendingTransfer(
-            sources = sources,
-            move = false,
-            startDirId = activeCtrl.focusedDirEntry()?.id,
-            compress = true,
+        showDestinationPicker(
+            PendingTransfer(
+                sources = sources,
+                move = false,
+                startDirId = activeCtrl.focusedDirEntry()?.id,
+                compress = true,
+            ),
         )
     }
 
@@ -768,11 +781,13 @@ class MainViewModel : ViewModel() {
 
     /** Choose a folder to extract [archive] into (a new subfolder named after it). */
     fun extractArchive(archive: XEntry) {
-        pendingTransfer.value = PendingTransfer(
-            sources = listOf(archive),
-            move = false,
-            startDirId = inactiveCtrl.focusedDirEntry()?.id,
-            extractArchiveName = archive.name.substringBeforeLast('.').ifBlank { archive.name },
+        showDestinationPicker(
+            PendingTransfer(
+                sources = listOf(archive),
+                move = false,
+                startDirId = inactiveCtrl.focusedDirEntry()?.id,
+                extractArchiveName = archive.name.substringBeforeLast('.').ifBlank { archive.name },
+            ),
         )
     }
 
@@ -836,12 +851,13 @@ class MainViewModel : ViewModel() {
     }
 
     fun openSearch() {
-        searchRoot.value = activeCtrl.focusedDirEntry()
+        activeCtrl.focusedDirEntry()?.let { navigation.navigate(AppScreen.Search(it)) }
     }
 
-    /** Navigate the active pane to a search hit and close the overlay. */
+    /** Navigate the active pane to a search hit and close the search screen. */
     fun revealSearchHit(entryId: String) {
-        searchRoot.value = null
+        val current = screenBackStack.last()
+        if (current.screen is AppScreen.Search) navigateBack(current.id)
         activeCtrl.revealPath(entryId)
     }
 

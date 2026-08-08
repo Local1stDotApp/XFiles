@@ -1,6 +1,5 @@
 package app.local1st.files.ui.search
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,11 +30,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -48,6 +47,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.local1st.files.R
+import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.search.SearchHit
 import app.local1st.files.core.util.Format
 import app.local1st.files.di.Graph
@@ -66,18 +66,20 @@ private const val MIN_QUERY_LENGTH = 2
 
 private enum class SearchPhase { IDLE, SEARCHING, DONE }
 
-/** Full-screen recursive filename search below [MainViewModel.searchRoot]. */
+/** Full-screen recursive filename search destination. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, FlowPreview::class)
 @Composable
-fun SearchOverlay(vm: MainViewModel) {
-    val root by vm.searchRoot.collectAsState()
-    val r = root ?: return
-    val close = { vm.searchRoot.value = null }
+fun SearchScreen(
+    vm: MainViewModel,
+    root: XEntry,
+    onBack: () -> Unit,
+) {
+    val r = root
+    val close = onBack
     val searchFailed = stringResource(R.string.search_failed)
 
-    BackHandler(onBack = close)
-
-    var query by remember { mutableStateOf("") }
+    // Navigation 3 retains saveable entry state while another destination is on top.
+    var query by rememberSaveable { mutableStateOf("") }
     val results = remember { mutableStateListOf<SearchHit>() }
     var phase by remember { mutableStateOf(SearchPhase.IDLE) }
     var error by remember { mutableStateOf<String?>(null) }

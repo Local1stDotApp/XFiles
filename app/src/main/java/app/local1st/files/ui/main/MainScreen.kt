@@ -1,12 +1,6 @@
 package app.local1st.files.ui.main
 
-import android.app.Activity
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -48,8 +42,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TooltipBox
@@ -60,7 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -69,27 +61,16 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.local1st.files.R
-import app.local1st.files.ui.appinfo.AppInfoOverlay
 import app.local1st.files.ui.browser.CrumbBarHeight
 import app.local1st.files.ui.browser.PaneView
 import app.local1st.files.ui.components.TooltipIconButton
-import app.local1st.files.ui.dialogs.DestinationPicker
 import app.local1st.files.ui.dialogs.DialogRequest
-import app.local1st.files.ui.dialogs.MainDialogs
-import app.local1st.files.ui.dialogs.OpsHost
-import app.local1st.files.ui.search.SearchOverlay
-import app.local1st.files.ui.settings.SettingsOverlay
-import app.local1st.files.di.Graph
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -101,9 +82,8 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     val sessionReady by vm.sessionReady.collectAsStateWithLifecycle()
     val activePane by vm.activePane.collectAsStateWithLifecycle()
     val activeState by vm.panes[activePane].state.collectAsStateWithLifecycle()
-    val snackbarHostState = remember { SnackbarHostState() }
     var initiallyLaidOutPanes by remember(vm) { mutableStateOf<Set<Int>>(emptySet()) }
-    var startupContentReady by remember(vm) {
+    var startupContentReady by rememberSaveable(vm) {
         mutableStateOf(sessionReady && activeState.snapshotOnly)
     }
     val wideLayout = LocalConfiguration.current.screenWidthDp >= 700
@@ -115,18 +95,6 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
         emptyList()
     }
     val canShareSelection = selectedFiles.isNotEmpty() && selectedFiles.all { it.localPath != null }
-
-    LaunchedEffect(vm) {
-        vm.snackbar.collect { snackbarHostState.showSnackbar(it) }
-    }
-
-    // Without POST_NOTIFICATIONS the foreground-service progress notification is silently
-    // hidden on Android 13+, so ask for it once.
-    if (sessionReady) RequestNotificationPermission()
-
-    // This host is inert on API 30+. On API 26-29 it launches only after an actual direct
-    // File write to a secondary volume failed and LocalFileSystem requested that volume.
-    if (sessionReady) LegacySafGrantHost(vm)
 
     BackHandler(enabled = selectionCount > 0) {
         vm.activeCtrl.clearSelection()
@@ -240,7 +208,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 state = rememberTooltipState(),
             ) {
                 Surface(
-                    onClick = { vm.showSettings.value = true },
+                    onClick = dropUnlessResumed { vm.openSettings() },
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.85f),
                     modifier = Modifier.size(CrumbBarHeight),
@@ -299,7 +267,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                             TooltipIconButton(stringResource(R.string.new_folder), Icons.Outlined.CreateNewFolder) {
                                 vm.requestNewFolder()
                             }
-                            TooltipIconButton(stringResource(R.string.search), Icons.Outlined.Search) { vm.openSearch() }
+                            TooltipIconButton(
+                                stringResource(R.string.search),
+                                Icons.Outlined.Search,
+                                onClick = dropUnlessResumed { vm.openSearch() },
+                            )
                             TooltipIconButton(stringResource(R.string.switch_pane), Icons.Outlined.SwapHoriz) {
                                 vm.setActivePane(1 - activePane)
                             }
@@ -314,15 +286,6 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                     }
                 }
             },
-        )
-
-        OpsHost()
-
-        SnackbarHost(
-            snackbarHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility),
         )
 
         val requiredPanes = if (wideLayout) vm.panes.indices else listOf(activePane)
@@ -350,61 +313,5 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                 }
             }
         }
-    }
-
-    MainDialogs(vm)
-    DestinationPicker(vm)
-    SearchOverlay(vm)
-    SettingsOverlay(vm)
-    AppInfoOverlay(vm)
-}
-
-/** Requests POST_NOTIFICATIONS once on Android 13+ so file-op progress is actually visible. */
-@Composable
-private fun RequestNotificationPermission() {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-    val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { /* result ignored: denial just means no progress notification */ }
-    LaunchedEffect(Unit) {
-        val granted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.POST_NOTIFICATIONS,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (!granted) launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
-    }
-}
-
-/** Completes the one pending API 26-29 secondary-volume write, then lets it retry in place. */
-@Composable
-private fun LegacySafGrantHost(vm: MainViewModel) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return
-    val saf = Graph.legacySaf ?: return
-    val request by saf.pendingGrant.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        val data = result.data
-        val uri = if (result.resultCode == Activity.RESULT_OK) data?.data else null
-        scope.launch {
-            val error = withContext(Dispatchers.IO) {
-                saf.completePendingGrant(uri, data?.flags ?: 0)
-            }
-            if (error != null) vm.snackbar.tryEmit(error)
-        }
-    }
-
-    LaunchedEffect(request?.requestId) {
-        val pending = request ?: return@LaunchedEffect
-        vm.snackbar.tryEmit("Grant access to ${pending.volume.label} to finish the write")
-        runCatching { launcher.launch(saf.pickerIntent(pending)) }
-            .onFailure { error ->
-                val message = withContext(Dispatchers.IO) {
-                    saf.completePendingGrant(null, 0)
-                }
-                vm.snackbar.tryEmit(message ?: error.message ?: "Cannot open storage picker")
-            }
     }
 }

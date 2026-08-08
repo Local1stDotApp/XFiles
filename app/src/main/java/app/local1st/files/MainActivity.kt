@@ -5,7 +5,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -14,11 +13,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.local1st.files.core.prefs.ThemeMode
 import app.local1st.files.di.Graph
-import app.local1st.files.ui.main.MainScreen
+import app.local1st.files.ui.main.AppHost
 import app.local1st.files.ui.main.MainViewModel
-import app.local1st.files.ui.main.PermissionGate
 import app.local1st.files.ui.theme.XFilesTheme
-import app.local1st.files.ui.viewer.ViewerHost
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -60,14 +57,8 @@ private fun Root(incomingIntents: Flow<Intent>) {
         LaunchedEffect(vm, incomingIntents) {
             incomingIntents.collect(vm::openExternalIntent)
         }
-        Box {
-            PermissionGate(
-                onGranted = { vm.onStorageAccessGranted() },
-            ) {
-                MainScreen(vm)
-            }
-            // External image/video URIs do not require broad storage permission.
-            ViewerHost(vm)
-        }
+        // AppHost keeps external viewers reachable without broad storage permission while making
+        // every full-screen page a real destination instead of layering it over MainScreen.
+        AppHost(vm)
     }
 }

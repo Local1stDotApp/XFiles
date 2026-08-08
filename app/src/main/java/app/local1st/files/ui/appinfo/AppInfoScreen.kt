@@ -34,7 +34,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -58,19 +57,16 @@ import app.local1st.files.core.util.AppDetails
 import app.local1st.files.core.util.AppInspector
 import app.local1st.files.core.util.CertInfo
 import app.local1st.files.core.util.Format
-import app.local1st.files.ui.components.PredictiveBackContainer
 import app.local1st.files.ui.components.TooltipIconButton
-import app.local1st.files.ui.main.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Full-screen rich app-details screen, shown while [MainViewModel.appDetails] holds a package. */
+/** Full-screen rich app-details destination. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun AppInfoOverlay(vm: MainViewModel) {
-    val packageName by vm.appDetails.collectAsState()
-    val pkg = packageName ?: return
-    val close = { vm.appDetails.value = null }
+fun AppInfoScreen(packageName: String, onBack: () -> Unit) {
+    val pkg = packageName
+    val close = onBack
 
     val context = LocalContext.current
     val details by produceState<AppDetails?>(initialValue = null, pkg) {
@@ -78,7 +74,6 @@ fun AppInfoOverlay(vm: MainViewModel) {
     }
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
-    PredictiveBackContainer(onBack = close) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Scaffold(
             modifier = Modifier
@@ -130,7 +125,6 @@ fun AppInfoOverlay(vm: MainViewModel) {
                 Spacer(Modifier.height(32.dp))
             }
         }
-    }
     }
 }
 

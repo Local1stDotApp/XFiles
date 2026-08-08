@@ -63,21 +63,17 @@ import app.local1st.files.core.prefs.ThemeMode
 import app.local1st.files.core.util.ExternalOpenKind
 import app.local1st.files.core.util.ExternalOpenRegistry
 import app.local1st.files.di.Graph
-import app.local1st.files.ui.components.PredictiveBackContainer
 import app.local1st.files.ui.components.TooltipIconButton
-import app.local1st.files.ui.main.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import rikka.shizuku.ShizukuProvider
 
-/** Full-screen settings overlay, visible while [MainViewModel.showSettings] is true. */
+/** Full-screen settings destination. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun SettingsOverlay(vm: MainViewModel) {
-    val show by vm.showSettings.collectAsState()
-    if (!show) return
-    val close = { vm.showSettings.value = false }
+fun SettingsScreen(onBack: () -> Unit) {
+    val close = onBack
 
     val settings = Graph.settings
     val scope = rememberCoroutineScope()
@@ -122,7 +118,6 @@ fun SettingsOverlay(vm: MainViewModel) {
 
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
-    PredictiveBackContainer(onBack = close) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Scaffold(
             modifier = Modifier
@@ -346,7 +341,6 @@ fun SettingsOverlay(vm: MainViewModel) {
                 Spacer(Modifier.height(24.dp))
             }
         }
-    }
     }
 }
 

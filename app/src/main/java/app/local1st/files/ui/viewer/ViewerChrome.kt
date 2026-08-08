@@ -28,7 +28,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -53,6 +52,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -124,8 +124,10 @@ fun ViewerChrome(
  * MainScreen's bottom safe area after returning from the image/video viewer even though cold
  * start is fine. App chrome still toggles; system bars stay put on pre-R.
  *
- * **API 30+:** hide/show via [WindowInsetsControllerCompat] with snapshot/restore of visibility
- * and [systemBarsBehavior].
+ * **API 30+:** hide/show via [WindowInsetsControllerCompat] while this viewer destination is
+ * resumed. Navigation 3 keeps an outgoing entry composed during its transition, so waiting for
+ * composition disposal can leave the browser visible behind window-level immersive state. Losing
+ * `RESUMED` restores each system bar independently, together with [systemBarsBehavior].
  */
 @Composable
 fun SystemBarsHidden(hidden: Boolean) {
@@ -133,9 +135,9 @@ fun SystemBarsHidden(hidden: Boolean) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
 
     val view = LocalView.current
-    DisposableEffect(view, hidden) {
+    LifecycleResumeEffect(view, hidden) {
         if (!hidden) {
-            onDispose { }
+            onPauseOrDispose { }
         } else {
             val window = generateSequence(view.context) { (it as? ContextWrapper)?.baseContext }
                 .filterIsInstance<Activity>().firstOrNull()?.window
@@ -143,23 +145,39 @@ fun SystemBarsHidden(hidden: Boolean) {
 
             val previousBehavior = controller?.systemBarsBehavior
                 ?: WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
-            val wasVisible = ViewCompat.getRootWindowInsets(view)
-                ?.isVisible(WindowInsetsCompat.Type.systemBars()) != false
+            val rootInsets = ViewCompat.getRootWindowInsets(view)
+            val statusBarWasVisible =
+                rootInsets?.isVisible(WindowInsetsCompat.Type.statusBars()) != false
+            val navigationBarWasVisible =
+                rootInsets?.isVisible(WindowInsetsCompat.Type.navigationBars()) != false
+            val captionBarWasVisible =
+                rootInsets?.isVisible(WindowInsetsCompat.Type.captionBar()) != false
             controller?.systemBarsBehavior =
                 WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             controller?.hide(WindowInsetsCompat.Type.systemBars())
-            onDispose {
-                if (controller == null) return@onDispose
-                if (wasVisible) {
-                    controller.show(WindowInsetsCompat.Type.systemBars())
-                } else {
-                    controller.hide(WindowInsetsCompat.Type.systemBars())
-                }
+            onPauseOrDispose {
+                if (controller == null) return@onPauseOrDispose
                 controller.systemBarsBehavior = previousBehavior
+                controller.restoreVisibility(
+                    WindowInsetsCompat.Type.statusBars(),
+                    statusBarWasVisible,
+                )
+                controller.restoreVisibility(
+                    WindowInsetsCompat.Type.navigationBars(),
+                    navigationBarWasVisible,
+                )
+                controller.restoreVisibility(
+                    WindowInsetsCompat.Type.captionBar(),
+                    captionBarWasVisible,
+                )
                 view.post { ViewCompat.requestApplyInsets(view) }
             }
         }
     }
+}
+
+private fun WindowInsetsControllerCompat.restoreVisibility(type: Int, visible: Boolean) {
+    if (visible) show(type) else hide(type)
 }
 
 /**

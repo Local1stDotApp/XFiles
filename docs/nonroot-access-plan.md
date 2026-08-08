@@ -175,7 +175,7 @@ Manifest：
 
 ### P2 · 权限与引导 UI
 
-- `SettingsOverlay` 现有分组 `Appearance / Browsing / Root / About` → 把 `Root` 改为 `Access`，内含：特权通道选择（自动 / 仅 root / 仅 Shizuku / 关闭）、只读开关、当前状态行（`Shizuku 已连接 (uid 2000)` / `未运行` / `未安装`）。
+- `SettingsScreen` 现有分组 `Appearance / Browsing / Root / About` → 把 `Root` 改为 `Access`，内含：特权通道选择（自动 / 仅 root / 仅 Shizuku / 关闭）、只读开关、当前状态行（`Shizuku 已连接 (uid 2000)` / `未运行` / `未安装`）。
 - 引导页**绝对不要硬编码启动命令**。v13.6.0 起 starter 已改为 APK 内的原生二进制 `libshizuku.so`，旧文档里 `/sdcard/Android/data/moe.shizuku.privileged.api/start.sh` 那条命令是错的。正确做法：引导用户在 Shizuku app 里点「查看命令」自行复制。
 - 排障页要写 OEM 坑：**ColorOS（OPPO/一加）需要关闭「权限监控」**、MIUI 需单独开「USB 调试（安全设置）」、Android 11+ 要开「停用 adb 授权超时」、Shizuku 需加入电池优化白名单否则配对发现失败。
 
