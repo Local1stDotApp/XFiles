@@ -1,8 +1,8 @@
 # Privacy Policy — XFiles Pro (Apple)
 
-**Last updated: 2026-07-31**
+**Last updated: 2026-08-13**
 
-XFiles Pro (`app.local1st.files`) is a dual-pane file manager for Apple platforms (iOS, iPadOS, macOS, and related targets where published).
+XFiles Pro (`app.local1st.files`) is a dual-pane file manager for iPhone and iPad.
 
 ## The short version
 
@@ -42,6 +42,14 @@ If you use Google Drive, Google processes authentication and Drive data under Go
 
 XFiles Pro is a general-purpose utility and is not directed at children.
 
+## Retention and deletion
+
+XFiles does not maintain a developer-operated account or server-side user profile. Saved connection details remain on your device until you remove the Network Location or delete the app, subject to backups managed by Apple. Data held by a third-party service is controlled through that service.
+
 ## Contact
 
-Questions or reports: <https://github.com/Local1stDotApp/XFiles/issues>
+Developer: XFiles Pro
+
+Questions or privacy requests: [nearby@local1st.app](mailto:nearby@local1st.app)
+
+Support information: [XFiles Pro Support](APPLE_SUPPORT.md)
