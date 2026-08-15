@@ -109,6 +109,34 @@ jobs:
       - name: Rename artifact
         run: cp app/build/outputs/apk/release/app-release.apk "${{ steps.decide.outputs.apk }}"
 
+      # GitHub lists /releases by created_at / published_at, not by last update.
+      # action-gh-release updates the existing nightly in place, so its July date
+      # never moves and a later stable (v1.3.1) stays above it. Delete the release
+      # and the tag first; the next step then creates a fresh one that sorts to the top.
+      - name: Drop previous nightly
+        if: steps.decide.outputs.prerelease == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          REPO="${{ github.repository }}"
+          AUTH="Authorization: Bearer $GITHUB_TOKEN"
+          ACCEPT="Accept: application/vnd.github+json"
+          CODE=$(curl -sS -o "$RUNNER_TEMP/nightly.json" -w '%{http_code}' \
+            -H "$AUTH" -H "$ACCEPT" \
+            "https://api.github.com/repos/${REPO}/releases/tags/nightly")
+          if [ "$CODE" = "200" ]; then
+            ID=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id",""))' \
+              "$RUNNER_TEMP/nightly.json")
+            if [ -n "$ID" ]; then
+              curl -sS -X DELETE -H "$AUTH" -H "$ACCEPT" \
+                "https://api.github.com/repos/${REPO}/releases/${ID}"
+            fi
+          fi
+          curl -sS -X DELETE -H "$AUTH" -H "$ACCEPT" \
+            -o /dev/null -w '' \
+            "https://api.github.com/repos/${REPO}/git/refs/tags/nightly" || true
+
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:
