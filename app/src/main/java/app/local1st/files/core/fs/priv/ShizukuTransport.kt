@@ -30,9 +30,11 @@ object ShizukuTransport : PrivilegedTransport {
     override val id: TransportId = TransportId.SHIZUKU
     override val supportsFileDescriptors: Boolean = true
 
-    // uid 2000 has the supplementary GIDs needed for Android/data and Android/obb, but the
-    // shell SELinux domain is denied on /data/data and /data/media. It also cannot remount
-    // filesystems or read another Android user's storage. These false values are safety gates.
+    // uid 2000 has the supplementary GIDs needed for Android/data and Android/obb, and it
+    // can list `/` and walk what the adb shell can see (/system, /proc, /storage). But
+    // wholeFilesystem means *unrestricted* reach, and the shell SELinux domain is denied
+    // on /data/data and /data/media. It also cannot remount filesystems or read another
+    // Android user's storage.
     override val caps: Caps = Caps(
         appPrivateData = false,
         wholeFilesystem = false,

@@ -13,8 +13,10 @@ import java.io.OutputStream
 import java.nio.file.FileAlreadyExistsException
 
 /**
- * Superuser filesystem for `root://` ids, backed by `su` shell commands (X-plore's
- * "Root" access). Reads/writes files the app otherwise cannot touch (/data, /system, ...).
+ * Privileged filesystem for `root://` ids, backed by the active privileged transport:
+ * `su` shell commands when superuser is granted (X-plore's "Root" access), else Shizuku's
+ * adb shell for the paths it can reach. Reads/writes files the app otherwise cannot
+ * touch (/data, /system, ...).
  *
  * All methods are blocking and must run on Dispatchers.IO. Entries never carry a
  * `localPath` (the paths are unreadable without root), so thumbnails/open-with are skipped
@@ -41,6 +43,11 @@ class RootFileSystem : XFileSystem {
         val script = buildString {
             append("d=").append(shQuote(path)).append('\n')
             append("[ -d \"\$d\" ] || { echo __XF_ERR__; exit 0; }\n")
+            // A directory can pass -d yet not be readable (/data as the Shizuku shell
+            // uid): the globs below then match nothing and the listing would come back
+            // empty instead of denied. access(2) always passes for root, so su is
+            // unaffected; for the shell uid it honors DAC and SELinux alike.
+            append("[ -r \"\$d\" ] || { echo __XF_ERR__; exit 0; }\n")
             append("b=\${d%/}\n")
             append("printf '%s\\0' \"\$b\"/* \"\$b\"/.* | xargs -0 stat -L -c '%F|%s|%Y|%n' 2>/dev/null\n")
             append("for p in \"\$b\"/* \"\$b\"/.*; do\n")
@@ -172,35 +179,23 @@ class RootFileSystem : XFileSystem {
     }
 
     /**
-     * `/` is su-only. Every other `root://` path (Android/data via Shizuku, a pinned
-     * `/data/data/...` favorite) keeps using the active transport.
+     * `/` is not su-only. Shell (Shizuku) can list it and enter `/system`, `/proc`,
+     * `/storage`, Android/data — just not `/data` / `/data/data`. Prefer whatever
+     * transport is already live; when nothing is live, retry `su` only for a stale
+     * miss (see [shouldRetrySuForFilesystemRoot]).
      */
     private fun transportFor(path: String): PrivilegedTransport {
         requireEnabled()
-        return if (isFilesystemRoot(path)) transportForFilesystemRoot()
-        else PrivilegedAccess.active ?: throw IOException("Root access is unavailable")
-    }
-
-    /**
-     * Opening `/` retries `su` so a Magisk grant after a failed probe can take effect.
-     * Forced Shizuku is not silently upgraded: that transport cannot browse `/`.
-     */
-    private fun transportForFilesystemRoot(): PrivilegedTransport {
-        when (PrivilegedAccess.preference) {
-            TransportPref.OFF ->
-                throw IOException(FILESYSTEM_ROOT_TRANSPORT_OFF_MESSAGE)
-            TransportPref.SHIZUKU ->
-                throw IOException(filesystemRootUnavailableMessage(shizukuActive = true))
-            TransportPref.SU, TransportPref.AUTO -> {
-                // Retry only after a miss or when we have never asked. A successful
-                // probe stays cached so expanding `/` does not pay another su spawn.
-                if (SuTransport.cachedAvailability() != true) SuTransport.reset()
-                if (SuTransport.isAvailable()) return SuTransport
-                val shizukuActive = PrivilegedAccess.preference == TransportPref.AUTO &&
-                    ShizukuTransport.isAvailable()
-                throw IOException(filesystemRootUnavailableMessage(shizukuActive))
-            }
+        // Snapshot before reading `active`: on a cold cache that getter itself probes
+        // su, and a retry right after that fresh failure would spawn su again — a
+        // second Magisk prompt in the same call.
+        val suKnownBeforeActive = SuTransport.cachedAvailability()
+        PrivilegedAccess.active?.let { return it }
+        if (shouldRetrySuForFilesystemRoot(path, PrivilegedAccess.preference, suKnownBeforeActive)) {
+            SuTransport.reset()
+            if (SuTransport.isAvailable()) return SuTransport
         }
+        throw IOException(rootTransportUnavailableMessage(PrivilegedAccess.preference))
     }
 
     private fun toEntry(
@@ -263,20 +258,38 @@ internal fun rootTreeBadge(
     shizukuCoversData: Boolean,
     readOnly: Boolean,
 ): String = when {
-    // Only a probe that actually failed may claim su is missing; a never-probed device
-    // keeps the optimistic label (expanding the row is what probes and corrects it).
-    suKnown == false && shizukuCoversData -> "Needs root (su)"
+    suKnown == true -> if (readOnly) "Superuser · read-only" else "Superuser · /"
+    shizukuCoversData -> if (readOnly) "Shizuku · read-only" else "Shizuku · /"
     suKnown == false -> "Not available"
     else -> if (readOnly) "Superuser · read-only" else "Superuser · /"
 }
 
-internal fun filesystemRootUnavailableMessage(shizukuActive: Boolean): String =
-    if (shizukuActive) {
-        "Shizuku cannot browse /. Superuser (su) is required."
-    } else {
-        "Root access is unavailable. Grant superuser (su) to browse /."
-    }
+/**
+ * Whether opening `/` should retry a previously failed `su` probe, so a Magisk grant
+ * issued after a denial can land. Only a *stale* miss retries — one recorded before this
+ * call. [suKnownBeforeActive] == null means the probe inside [PrivilegedAccess.active]
+ * just ran (and failed) for this very call; probing again would only repeat the Magisk
+ * prompt that was just denied.
+ */
+internal fun shouldRetrySuForFilesystemRoot(
+    path: String,
+    preference: TransportPref,
+    suKnownBeforeActive: Boolean?,
+): Boolean = isFilesystemRoot(path) &&
+    suKnownBeforeActive == false &&
+    (preference == TransportPref.SU || preference == TransportPref.AUTO)
+
+internal fun rootTransportUnavailableMessage(preference: TransportPref): String = when (preference) {
+    TransportPref.OFF -> FILESYSTEM_ROOT_TRANSPORT_OFF_MESSAGE
+    TransportPref.SHIZUKU ->
+        "Shizuku is not running. Start it to browse /, or switch the transport to Auto / Root (su)."
+    // Forced su never falls back to Shizuku, so starting it would not help here.
+    TransportPref.SU ->
+        "Root access is unavailable. Grant superuser (su), or switch the transport to Auto / Shizuku."
+    TransportPref.AUTO ->
+        "Root access is unavailable. Grant superuser (su) or start Shizuku to browse /."
+}
 
 /** The transport preference is Off: point at that switch, not at a missing su grant. */
 internal const val FILESYSTEM_ROOT_TRANSPORT_OFF_MESSAGE =
-    "Privileged transport is set to Off in Settings. Superuser (su) is required to browse /."
+    "Privileged transport is set to Off in Settings."

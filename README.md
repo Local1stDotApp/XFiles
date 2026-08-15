@@ -131,8 +131,9 @@ auto):
 Whichever transport is live also kicks in transparently where plain file access is
 denied — most notably **`Android/data`** and **`Android/obb`**, which open like any
 other folder. Thumbnails, viewers and even video playback work on privileged paths.
-Opening **Root** itself always needs `su`. If superuser is missing or denied, the
-entry stays on the home screen and expanding it says so — Shizuku cannot browse `/`.
+Opening **Root** uses `su` when it is available. Without it, Shizuku can still
+list `/` and browse what the adb shell can see (`/system`, `/proc`, `/storage`,
+`Android/data`). `/data` and `/data/data` stay closed until superuser is granted.
 
 The settings screen carries the rest of the preferences too — theme, dynamic color,
 hidden files, folders-first, sort key and direction.

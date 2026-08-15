@@ -52,27 +52,42 @@ class RootFileSystemTest {
             "Superuser · read-only",
             rootTreeBadge(suKnown = true, shizukuCoversData = true, readOnly = true),
         )
-        assertEquals("Needs root (su)", rootTreeBadge(suKnown = false, shizukuCoversData = true, readOnly = true))
+        assertEquals("Shizuku · read-only", rootTreeBadge(suKnown = false, shizukuCoversData = true, readOnly = true))
+        assertEquals("Shizuku · /", rootTreeBadge(suKnown = false, shizukuCoversData = true, readOnly = false))
         assertEquals("Not available", rootTreeBadge(suKnown = false, shizukuCoversData = false, readOnly = true))
         assertEquals(
             "Superuser · read-only",
             rootTreeBadge(suKnown = null, shizukuCoversData = false, readOnly = true),
         )
-        // Never-probed su stays on the optimistic label even with Shizuku around: only a
-        // probe that actually failed may claim su is missing.
+        // Shizuku is enough to list `/`, even before su has been probed.
         assertEquals(
-            "Superuser · read-only",
+            "Shizuku · read-only",
             rootTreeBadge(suKnown = null, shizukuCoversData = true, readOnly = true),
         )
     }
 
     @Test
     fun unavailableMessagesNameTheMissingCapability() {
-        assertEquals(
-            "Shizuku cannot browse /. Superuser (su) is required.",
-            filesystemRootUnavailableMessage(shizukuActive = true),
-        )
-        assertTrue(filesystemRootUnavailableMessage(shizukuActive = false).contains("su"))
+        assertTrue(rootTransportUnavailableMessage(TransportPref.SHIZUKU).contains("Shizuku"))
+        assertTrue(rootTransportUnavailableMessage(TransportPref.AUTO).contains("superuser"))
+        // Forced su never falls back to Shizuku, so "start Shizuku" would be a dead end;
+        // the remedies are the grant or the transport switch.
+        assertTrue(rootTransportUnavailableMessage(TransportPref.SU).contains("superuser"))
+        assertFalse(rootTransportUnavailableMessage(TransportPref.SU).contains("start Shizuku"))
+        assertEquals(FILESYSTEM_ROOT_TRANSPORT_OFF_MESSAGE, rootTransportUnavailableMessage(TransportPref.OFF))
+    }
+
+    @Test
+    fun suRetryOnFilesystemRootIsOnlyForStaleMisses() {
+        assertTrue(shouldRetrySuForFilesystemRoot("/", TransportPref.AUTO, suKnownBeforeActive = false))
+        assertTrue(shouldRetrySuForFilesystemRoot("/", TransportPref.SU, suKnownBeforeActive = false))
+        // null = the probe inside PrivilegedAccess.active just ran (and failed) for this
+        // very call; retrying immediately would repeat the Magisk prompt that was denied.
+        assertFalse(shouldRetrySuForFilesystemRoot("/", TransportPref.AUTO, suKnownBeforeActive = null))
+        assertFalse(shouldRetrySuForFilesystemRoot("/", TransportPref.SU, suKnownBeforeActive = null))
+        assertFalse(shouldRetrySuForFilesystemRoot("/", TransportPref.SHIZUKU, suKnownBeforeActive = false))
+        assertFalse(shouldRetrySuForFilesystemRoot("/", TransportPref.OFF, suKnownBeforeActive = false))
+        assertFalse(shouldRetrySuForFilesystemRoot("/data", TransportPref.AUTO, suKnownBeforeActive = false))
     }
 
     @Test
@@ -93,7 +108,7 @@ class RootFileSystemTest {
         val error = assertThrows(IOException::class.java) {
             RootFileSystem().list(RootFileSystem.rootEntry())
         }
-        assertEquals(filesystemRootUnavailableMessage(shizukuActive = true), error.message)
+        assertEquals(rootTransportUnavailableMessage(TransportPref.SHIZUKU), error.message)
     }
 
     @Test
