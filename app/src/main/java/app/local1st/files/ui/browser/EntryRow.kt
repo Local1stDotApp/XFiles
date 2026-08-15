@@ -35,6 +35,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
@@ -65,7 +66,8 @@ import app.local1st.files.core.util.Format
 import java.io.File
 
 // One tree level. The expand chevron is drawn inside this slot (no Material icon
-// padding) so its center sits on the children's vertical spine.
+// padding), centered a hairline (its 1px lead) right of the children's vertical spine —
+// the lead keeps a visible gap between a branch line's round cap and the chevron.
 private val IndentWidth = 12.dp
 private val RowHeight = 56.dp
 
@@ -148,7 +150,9 @@ fun EntryRow(
                 }
                 val x = unit * (node.depth - 1) + unit / 2
                 val midY = size.height / 2
-                val endX = x + unit / 2
+                // Round caps extend past the end by half the stroke; stop at the
+                // column edge so the chevron's 1px leading gap stays visible.
+                val endX = x + unit / 2 - stroke / 2f
                 if (node.isLastChild) {
                     // Rounded "└": the vertical stops here and curves into the branch — the arc
                     // alone marks the last item, so it uses the same tone/weight as other guides.
@@ -182,7 +186,7 @@ fun EntryRow(
                 animate = true,
             )
         } else {
-            Spacer(Modifier.width(IndentWidth))
+            Spacer(Modifier.width(expandSlotWidth()))
         }
 
         // Icon or thumbnail (selection is the trailing control, to avoid mis-taps here).
@@ -269,6 +273,9 @@ fun EntryRow(
 }
 
 @Composable
+private fun expandSlotWidth() = IndentWidth + with(LocalDensity.current) { 1.toDp() }
+
+@Composable
 private fun ExpandChevron(
     expanded: Boolean,
     label: String?,
@@ -278,8 +285,10 @@ private fun ExpandChevron(
     val animated by animateFloatAsState(target, label = "chevron")
     val rotation = if (animate) animated else target
     val color = MaterialTheme.colorScheme.onSurfaceVariant
+    val lead = with(LocalDensity.current) { 1.toDp() }
     Canvas(
         Modifier
+            .padding(start = lead)
             .size(IndentWidth)
             .rotate(rotation)
             .semantics {
@@ -356,7 +365,7 @@ private fun StartupEntryRow(
                 animate = false,
             )
         } else {
-            Spacer(Modifier.width(IndentWidth))
+            Spacer(Modifier.width(expandSlotWidth()))
         }
         Box(
             Modifier.padding(end = 8.dp),
