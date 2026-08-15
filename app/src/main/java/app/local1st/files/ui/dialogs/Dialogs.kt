@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -186,12 +187,14 @@ private fun EntryMenuContent(
         otherPaneDestination?.name ?: stringResource(R.string.this_device),
     )
     Column(Modifier.padding(bottom = 24.dp)) {
-        Text(
-            entry.name,
-            style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-        )
-        if (entry.kind == EntryKind.APP_COMPONENT) {
+        if (entry != null) {
+            Text(
+                entry.name,
+                style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+            )
+        }
+        if (entry?.kind == EntryKind.APP_COMPONENT) {
             val parsed = AppComponents.parseId(entry.id)
             parsed?.let {
                 Text(
@@ -228,9 +231,7 @@ private fun EntryMenuContent(
             parsed?.let { p ->
                 MenuItem(stringResource(R.string.app_details)) { vm.showAppDetails(p.packageName); dismiss() }
             }
-            return@Column
-        }
-        if (entry.kind == EntryKind.APP) {
+        } else if (entry?.kind == EntryKind.APP) {
             MenuItem(stringResource(R.string.launch)) { IntentUtils.launchApp(context, entry.path); dismiss() }
             MenuItem(stringResource(R.string.open_as_zip)) { vm.openAppAsZip(entry); dismiss() }
             MenuItem(stringResource(R.string.details)) { vm.showAppDetails(entry.path); dismiss() }
@@ -246,89 +247,100 @@ private fun EntryMenuContent(
                 }
             }
             MenuItem(stringResource(R.string.uninstall)) { IntentUtils.uninstall(context, entry.path); dismiss() }
-            return@Column
-        }
+        } else if (entry != null) {
+            MenuItem(stringResource(R.string.details)) { vm.dialog.value = DialogRequest.Details(entry) }
+            if (entry.isDir && vm.canCreateFileIn(entry)) {
+                // Replaces the bottom-sheet request with the naming dialog. Calling dismiss after it
+                // would immediately clear that new request again.
+                MenuItem(stringResource(R.string.new_text_file)) { vm.requestNewTextFile(entry) }
+            }
 
-        MenuItem(stringResource(R.string.details)) { vm.dialog.value = DialogRequest.Details(entry) }
-        if (entry.isDir && vm.canCreateFileIn(entry)) {
-            // Replaces the bottom-sheet request with the naming dialog. Calling dismiss after it
-            // would immediately clear that new request again.
-            MenuItem(stringResource(R.string.new_text_file)) { vm.requestNewTextFile(entry) }
-        }
+            // Pin files/folders/archives as top-level shortcuts. Anything already at the
+            // top level (volumes, App manager, Root) is excluded: pinning it again would
+            // be a silent no-op. Pinned rows
+            // themselves stay, for "Remove from favorites".
+            if ((entry.kind == EntryKind.DIR || entry.kind == EntryKind.FILE ||
+                    entry.kind == EntryKind.ARCHIVE) &&
+                (entry.pinned || !vm.activeCtrl.isTopLevelRoot(entry.id))
+            ) {
+                // The Graph cache is warm from startup, so the item renders with the right
+                // label on the first frame (null only before the very first DataStore read).
+                val favorites by Graph.favorites.collectAsState()
+                favorites?.let { favs ->
+                    val pinned = favs.any { it.id == entry.id }
+                    MenuItem(
+                        stringResource(if (pinned) R.string.remove_from_favorites else R.string.add_to_favorites),
+                    ) {
+                        vm.toggleFavorite(entry)
+                        dismiss()
+                    }
+                }
+            }
 
-        // Pin files/folders/archives as top-level shortcuts. Anything already at the
-        // top level (volumes, App manager, Root) is excluded: pinning it again would
-        // be a silent no-op. Pinned rows
-        // themselves stay, for "Remove from favorites".
-        if ((entry.kind == EntryKind.DIR || entry.kind == EntryKind.FILE ||
-                entry.kind == EntryKind.ARCHIVE) &&
-            (entry.pinned || !vm.activeCtrl.isTopLevelRoot(entry.id))
-        ) {
-            // The Graph cache is warm from startup, so the item renders with the right
-            // label on the first frame (null only before the very first DataStore read).
-            val favorites by Graph.favorites.collectAsState()
-            favorites?.let { favs ->
-                val pinned = favs.any { it.id == entry.id }
-                MenuItem(stringResource(if (pinned) R.string.remove_from_favorites else R.string.add_to_favorites)) {
-                    vm.toggleFavorite(entry)
+            if (!entry.isDir) {
+                val hasLocalFile = entry.localPath != null
+                MenuItem(
+                    label = stringResource(R.string.open_with),
+                    enabled = hasLocalFile,
+                    disabledReason = stringResource(R.string.requires_local_file),
+                ) { vm.openWith(entry); dismiss() }
+                MenuItem(stringResource(R.string.open_as_text)) { vm.openAsText(entry); dismiss() }
+                MenuItem(stringResource(R.string.open_as_hex)) { vm.openAsHex(entry); dismiss() }
+                MenuItem(
+                    label = stringResource(R.string.share),
+                    enabled = hasLocalFile,
+                    disabledReason = stringResource(R.string.requires_local_file),
+                ) { vm.shareSelection(listOf(entry)); dismiss() }
+            }
+            // Secondary explicit-location workflow; toolbar copy/move use the other pane directly.
+            MenuItem(stringResource(R.string.copy_to)) {
+                vm.chooseTransferDestination(move = false, sources = listOf(entry))
+                dismiss()
+            }
+            // Move deletes the source, so only when the source itself is writable (not a read-only
+            // root entry or an archive member).
+            if (entry.canWrite) {
+                MenuItem(stringResource(R.string.move_to)) {
+                    vm.chooseTransferDestination(move = true, sources = listOf(entry))
                     dismiss()
                 }
             }
-        }
-
-        if (!entry.isDir) {
-            val hasLocalFile = entry.localPath != null
             MenuItem(
-                label = stringResource(R.string.open_with),
-                enabled = hasLocalFile,
-                disabledReason = stringResource(R.string.requires_local_file),
-            ) { vm.openWith(entry); dismiss() }
-            MenuItem(stringResource(R.string.open_as_text)) { vm.openAsText(entry); dismiss() }
-            MenuItem(stringResource(R.string.open_as_hex)) { vm.openAsHex(entry); dismiss() }
-            MenuItem(
-                label = stringResource(R.string.share),
-                enabled = hasLocalFile,
-                disabledReason = stringResource(R.string.requires_local_file),
-            ) { vm.shareSelection(listOf(entry)); dismiss() }
-        }
-        // Secondary explicit-location workflow; toolbar copy/move use the other pane directly.
-        MenuItem(stringResource(R.string.copy_to)) {
-            vm.chooseTransferDestination(move = false, sources = listOf(entry))
-            dismiss()
-        }
-        // Move deletes the source, so only when the source itself is writable (not a read-only
-        // root entry or an archive member).
-        if (entry.canWrite) {
-            MenuItem(stringResource(R.string.move_to)) {
-                vm.chooseTransferDestination(move = true, sources = listOf(entry))
-                dismiss()
-            }
-        }
-        MenuItem(
-            label = stringResource(R.string.zip),
-            enabled = canUseOtherPane,
-            disabledReason = unavailableDestinationReason,
-        ) { vm.requestCompress(listOf(entry)); dismiss() }
-        if (entry.kind == EntryKind.ARCHIVE) {
-            MenuItem(
-                label = stringResource(R.string.extract_to_other_pane),
+                label = stringResource(R.string.zip),
                 enabled = canUseOtherPane,
                 disabledReason = unavailableDestinationReason,
-            ) {
-                vm.extractArchive(entry)
-                dismiss()
-            }
-            if (FileTypes.isInstallable(entry.extension)) {
+            ) { vm.requestCompress(listOf(entry)); dismiss() }
+            if (entry.kind == EntryKind.ARCHIVE) {
                 MenuItem(
-                    label = stringResource(R.string.install),
-                    enabled = entry.localPath != null,
-                    disabledReason = stringResource(R.string.requires_local_file),
-                ) { vm.installPackage(entry); dismiss() }
+                    label = stringResource(R.string.extract_to_other_pane),
+                    enabled = canUseOtherPane,
+                    disabledReason = unavailableDestinationReason,
+                ) {
+                    vm.extractArchive(entry)
+                    dismiss()
+                }
+                if (FileTypes.isInstallable(entry.extension)) {
+                    MenuItem(
+                        label = stringResource(R.string.install),
+                        enabled = entry.localPath != null,
+                        disabledReason = stringResource(R.string.requires_local_file),
+                    ) { vm.installPackage(entry); dismiss() }
+                }
+            }
+            if (entry.canWrite) {
+                MenuItem(stringResource(R.string.rename)) { vm.requestRename(entry) }
+                MenuItem(stringResource(R.string.delete)) { vm.requestDelete(listOf(entry)) }
             }
         }
-        if (entry.canWrite) {
-            MenuItem(stringResource(R.string.rename)) { vm.requestRename(entry) }
-            MenuItem(stringResource(R.string.delete)) { vm.requestDelete(listOf(entry)) }
+
+        if (req.showSettings) {
+            if (entry != null) {
+                HorizontalDivider(Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+            }
+            MenuItem(stringResource(R.string.settings)) {
+                vm.openSettings()
+                dismiss()
+            }
         }
     }
 }

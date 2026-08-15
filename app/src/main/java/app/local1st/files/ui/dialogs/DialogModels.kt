@@ -11,6 +11,9 @@ sealed interface DialogRequest {
     data class CompressTo(val sources: List<XEntry>, val destDir: XEntry) : DialogRequest
     data class Details(val entry: XEntry) : DialogRequest
 
-    /** Long-press context menu for one entry (bottom sheet). */
-    data class EntryMenu(val entry: XEntry) : DialogRequest
+    /** Long-press or toolbar overflow menu. [showSettings] is for the overflow only. */
+    data class EntryMenu(
+        val entry: XEntry? = null,
+        val showSettings: Boolean = false,
+    ) : DialogRequest
 }

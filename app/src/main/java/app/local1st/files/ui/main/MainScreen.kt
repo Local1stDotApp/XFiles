@@ -36,7 +36,6 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -138,9 +137,10 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     }
 
     // No top app bar at all: the panes extend under the status bar, and the few former
-    // top-bar actions live elsewhere (search and Settings in the bottom toolbar). On phones the
-    // freed top-end slot exposes the otherwise hidden destination pane. The explicit background
-    // paints the pane gutters and rounded-corner gaps that Scaffold used to cover.
+    // top-bar actions live elsewhere (search in the bottom toolbar, Settings in More).
+    // On phones the freed top-end slot exposes the otherwise hidden destination pane.
+    // The explicit background paints the pane gutters and rounded-corner gaps that
+    // Scaffold used to cover.
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         val listPadding = PaddingValues(bottom = 120.dp)
 
@@ -323,17 +323,14 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                                 Icons.Outlined.Search,
                                 onClick = dropUnlessResumed { vm.openSearch() },
                             )
-                            TooltipIconButton(
-                                stringResource(R.string.settings),
-                                Icons.Outlined.Settings,
-                                onClick = dropUnlessResumed { vm.openSettings() },
-                            )
                             TooltipIconButton(stringResource(R.string.refresh), Icons.Outlined.Refresh) {
                                 vm.activeCtrl.refreshAllExpanded()
                             }
                             TooltipIconButton(stringResource(R.string.more), Icons.Outlined.MoreVert) {
-                                vm.activeCtrl.focusedDirEntry()
-                                    ?.let { vm.dialog.value = DialogRequest.EntryMenu(it) }
+                                vm.dialog.value = DialogRequest.EntryMenu(
+                                    entry = vm.activeCtrl.focusedDirEntry(),
+                                    showSettings = true,
+                                )
                             }
                         }
                     }
