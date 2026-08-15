@@ -88,13 +88,15 @@ object AppComponents {
 
     /**
      * Whether [setEnabled] can work for [packageName]: always for our own package (a plain
-     * [PackageManager] call), otherwise only with working root. This is intentionally NOT gated by
-     * read-only root mode — that mode blocks irreversible *file* changes, while enabling/disabling a
-     * component is a reversible `pm enable`/`pm disable` away. May block on the first `su` probe —
-     * call off the main thread.
+     * [PackageManager] call), otherwise only with a privileged transport that is already live.
+     * This is intentionally NOT gated by read-only root mode — that mode blocks irreversible
+     * *file* changes, while enabling/disabling a component is a reversible `pm enable`/`pm
+     * disable` away. Deliberately never launches a `su` probe: opening a component's menu must
+     * not pop the superuser prompt. Once a deliberate root action has probed `su` (or Shizuku
+     * is live), the toggle appears.
      */
     fun canToggle(context: Context, packageName: String): Boolean =
-        packageName == context.packageName || PrivilegedAccess.usable()
+        packageName == context.packageName || PrivilegedAccess.usableWithoutSuProbe()
 
     /**
      * The component's effective enabled state: the runtime override when one is set, else the

@@ -257,8 +257,8 @@ private fun EntryMenuContent(
         }
 
         // Pin files/folders/archives as top-level shortcuts. Anything already at the
-        // top level (volumes, App manager, Root — including the DIR-kinded read-only
-        // fallback) is excluded: pinning it again would be a silent no-op. Pinned rows
+        // top level (volumes, App manager, Root) is excluded: pinning it again would
+        // be a silent no-op. Pinned rows
         // themselves stay, for "Remove from favorites".
         if ((entry.kind == EntryKind.DIR || entry.kind == EntryKind.FILE ||
                 entry.kind == EntryKind.ARCHIVE) &&

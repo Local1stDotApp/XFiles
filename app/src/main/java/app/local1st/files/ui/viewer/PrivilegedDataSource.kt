@@ -37,8 +37,9 @@ class PrivilegedDataSource : BaseDataSource(false) {
                 throw IOException("Unsupported privileged URI: ${dataSpec.uri}")
             }
             val path = dataSpec.uri.path ?: throw IOException("Privileged URI has no path")
-            val transport = PrivilegedAccess.active
-                ?.takeIf { PrivilegedAccess.enabled && it.supportsFileDescriptors }
+            // Cached-only lookup: fd support needs Shizuku, so probing `su` here could only
+            // block playback startup (and pop a superuser prompt) without ever helping.
+            val transport = PrivilegedAccess.fdTransport()
                 ?: throw IOException("Privileged file-descriptor access is unavailable")
             val openedDescriptor = transport.openFd(path, write = false)
                 ?: throw IOException("Privileged transport cannot open file descriptors")

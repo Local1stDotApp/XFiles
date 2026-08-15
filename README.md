@@ -113,9 +113,10 @@ mid-install doesn't kill the session.
 
 ### Root & Shizuku
 
-Off by default. Turn on **Root access** in Settings and a **Root** entry (`/`) joins the
-storage roots — with a separate **Read-only** switch that blocks anything needing
-privilege to write, so you can go look without being able to break your system.
+On by default. A **Root** entry (`/`) sits with the storage roots — turn **Root access**
+off in Settings to hide it. A separate **Read-only** switch (also on by default) blocks
+anything needing privilege to write, so you can go look without being able to break your
+system.
 
 Two interchangeable transports power it, and Settings lets you pick (or leave it on
 auto):
@@ -130,7 +131,8 @@ auto):
 Whichever transport is live also kicks in transparently where plain file access is
 denied — most notably **`Android/data`** and **`Android/obb`**, which open like any
 other folder. Thumbnails, viewers and even video playback work on privileged paths.
-With no transport available, Root falls back to a read-only `/` view.
+Opening **Root** itself always needs `su`. If superuser is missing or denied, the
+entry stays on the home screen and expanding it says so — Shizuku cannot browse `/`.
 
 The settings screen carries the rest of the preferences too — theme, dynamic color,
 hidden files, folders-first, sort key and direction.

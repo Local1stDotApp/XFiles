@@ -130,8 +130,11 @@ class AppsFileSystem(private val context: Context) : XFileSystem {
         // Private internal data. Needs real root, not merely a privileged transport:
         // /data/data is SELinux-denied to the adb shell domain (media_userdir_file /
         // *_app_data_file are not in shell's allow set), so a Shizuku-backed transport
-        // would list an entry that can never open.
-        if (PrivilegedAccess.enabled && PrivilegedAccess.caps.appPrivateData) {
+        // would list an entry that can never open. Cached availability only: expanding an
+        // app must not launch `su`; the row appears once a deliberate root action probed it.
+        if (PrivilegedAccess.enabled &&
+            PrivilegedAccess.activeWithoutSuProbe?.caps?.appPrivateData == true
+        ) {
             out += rootDirEntry("/data/data/$packageName", "Data (internal)")
         }
 
@@ -222,8 +225,9 @@ class AppsFileSystem(private val context: Context) : XFileSystem {
                 badge = dir.absolutePath,
                 localPath = dir.absolutePath,
             )
-            // Scoped storage hides other apps' data/obb from File I/O; root can still reach them.
-            PrivilegedAccess.usable() -> out += rootDirEntry(dir.absolutePath, label)
+            // Scoped storage hides other apps' data/obb from File I/O; root can still reach
+            // them. Cached availability only — listing an app must not launch `su`.
+            PrivilegedAccess.usableWithoutSuProbe() -> out += rootDirEntry(dir.absolutePath, label)
             // else: not accessible without root — omit rather than show an un-openable stub.
         }
     }

@@ -58,6 +58,7 @@ import app.local1st.files.core.fs.priv.ShizukuGate
 import app.local1st.files.core.fs.priv.ShizukuState
 import app.local1st.files.core.fs.priv.TransportId
 import app.local1st.files.core.fs.priv.TransportPref
+import app.local1st.files.core.prefs.DEFAULT_ROOT_ENABLED
 import app.local1st.files.core.prefs.SortBy
 import app.local1st.files.core.prefs.ThemeMode
 import app.local1st.files.core.util.ExternalOpenKind
@@ -86,7 +87,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val collapseSiblingFolders by settings.collapseSiblingFolders.collectAsState(initial = true)
     val sortBy by settings.sortBy.collectAsState(initial = SortBy.NAME)
     val sortDescending by settings.sortDescending.collectAsState(initial = false)
-    val rootEnabled by settings.rootEnabled.collectAsState(initial = false)
+    val rootEnabled by settings.rootEnabled.collectAsState(initial = DEFAULT_ROOT_ENABLED)
     val rootReadOnly by settings.rootReadOnly.collectAsState(initial = true)
     val transportPref by settings.privilegedTransport.collectAsState(initial = null)
     val shizukuState by ShizukuGate.state.collectAsState()
@@ -103,7 +104,12 @@ fun SettingsScreen(onBack: () -> Unit) {
         value = withContext(Dispatchers.IO) {
             // Do not probe the AUTO default while a saved forced choice is still loading: on a
             // rooted device that could briefly exercise su despite an explicit Shizuku choice.
-            transportPref?.takeIf { rootEnabled }?.let { PrivilegedAccess.activeFor(it)?.id }
+            // The passive caption must never launch `su` either — with root on by default,
+            // merely opening Settings would otherwise pop the superuser prompt. Forcing SU is
+            // the user explicitly asking for su, where probing (and its grant prompt) is the point.
+            transportPref?.takeIf { rootEnabled }?.let {
+                PrivilegedAccess.activeFor(it, probeSu = it == TransportPref.SU)?.id
+            }
         }
     }
     var archivesRegistered by remember {

@@ -2,6 +2,9 @@ package app.local1st.files.core.fs
 
 import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.fs.priv.PrivilegedTransport
+import app.local1st.files.core.fs.priv.ShizukuTransport
+import app.local1st.files.core.fs.priv.SuTransport
+import app.local1st.files.core.fs.priv.TransportPref
 import app.local1st.files.core.fs.priv.shQuote
 import app.local1st.files.core.util.FileTypes
 import java.io.IOException
@@ -45,7 +48,7 @@ class RootFileSystem : XFileSystem {
             append("done\n")
             append(":\n")
         }
-        val output = activeTransport().exec(script)
+        val output = transportFor(path).exec(script)
         // Exact-first-line match only: data lines carry full paths (stat %n), so a
         // substring check would false-positive on any path containing the marker.
         if (output.lineSequence().firstOrNull() == "__XF_ERR__") {
@@ -96,19 +99,19 @@ class RootFileSystem : XFileSystem {
 
     override fun openIn(entry: XEntry): InputStream {
         requireEnabled()
-        return activeTransport().openRead(entry.path)
+        return transportFor(entry.path).openRead(entry.path)
     }
 
     override fun openOut(parentDir: XEntry, name: String): OutputStream {
         requireWritable()
-        return activeTransport().openWrite(XId.joinPath(parentDir.path, name))
+        return transportFor(parentDir.path).openWrite(XId.joinPath(parentDir.path, name))
     }
 
     override fun createFile(parentDir: XEntry, name: String): XEntry {
         requireWritable()
         requireSafeEntryName(name)
         val childPath = XId.joinPath(parentDir.path, name)
-        val output = activeTransport().exec(buildString {
+        val output = transportFor(parentDir.path).exec(buildString {
             append("p=").append(shQuote(childPath)).append('\n')
             append("if [ -e \"\$p\" ] || [ -L \"\$p\" ]; then echo __XF_EXISTS__; exit 0; fi\n")
             // noclobber makes the create exclusive even if another process wins after the check.
@@ -132,7 +135,7 @@ class RootFileSystem : XFileSystem {
     override fun mkdir(parentDir: XEntry, name: String): XEntry {
         requireWritable()
         val childPath = XId.joinPath(parentDir.path, name)
-        activeTransport().exec("mkdir -p ${shQuote(childPath)}")
+        transportFor(parentDir.path).exec("mkdir -p ${shQuote(childPath)}")
         return toEntry(parentDir.path, name, isDir = true, size = -1L, mtime = 0L)
     }
 
@@ -140,14 +143,14 @@ class RootFileSystem : XFileSystem {
         requireWritable()
         // Own process: a recursive delete can run for minutes and must not queue
         // every root listing behind it on the persistent shell's lock.
-        activeTransport().execOneShot("rm -rf ${shQuote(entry.path)}")
+        transportFor(entry.path).execOneShot("rm -rf ${shQuote(entry.path)}")
     }
 
     override fun rename(entry: XEntry, newName: String): XEntry {
         requireWritable()
         val parentPath = entry.path.trimEnd('/').substringBeforeLast('/', "").ifEmpty { "/" }
         val dst = XId.joinPath(parentPath, newName)
-        activeTransport().exec("mv -f ${shQuote(entry.path)} ${shQuote(dst)}")
+        transportFor(entry.path).exec("mv -f ${shQuote(entry.path)} ${shQuote(dst)}")
         return toEntry(parentPath, newName, entry.isDir, entry.size, entry.mtime)
     }
 
@@ -168,8 +171,37 @@ class RootFileSystem : XFileSystem {
         if (PrivilegedAccess.readOnly) throw IOException("Read-only root mode — enable writes in Settings")
     }
 
-    private fun activeTransport(): PrivilegedTransport =
-        PrivilegedAccess.active ?: throw IOException("Root access is unavailable")
+    /**
+     * `/` is su-only. Every other `root://` path (Android/data via Shizuku, a pinned
+     * `/data/data/...` favorite) keeps using the active transport.
+     */
+    private fun transportFor(path: String): PrivilegedTransport {
+        requireEnabled()
+        return if (isFilesystemRoot(path)) transportForFilesystemRoot()
+        else PrivilegedAccess.active ?: throw IOException("Root access is unavailable")
+    }
+
+    /**
+     * Opening `/` retries `su` so a Magisk grant after a failed probe can take effect.
+     * Forced Shizuku is not silently upgraded: that transport cannot browse `/`.
+     */
+    private fun transportForFilesystemRoot(): PrivilegedTransport {
+        when (PrivilegedAccess.preference) {
+            TransportPref.OFF ->
+                throw IOException(FILESYSTEM_ROOT_TRANSPORT_OFF_MESSAGE)
+            TransportPref.SHIZUKU ->
+                throw IOException(filesystemRootUnavailableMessage(shizukuActive = true))
+            TransportPref.SU, TransportPref.AUTO -> {
+                // Retry only after a miss or when we have never asked. A successful
+                // probe stays cached so expanding `/` does not pay another su spawn.
+                if (SuTransport.cachedAvailability() != true) SuTransport.reset()
+                if (SuTransport.isAvailable()) return SuTransport
+                val shizukuActive = PrivilegedAccess.preference == TransportPref.AUTO &&
+                    ShizukuTransport.isAvailable()
+                throw IOException(filesystemRootUnavailableMessage(shizukuActive))
+            }
+        }
+    }
 
     private fun toEntry(
         parentPath: String,
@@ -197,16 +229,54 @@ class RootFileSystem : XFileSystem {
     companion object {
         const val ROOT_ID = "${XId.SCHEME_ROOT}://" + "/"
 
-        /** The "Root" pane entry ("/") browsed as superuser. */
-        fun rootEntry(): XEntry = XEntry(
-            id = ROOT_ID,
-            name = "Root",
-            isDir = true,
-            kind = EntryKind.ROOT,
-            canRead = true,
-            canWrite = !PrivilegedAccess.readOnly,
-            badge = if (PrivilegedAccess.readOnly) "Superuser · read-only" else "Superuser · /",
-            localPath = null,
-        )
+        /**
+         * The "Root" pane entry ("/"). Always `root://` — never a hollow `file:///` listing.
+         * The badge uses the last `su` probe only, so drawing the home screen does not
+         * launch Magisk. Expanding the row is what retries the grant.
+         */
+        fun rootEntry(): XEntry {
+            val suKnown = SuTransport.cachedAvailability()
+            val shizukuCoversData = ShizukuTransport.isAvailable() &&
+                PrivilegedAccess.preference != TransportPref.SU &&
+                PrivilegedAccess.preference != TransportPref.OFF
+            return XEntry(
+                id = ROOT_ID,
+                name = "Root",
+                isDir = true,
+                kind = EntryKind.ROOT,
+                canRead = true,
+                canWrite = suKnown != false && !PrivilegedAccess.readOnly,
+                badge = rootTreeBadge(suKnown, shizukuCoversData, PrivilegedAccess.readOnly),
+                localPath = null,
+            )
+        }
     }
 }
+
+internal fun isFilesystemRoot(path: String): Boolean {
+    val trimmed = path.trim()
+    return trimmed.isEmpty() || trimmed == "/"
+}
+
+internal fun rootTreeBadge(
+    suKnown: Boolean?,
+    shizukuCoversData: Boolean,
+    readOnly: Boolean,
+): String = when {
+    // Only a probe that actually failed may claim su is missing; a never-probed device
+    // keeps the optimistic label (expanding the row is what probes and corrects it).
+    suKnown == false && shizukuCoversData -> "Needs root (su)"
+    suKnown == false -> "Not available"
+    else -> if (readOnly) "Superuser · read-only" else "Superuser · /"
+}
+
+internal fun filesystemRootUnavailableMessage(shizukuActive: Boolean): String =
+    if (shizukuActive) {
+        "Shizuku cannot browse /. Superuser (su) is required."
+    } else {
+        "Root access is unavailable. Grant superuser (su) to browse /."
+    }
+
+/** The transport preference is Off: point at that switch, not at a missing su grant. */
+internal const val FILESYSTEM_ROOT_TRANSPORT_OFF_MESSAGE =
+    "Privileged transport is set to Off in Settings. Superuser (su) is required to browse /."

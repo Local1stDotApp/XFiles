@@ -32,10 +32,11 @@ APP MANAGER
 • base.apk and every split APK listed per app — and expandable, because an APK is just a zip
 • Install, launch, uninstall, or copy an APK out to share an app as a file
 
-ROOT ACCESS (OPTIONAL, OFF BY DEFAULT)
-• Enable it in Settings to browse the whole filesystem as superuser on a rooted device
-• A separate read-only switch blocks anything that would write, so you can look without risk
-• Falls back to a read-only view when su is unavailable
+ROOT ACCESS (OPTIONAL)
+• A Root entry is on the home screen by default; turn it off in Settings
+• Superuser (su) is required to browse `/`; without it the entry stays visible and explains why
+• A separate read-only switch (on by default) blocks writes
+• Shizuku still unlocks Android/data and Android/obb without root
 
 MODERN ANDROID
 • Material 3 Expressive with dynamic colour, light / dark / system themes

@@ -22,9 +22,8 @@ data class PrivFile(val path: String, val mtime: Long, val size: Long)
 class PrivFileFetcher(private val data: PrivFile) : Fetcher {
 
     override suspend fun fetch(): FetchResult? {
-        val transport = PrivilegedAccess.active
-            ?.takeIf { PrivilegedAccess.enabled && it.supportsFileDescriptors }
-            ?: return null
+        // Thumbnails are decoration: never launch a `su` probe for one (fdTransport is cached-only).
+        val transport = PrivilegedAccess.fdTransport() ?: return null
         val descriptor = transport.openFd(data.path, write = false) ?: return null
         return try {
             val source = ParcelFileDescriptor.AutoCloseInputStream(descriptor).source().buffer()

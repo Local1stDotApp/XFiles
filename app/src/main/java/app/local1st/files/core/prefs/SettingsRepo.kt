@@ -89,6 +89,9 @@ data class SessionState(val panes: List<SessionPane>, val activePane: Int)
  */
 data class Favorite(val id: String, val isDir: Boolean)
 
+/** Default for the Root-access switch: the home-screen row is visible; writes stay read-only. */
+const val DEFAULT_ROOT_ENABLED = true
+
 private const val MAX_SESSION_DIRECTORIES = 128
 internal const val MAX_SESSION_RENDER_NODES = 32
 private const val MAX_SESSION_RENDER_DEPTH = 64
@@ -295,8 +298,8 @@ class SettingsRepo(private val context: Context) {
      */
     val textWrap: Flow<Boolean> = setting { it[keyTextWrap] ?: false }
 
-    /** Root browsing is off until the user opts in (dangerous, so default false). */
-    val rootEnabled: Flow<Boolean> = setting { it[keyRootEnabled] ?: false }
+    /** Root row is on the home screen by default; Read-only still blocks privileged writes. */
+    val rootEnabled: Flow<Boolean> = setting { it[keyRootEnabled] ?: DEFAULT_ROOT_ENABLED }
 
     /** Read-only root mode is the safe default: block writes that need root. */
     val rootReadOnly: Flow<Boolean> = setting { it[keyRootReadOnly] ?: true }

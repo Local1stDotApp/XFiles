@@ -35,6 +35,13 @@ object SuTransport : PrivilegedTransport {
     @Volatile
     private var mountMaster: Boolean = true
 
+    /**
+     * Last [isAvailable] result, or null if this process has not probed `su` yet.
+     * Reading this never launches `su` — pane roots use it so a missing grant does
+     * not hide the Root row, and so startup does not pop Magisk just to draw a badge.
+     */
+    fun cachedAvailability(): Boolean? = availableCache
+
     /** Whether `su` exists and grants uid 0. Result is cached after the first probe. */
     override fun isAvailable(): Boolean {
         availableCache?.let { return it }

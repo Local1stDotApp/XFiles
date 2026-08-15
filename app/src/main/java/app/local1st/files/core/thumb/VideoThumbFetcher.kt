@@ -138,9 +138,8 @@ class VideoThumbFetcher(
         val watchdog = watchdogExecutor.schedule({ release() }, EXTRACT_TIMEOUT_S, TimeUnit.SECONDS)
         return try {
             if (data.privileged) {
-                val transport = PrivilegedAccess.active
-                    ?.takeIf { PrivilegedAccess.enabled && it.supportsFileDescriptors }
-                    ?: return null
+                // Poster frames are decoration: never launch a `su` probe for one.
+                val transport = PrivilegedAccess.fdTransport() ?: return null
                 descriptor = transport.openFd(data.path, write = false) ?: return null
                 retriever.setDataSource(descriptor.fileDescriptor)
             } else {

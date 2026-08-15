@@ -13,7 +13,7 @@ import java.io.File
 
 /**
  * Pane roots from [StorageManager]: mounted storage volumes, pinned favorites,
- * plus the app-manager root and (when readable) the filesystem root `/`.
+ * plus the app-manager root and (when the Settings switch is on) the filesystem root `/`.
  *
  * Favorites and stat are injected as lambdas so this class stays free of the
  * DI graph (wired in GraphInit).
@@ -48,25 +48,11 @@ class DefaultRootsRepository(
             kind = EntryKind.APPS_ROOT,
             canWrite = false,
         )
-        // Superuser access to "/" (X-plore's "Root"), gated behind the Settings switch so it
-        // (and the `su` probe) only appears when the user opts in. Prefer real root via `su`;
-        // fall back to a plain non-privileged view only if "/" is readable without it.
+        // Visibility follows the Settings switch, not a successful `su` probe. Opening `/`
+        // still needs superuser; without it the row stays and listing explains why.
+        // Shizuku must not be dressed up as a filesystem root — it cannot browse `/`.
         if (PrivilegedAccess.enabled) {
-            if (PrivilegedAccess.caps.wholeFilesystem) {
-                specials += RootFileSystem.rootEntry()
-            } else {
-                val fsRoot = File("/")
-                if (fsRoot.canRead()) {
-                    specials += XEntry(
-                        id = XId.file("/"),
-                        name = "Root (read-only)",
-                        isDir = true,
-                        kind = EntryKind.DIR,
-                        canWrite = fsRoot.canWrite(),
-                        localPath = "/",
-                    )
-                }
-            }
+            specials += RootFileSystem.rootEntry()
         }
         // Favorites are collision-checked against EVERY other root (volumes and specials
         // alike, whichever side of them it renders on) — a duplicate id at the top level

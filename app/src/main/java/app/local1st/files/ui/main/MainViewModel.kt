@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.priv.PrivilegedAccess
+import app.local1st.files.core.fs.priv.SuTransport
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.ops.BackgroundJob
@@ -159,6 +160,8 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             Graph.settings.rootEnabled.drop(1).collect { enabled ->
                 PrivilegedAccess.enabled = enabled
+                // A later Magisk grant must be visible the next time Root is opened.
+                if (enabled) SuTransport.reset()
                 // Invalidate before reloading: cached root:// listings must not stay
                 // browsable after disabling (nor keep gate errors after re-enabling),
                 // and pinned root:// favorites survive the roots rebuild.
@@ -171,6 +174,7 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             Graph.settings.privilegedTransport.drop(1).collect { preference ->
                 PrivilegedAccess.preference = preference
+                SuTransport.reset()
                 // A transport change can alter both root:// capabilities and the apps://
                 // Android/data fallback, so neither scheme may retain the old transport's data.
                 panes.forEach {

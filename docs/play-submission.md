@@ -223,8 +223,8 @@ along. On-screen text or narration labelling each section helps.
    - Copy an APK out, tap it, show the system installer dialog appearing. You can cancel
      at the dialog — the reviewer needs to see the hand-off, not a completed install.
 5. **Root — keep it brief and last**
-   - Show it is off by default in Settings, and that Read-only is on. Do not lead with
-     this and do not dwell on it.
+   - Root is on by default; Read-only is also on. Show the Read-only switch. Do not lead
+     with this and do not dwell on it.
 
 ---
 
