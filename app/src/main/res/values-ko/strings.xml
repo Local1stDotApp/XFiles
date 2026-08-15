@@ -27,7 +27,6 @@
     <string name="switch_pane">창 전환</string>
     <string name="zip">ZIP 압축</string>
     <string name="compress">압축</string>
-    <string name="extract_to">다음으로 추출…</string>
     <string name="install">설치</string>
     <string name="details">세부정보</string>
     <string name="launch">실행</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">클래스 이름 복사</string>
     <string name="app_details">앱 세부정보</string>
     <string name="copy_to_other_pane">다른 창에 복사</string>
+    <string name="extract_to_other_pane">다른 창에 압축 풀기</string>
     <string name="add_to_favorites">즐겨찾기에 추가</string>
     <string name="remove_from_favorites">즐겨찾기에서 제거</string>
     <string name="enable">활성화</string>
@@ -158,8 +158,6 @@
     </plurals>
     <string name="this_device">이 장치</string>
     <string name="no_subfolders">여기에는 하위 폴더가 없습니다.</string>
-    <string name="zip_here">여기에 압축</string>
-    <string name="extract_here">여기에 압축 풀기</string>
     <string name="move_here">여기로 이동</string>
     <string name="copy_here">여기로 복사</string>
     <string name="cannot_create_folder">폴더를 생성할 수 없습니다</string>

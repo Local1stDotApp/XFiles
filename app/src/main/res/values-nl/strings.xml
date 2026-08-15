@@ -27,7 +27,6 @@
     <string name="switch_pane">Wissel van venster</string>
     <string name="zip">ZIP maken</string>
     <string name="compress">Comprimeren</string>
-    <string name="extract_to">Uitpakken naar…</string>
     <string name="install">Installeren</string>
     <string name="details">Details</string>
     <string name="launch">Starten</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">Kopieer de klassenaam</string>
     <string name="app_details">App-details</string>
     <string name="copy_to_other_pane">Kopiëren naar een ander deelvenster</string>
+    <string name="extract_to_other_pane">Uitpakken naar het andere deelvenster</string>
     <string name="add_to_favorites">Toevoegen aan favorieten</string>
     <string name="remove_from_favorites">Verwijderen uit favorieten</string>
     <string name="enable">Inschakelen</string>
@@ -158,8 +158,6 @@
     </plurals>
     <string name="this_device">Dit apparaat</string>
     <string name="no_subfolders">Geen submappen hier</string>
-    <string name="zip_here">Hier comprimeren</string>
-    <string name="extract_here">Hier uitpakken</string>
     <string name="move_here">Verplaats hierheen</string>
     <string name="copy_here">Kopieer hier</string>
     <string name="cannot_create_folder">Kan geen map maken</string>

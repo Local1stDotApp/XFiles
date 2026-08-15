@@ -27,7 +27,6 @@
     <string name="switch_pane">Bölmeyi değiştir</string>
     <string name="zip">ZIP oluştur</string>
     <string name="compress">Sıkıştır</string>
-    <string name="extract_to">Şuraya çıkar:</string>
     <string name="install">Yükle</string>
     <string name="details">Ayrıntılar</string>
     <string name="launch">Başlat</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">Sınıf adını kopyala</string>
     <string name="app_details">Uygulama ayrıntıları</string>
     <string name="copy_to_other_pane">Diğer bölmeye kopyala</string>
+    <string name="extract_to_other_pane">Diğer bölmeye çıkar</string>
     <string name="add_to_favorites">Favorilere ekle</string>
     <string name="remove_from_favorites">Favorilerden kaldır</string>
     <string name="enable">Etkinleştir</string>
@@ -158,8 +158,6 @@
     </plurals>
     <string name="this_device">Bu cihaz</string>
     <string name="no_subfolders">Burada alt klasör yok</string>
-    <string name="zip_here">Buraya sıkıştır</string>
-    <string name="extract_here">Buraya çıkart</string>
     <string name="move_here">Buraya taşı</string>
     <string name="copy_here">Buraya kopyala</string>
     <string name="cannot_create_folder">Klasör oluşturulamıyor</string>

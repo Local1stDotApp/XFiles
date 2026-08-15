@@ -27,7 +27,6 @@
     <string name="switch_pane">切換窗格</string>
     <string name="zip">壓縮成 ZIP</string>
     <string name="compress">壓縮</string>
-    <string name="extract_to">解壓縮到…</string>
     <string name="install">安裝</string>
     <string name="details">詳細資料</string>
     <string name="launch">啟動</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">複製類別名稱</string>
     <string name="app_details">應用程式詳細資料</string>
     <string name="copy_to_other_pane">複製到另一個窗格</string>
+    <string name="extract_to_other_pane">解壓縮到另一個窗格</string>
     <string name="add_to_favorites">加入我的最愛</string>
     <string name="remove_from_favorites">從我的最愛移除</string>
     <string name="enable">啟用</string>
@@ -158,8 +158,6 @@
     </plurals>
     <string name="this_device">這台裝置</string>
     <string name="no_subfolders">這裡沒有子資料夾</string>
-    <string name="zip_here">壓縮到這裡</string>
-    <string name="extract_here">解壓縮到這裡</string>
     <string name="move_here">移動到這裡</string>
     <string name="copy_here">複製到這裡</string>
     <string name="cannot_create_folder">無法建立資料夾</string>

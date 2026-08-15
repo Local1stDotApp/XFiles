@@ -51,14 +51,14 @@ import app.local1st.files.ui.browser.EntryIcon
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.main.MainViewModel
 import app.local1st.files.ui.main.PendingTransfer
+import app.local1st.files.ui.main.isFileOperationDestination
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * Full-screen folder chooser shown when the user copies/moves. It starts at the other
- * pane's folder (the dual-pane default) but lets the user browse anywhere and confirm an
- * explicit "Copy here" / "Move here" — so the destination is never a hidden surprise.
+ * Optional full-screen folder chooser reached from an entry's long-press menu. The primary
+ * copy/move actions use the other pane directly; this screen is the explicit-location escape hatch.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -119,7 +119,7 @@ fun DestinationPickerScreen(
         loading = false
     }
 
-    val canConfirm = current != null
+    val canConfirm = isFileOperationDestination(current)
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxSize()) {
@@ -127,12 +127,8 @@ fun DestinationPickerScreen(
                 title = {
                     Column {
                         Text(
-                            when {
-                                t.compress -> stringResource(R.string.compress_to)
-                                t.extractArchiveName != null -> stringResource(R.string.extract_to)
-                                t.move -> stringResource(R.string.move_to_title)
-                                else -> stringResource(R.string.copy_to_title)
-                            },
+                            if (t.move) stringResource(R.string.move_to_title)
+                            else stringResource(R.string.copy_to_title),
                         )
                         Text(
                             pluralStringResource(R.plurals.item_count_plural, t.sources.size, t.sources.size),
@@ -210,7 +206,8 @@ fun DestinationPickerScreen(
             ) {
                 OutlinedButton(
                     onClick = { nameDialog = true },
-                    enabled = canConfirm && current!!.canWrite,
+                    // canConfirm already implies a non-null, writable directory.
+                    enabled = canConfirm,
                 ) {
                     Icon(Icons.Outlined.CreateNewFolder, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
@@ -222,12 +219,8 @@ fun DestinationPickerScreen(
                     enabled = canConfirm,
                 ) {
                     Text(
-                        when {
-                            t.compress -> stringResource(R.string.zip_here)
-                            t.extractArchiveName != null -> stringResource(R.string.extract_here)
-                            t.move -> stringResource(R.string.move_here)
-                            else -> stringResource(R.string.copy_here)
-                        },
+                        if (t.move) stringResource(R.string.move_here)
+                        else stringResource(R.string.copy_here),
                     )
                 }
             }

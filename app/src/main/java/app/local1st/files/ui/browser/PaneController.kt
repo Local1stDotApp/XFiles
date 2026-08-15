@@ -1198,8 +1198,15 @@ class PaneController(
         return null
     }
 
-    fun focusedDirEntry(): XEntry? =
-        focusedDirId.value?.let { findEntry(it) } ?: tree.value.roots.firstOrNull()
+    /**
+     * The directory represented by the pane breadcrumb. A restored focus that has not been
+     * hydrated yet deliberately returns null instead of falling back to another root: the other
+     * pane is an operation destination, so a transient fallback must never redirect a copy.
+     */
+    fun focusedDirEntry(): XEntry? {
+        val focused = focusedDirId.value
+        return if (focused == null) tree.value.roots.firstOrNull() else findEntry(focused)
+    }
 
     /** Cached siblings of [entry] with the given category (for viewer paging/playlists). */
     fun siblings(entry: XEntry, category: FileCategory): List<XEntry> {

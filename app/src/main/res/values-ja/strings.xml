@@ -27,7 +27,6 @@
     <string name="switch_pane">ペインを切り替え</string>
     <string name="zip">圧縮</string>
     <string name="compress">圧縮</string>
-    <string name="extract_to">展開先…</string>
     <string name="install">インストール</string>
     <string name="details">詳細</string>
     <string name="launch">起動</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">クラス名をコピー</string>
     <string name="app_details">アプリ情報</string>
     <string name="copy_to_other_pane">もう一方のペインにコピー</string>
+    <string name="extract_to_other_pane">もう一方のペインに展開</string>
     <string name="add_to_favorites">お気に入りに追加</string>
     <string name="remove_from_favorites">お気に入りから削除</string>
     <string name="enable">有効にする</string>
@@ -157,8 +157,6 @@
     </plurals>
     <string name="this_device">このデバイス</string>
     <string name="no_subfolders">ここにはサブフォルダがありません</string>
-    <string name="zip_here">ここに圧縮</string>
-    <string name="extract_here">ここに展開</string>
     <string name="move_here">ここに移動</string>
     <string name="copy_here">ここにコピー</string>
     <string name="cannot_create_folder">フォルダを作成できません</string>

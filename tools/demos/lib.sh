@@ -53,7 +53,7 @@ tap_text() {
 tap_xy() { echo "  tap  @ $1 $2"; adb shell input tap "$1" "$2"; sleep "${3:-1.4}"; }
 
 # tap_desc "content-desc" [pause] — tap a node located by its accessibility label
-# (toolbar actions like "Copy to…" expose these, not text).
+# (toolbar actions like "Copy to Documents" expose these, not text).
 tap_desc() {
   local desc="$1" pause="${2:-1.4}"
   dump_ui
@@ -67,6 +67,32 @@ PY
 )"
   [[ -n "$xy" ]] || { echo "tap_desc: '$desc' not found" >&2; return 1; }
   echo "  tap  [$desc] @ $xy"; adb shell input tap $xy; sleep "$pause"
+}
+
+# tap_desc_prefix "prefix" [pause] — useful when an accessibility label includes
+# dynamic state, such as the other pane's full destination path.
+tap_desc_prefix() {
+  local prefix="$1" pause="${2:-1.4}"
+  dump_ui
+  local xy; xy="$(python3 - "$_UI" "$prefix" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+root = ET.parse(sys.argv[1]).getroot()
+for node in root.iter("node"):
+    if not node.attrib.get("content-desc", "").startswith(sys.argv[2]):
+        continue
+    bounds = node.attrib.get("bounds", "")
+    try:
+        x1, y1, x2, y2 = map(int, bounds.replace("][", ",").strip("[]").split(","))
+    except (TypeError, ValueError):
+        continue
+    print((x1 + x2) // 2, (y1 + y2) // 2)
+    break
+PY
+)"
+  [[ -n "$xy" ]] || { echo "tap_desc_prefix: '$prefix' not found" >&2; return 1; }
+  echo "  tap  [$prefix…] @ $xy"; adb shell input tap $xy; sleep "$pause"
 }
 
 # select_row "Label" [pause] — tick the right-edge Select circle on the row whose
@@ -164,14 +190,15 @@ reset_home() {
   dump_ui
   xy="$(python3 "$_TS" "$_UI" first-app)" && [[ -n "$xy" ]] && {
     echo "  reset: expose first app"; adb shell input tap $xy; sleep 0.9; scroll_top; }
-  # Pass 1 — collapse DEEP open chevrons (depth >= 2, x1 >= 100) first. These can
-  # sit below the fold (e.g. /data/app, five rows into a 40-entry listing), so scan
-  # downward to find them. Collapsing a parent would only hide, not clear, them.
+  # Pass 1 — collapse DEEP open chevrons (depth >= 2) first. These can sit below the
+  # fold (e.g. /data/app, five rows into a 40-entry listing), so scan downward to find
+  # them. Collapsing a parent would only hide, not clear, them. MINX 80 sits between a
+  # depth-1 chevron (~56px: pane padding + one ~42px indent step) and depth 2 (~98px).
   for i in $(seq 1 20); do
     xy=""; scroll_top
     for s in 1 2 3 4 5 6; do
       dump_ui
-      xy="$(python3 "$_TS" "$_UI" collapse-deepest 100)"
+      xy="$(python3 "$_TS" "$_UI" collapse-deepest 80)"
       [[ -n "$xy" ]] && break
       swipe_up 0.3
     done

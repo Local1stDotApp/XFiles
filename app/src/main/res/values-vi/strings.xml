@@ -27,7 +27,6 @@
     <string name="switch_pane">Chuyển ngăn</string>
     <string name="zip">Tạo tệp ZIP</string>
     <string name="compress">Nén</string>
-    <string name="extract_to">Trích xuất sang…</string>
     <string name="install">cài đặt</string>
     <string name="details">Chi tiết</string>
     <string name="launch">Khởi động</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">Sao chép tên lớp mã</string>
     <string name="app_details">Chi tiết ứng dụng</string>
     <string name="copy_to_other_pane">Sao chép sang khung khác</string>
+    <string name="extract_to_other_pane">Giải nén sang khung khác</string>
     <string name="add_to_favorites">Thêm vào mục yêu thích</string>
     <string name="remove_from_favorites">Xóa khỏi mục yêu thích</string>
     <string name="enable">Kích hoạt</string>
@@ -158,8 +158,6 @@
     </plurals>
     <string name="this_device">Thiết bị này</string>
     <string name="no_subfolders">Không có thư mục con ở đây</string>
-    <string name="zip_here">Nén tại đây</string>
-    <string name="extract_here">Giải nén tại đây</string>
     <string name="move_here">Di chuyển vào đây</string>
     <string name="copy_here">Sao chép vào đây</string>
     <string name="cannot_create_folder">Không thể tạo thư mục</string>

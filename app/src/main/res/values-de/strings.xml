@@ -27,7 +27,6 @@
     <string name="switch_pane">Bereich wechseln</string>
     <string name="zip">ZIP erstellen</string>
     <string name="compress">Komprimieren</string>
-    <string name="extract_to">Extrahieren nach…</string>
     <string name="install">Installieren</string>
     <string name="details">Details</string>
     <string name="launch">Starten</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">Klassennamen kopieren</string>
     <string name="app_details">App-Details</string>
     <string name="copy_to_other_pane">In anderen Bereich kopieren</string>
+    <string name="extract_to_other_pane">In anderen Bereich extrahieren</string>
     <string name="add_to_favorites">Zu Favoriten hinzufügen</string>
     <string name="remove_from_favorites">Aus Favoriten entfernen</string>
     <string name="enable">Aktivieren</string>
@@ -158,8 +158,6 @@
     </plurals>
     <string name="this_device">Dieses Gerät</string>
     <string name="no_subfolders">Hier gibt es keine Unterordner</string>
-    <string name="zip_here">Hier komprimieren</string>
-    <string name="extract_here">Hier entpacken</string>
     <string name="move_here">Hierher verschieben</string>
     <string name="copy_here">Hier kopieren</string>
     <string name="cannot_create_folder">Ordner kann nicht erstellt werden</string>

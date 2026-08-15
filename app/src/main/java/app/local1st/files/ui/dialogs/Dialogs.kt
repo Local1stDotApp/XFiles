@@ -31,7 +31,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import app.local1st.files.R
 import app.local1st.files.core.fs.EntryKind
-import app.local1st.files.core.ops.FileOp
 import app.local1st.files.core.util.AppComponents
 import app.local1st.files.core.util.ComponentType
 import app.local1st.files.core.util.FileTypes
@@ -39,6 +38,7 @@ import app.local1st.files.core.util.Format
 import app.local1st.files.core.util.IntentUtils
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.main.MainViewModel
+import app.local1st.files.ui.main.isFileOperationDestination
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -179,6 +179,12 @@ private fun EntryMenuContent(
     val entry = req.entry
     val context = Graph.appContext
     val clipboard = LocalClipboardManager.current
+    val otherPaneDestination = vm.otherPaneDestination()
+    val canUseOtherPane = isFileOperationDestination(otherPaneDestination)
+    val unavailableDestinationReason = stringResource(
+        R.string.cannot_write,
+        otherPaneDestination?.name ?: stringResource(R.string.this_device),
+    )
     Column(Modifier.padding(bottom = 24.dp)) {
         Text(
             entry.name,
@@ -230,10 +236,12 @@ private fun EntryMenuContent(
             MenuItem(stringResource(R.string.details)) { vm.showAppDetails(entry.path); dismiss() }
             MenuItem(stringResource(R.string.system_info)) { IntentUtils.appInfo(context, entry.path); dismiss() }
             entry.localPath?.let {
-                MenuItem(stringResource(R.string.copy_to_other_pane)) {
-                    vm.inactiveCtrl.focusedDirEntry()?.let { dest ->
-                        Graph.opEngine.submit(FileOp.Copy(listOf(entry), dest, move = false))
-                    }
+                MenuItem(
+                    label = stringResource(R.string.copy_to_other_pane),
+                    enabled = canUseOtherPane,
+                    disabledReason = unavailableDestinationReason,
+                ) {
+                    vm.copySelection(move = false, sources = listOf(entry))
                     dismiss()
                 }
             }
@@ -283,16 +291,30 @@ private fun EntryMenuContent(
                 disabledReason = stringResource(R.string.requires_local_file),
             ) { vm.shareSelection(listOf(entry)); dismiss() }
         }
-        // Explicit copy/move to a chosen folder (works from a single item too).
-        MenuItem(stringResource(R.string.copy_to)) { vm.copySelection(move = false, sources = listOf(entry)); dismiss() }
+        // Secondary explicit-location workflow; toolbar copy/move use the other pane directly.
+        MenuItem(stringResource(R.string.copy_to)) {
+            vm.chooseTransferDestination(move = false, sources = listOf(entry))
+            dismiss()
+        }
         // Move deletes the source, so only when the source itself is writable (not a read-only
         // root entry or an archive member).
         if (entry.canWrite) {
-            MenuItem(stringResource(R.string.move_to)) { vm.copySelection(move = true, sources = listOf(entry)); dismiss() }
+            MenuItem(stringResource(R.string.move_to)) {
+                vm.chooseTransferDestination(move = true, sources = listOf(entry))
+                dismiss()
+            }
         }
-        MenuItem(stringResource(R.string.zip)) { vm.requestCompress(listOf(entry)); dismiss() }
+        MenuItem(
+            label = stringResource(R.string.zip),
+            enabled = canUseOtherPane,
+            disabledReason = unavailableDestinationReason,
+        ) { vm.requestCompress(listOf(entry)); dismiss() }
         if (entry.kind == EntryKind.ARCHIVE) {
-            MenuItem(stringResource(R.string.extract_to)) {
+            MenuItem(
+                label = stringResource(R.string.extract_to_other_pane),
+                enabled = canUseOtherPane,
+                disabledReason = unavailableDestinationReason,
+            ) {
                 vm.extractArchive(entry)
                 dismiss()
             }

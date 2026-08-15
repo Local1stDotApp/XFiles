@@ -27,7 +27,6 @@
     <string name="switch_pane">Alternar painel</string>
     <string name="zip">Criar ZIP</string>
     <string name="compress">Comprimir</string>
-    <string name="extract_to">Extrair para…</string>
     <string name="install">Instalar</string>
     <string name="details">Detalhes</string>
     <string name="launch">Iniciar</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">Copiar nome da classe</string>
     <string name="app_details">Detalhes do aplicativo</string>
     <string name="copy_to_other_pane">Copiar para outro painel</string>
+    <string name="extract_to_other_pane">Extrair para outro painel</string>
     <string name="add_to_favorites">Adicionar aos favoritos</string>
     <string name="remove_from_favorites">Remover dos favoritos</string>
     <string name="enable">Habilitar</string>
@@ -158,8 +158,6 @@
     </plurals>
     <string name="this_device">Este dispositivo</string>
     <string name="no_subfolders">Não há subpastas aqui</string>
-    <string name="zip_here">Compactar aqui</string>
-    <string name="extract_here">Extrair aqui</string>
     <string name="move_here">Mover para cá</string>
     <string name="copy_here">Copiar para cá</string>
     <string name="cannot_create_folder">Não é possível criar pasta</string>

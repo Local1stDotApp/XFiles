@@ -27,7 +27,6 @@
     <string name="switch_pane">تبديل الجزء</string>
     <string name="zip">ضغط إلى ZIP</string>
     <string name="compress">ضغط</string>
-    <string name="extract_to">استخراج إلى…</string>
     <string name="install">تثبيت</string>
     <string name="details">التفاصيل</string>
     <string name="launch">تشغيل</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">نسخ اسم الفئة</string>
     <string name="app_details">تفاصيل التطبيق</string>
     <string name="copy_to_other_pane">نسخ إلى جزء آخر</string>
+    <string name="extract_to_other_pane">استخراج إلى الجزء الآخر</string>
     <string name="add_to_favorites">أضف إلى المفضلة</string>
     <string name="remove_from_favorites">إزالة من المفضلة</string>
     <string name="enable">تمكين</string>
@@ -162,8 +162,6 @@
     </plurals>
     <string name="this_device">هذا الجهاز</string>
     <string name="no_subfolders">لا توجد مجلدات فرعية هنا</string>
-    <string name="zip_here">ضغط هنا</string>
-    <string name="extract_here">استخراج هنا</string>
     <string name="move_here">نقل إلى هنا</string>
     <string name="copy_here">نسخ إلى هنا</string>
     <string name="cannot_create_folder">لا يمكن إنشاء مجلد</string>

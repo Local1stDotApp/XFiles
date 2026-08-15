@@ -6,7 +6,8 @@ DUAL-PANE TREE BROWSER
 • Two independent panes — side by side on tablets and in landscape, a swipeable pager on phones
 • Folders expand in place with indent guides, instead of replacing the view one directory at a time
 • Image thumbnails and video poster frames render inline, cached so they are instant next time
-• Copy and move between panes with an explicit destination picker that defaults to the other pane
+• The other pane is always the copy/move/zip/extract destination; on phones its folder stays visible at the top
+• Long-press Copy to… or Move to… when you need a one-off explicit destination
 
 FILE OPERATIONS
 • Multi-select, copy, move, rename, delete, new folder

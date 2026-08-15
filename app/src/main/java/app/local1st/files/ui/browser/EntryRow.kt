@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -42,9 +41,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -62,7 +64,9 @@ import app.local1st.files.core.util.FileTypes
 import app.local1st.files.core.util.Format
 import java.io.File
 
-private val IndentWidth = 14.dp
+// One tree level. The expand chevron is drawn inside this slot (no Material icon
+// padding) so its center sits on the children's vertical spine.
+private val IndentWidth = 12.dp
 private val RowHeight = 56.dp
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -170,22 +174,19 @@ fun EntryRow(
 
         // Expand chevron for containers, aligned space for leaves.
         if (entry.isContainer) {
-            val targetRotation = if (node.expanded) 90f else 0f
-            val rotation by animateFloatAsState(targetRotation, label = "chevron")
-            Icon(
-                Icons.Outlined.ChevronRight,
-                contentDescription = stringResource(if (node.expanded) R.string.collapse else R.string.expand),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .size(20.dp)
-                    .rotate(rotation),
+            ExpandChevron(
+                expanded = node.expanded,
+                label = stringResource(
+                    if (node.expanded) R.string.collapse else R.string.expand,
+                ),
+                animate = true,
             )
         } else {
-            Box(Modifier.size(20.dp))
+            Spacer(Modifier.width(IndentWidth))
         }
 
         // Icon or thumbnail (selection is the trailing control, to avoid mis-taps here).
-        Box(Modifier.padding(start = 2.dp, end = 10.dp), contentAlignment = Alignment.Center) {
+        Box(Modifier.padding(end = 8.dp), contentAlignment = Alignment.Center) {
             val wantsThumbnail = EntryIcons.wantsThumbnail(entry)
             if (entry.kind == EntryKind.APP) {
                 AsyncImage(
@@ -267,6 +268,47 @@ fun EntryRow(
     }
 }
 
+@Composable
+private fun ExpandChevron(
+    expanded: Boolean,
+    label: String?,
+    animate: Boolean,
+) {
+    val target = if (expanded) 90f else 0f
+    val animated by animateFloatAsState(target, label = "chevron")
+    val rotation = if (animate) animated else target
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    Canvas(
+        Modifier
+            .size(IndentWidth)
+            .rotate(rotation)
+            .semantics {
+                if (label != null) {
+                    contentDescription = label
+                }
+            },
+    ) {
+        // 90° tip (45° arms), same opening as Material's chevron, without its
+        // 24dp-viewport padding. A square corner-to-corner stroke was ~53° and
+        // read as a spike.
+        val stroke = 1.25.dp.toPx()
+        val pad = stroke / 2f + 0.5.dp.toPx()
+        val half = size.minDimension / 2f - pad
+        val cx = size.width / 2f
+        val cy = size.height / 2f
+        val path = Path().apply {
+            moveTo(cx - half / 2f, cy - half)
+            lineTo(cx + half / 2f, cy)
+            lineTo(cx - half / 2f, cy + half)
+        }
+        drawPath(
+            path,
+            color,
+            style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
+    }
+}
+
 /**
  * First-draw row: same geometry and useful text, without Canvas guides, long-press machinery,
  * ripple/selection buttons, thumbnail painters, or animation nodes. The full row replaces it
@@ -308,19 +350,16 @@ private fun StartupEntryRow(
     ) {
         if (node.depth > 0) Spacer(Modifier.width(IndentWidth * node.depth))
         if (entry.isContainer) {
-            Icon(
-                Icons.Outlined.ChevronRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .size(20.dp)
-                    .rotate(if (node.expanded) 90f else 0f),
+            ExpandChevron(
+                expanded = node.expanded,
+                label = null,
+                animate = false,
             )
         } else {
-            Spacer(Modifier.size(20.dp))
+            Spacer(Modifier.width(IndentWidth))
         }
         Box(
-            Modifier.padding(start = 2.dp, end = 10.dp),
+            Modifier.padding(end = 8.dp),
             contentAlignment = Alignment.Center,
         ) {
             Icon(

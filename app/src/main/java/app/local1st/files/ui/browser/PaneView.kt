@@ -3,16 +3,22 @@ package app.local1st.files.ui.browser
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -39,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.local1st.files.R
@@ -47,9 +54,8 @@ import app.local1st.files.core.fs.XId
 import kotlinx.coroutines.flow.first
 
 /**
- * The box the breadcrumb pill and the floating settings button both occupy. Sharing one
- * size is what lines them up: same top inset + same height means the same mid-line, with
- * no measuring or offsets between the two composables.
+ * Shared height of a breadcrumb pill and the compact screen's other-pane target chip,
+ * so a single header row can keep them on one mid-line.
  */
 val CrumbBarHeight = 40.dp
 
@@ -66,6 +72,10 @@ fun PaneView(
     onOpenEntry: (XEntry) -> Unit,
     onEntryMenu: (XEntry) -> Unit,
     onInitialLayoutReady: (treeVersion: Long) -> Unit,
+    breadcrumbAlignment: Alignment = Alignment.TopStart,
+    headerStartPadding: Dp = 6.dp,
+    headerEndPadding: Dp = 6.dp,
+    headerOverlay: (@Composable () -> Unit)? = null,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -80,6 +90,18 @@ fun PaneView(
         ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 LoadingIndicator()
+                PaneHeader(
+                    focusedDirId = state.focusedDirId,
+                    active = active,
+                    breadcrumbAlignment = breadcrumbAlignment,
+                    headerStartPadding = headerStartPadding,
+                    headerEndPadding = headerEndPadding,
+                    headerOverlay = headerOverlay,
+                    onCrumbClick = { id ->
+                        onActivate()
+                        controller.revealPath(id)
+                    },
+                )
             }
         }
         return
@@ -186,19 +208,70 @@ fun PaneView(
                 }
             }
 
-            BreadcrumbBar(
+            PaneHeader(
                 focusedDirId = state.focusedDirId,
                 active = active,
+                breadcrumbAlignment = breadcrumbAlignment,
+                headerStartPadding = headerStartPadding,
+                headerEndPadding = headerEndPadding,
+                headerOverlay = headerOverlay,
                 onCrumbClick = { id ->
                     onActivate()
                     controller.revealPath(id)
                 },
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
-                    // The end inset keeps a long trail clear of the floating settings button.
-                    .padding(start = 6.dp, top = 4.dp, end = 60.dp),
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BoxScope.PaneHeader(
+    focusedDirId: String?,
+    active: Boolean,
+    breadcrumbAlignment: Alignment,
+    headerStartPadding: Dp,
+    headerEndPadding: Dp,
+    headerOverlay: (@Composable () -> Unit)?,
+    onCrumbClick: (String) -> Unit,
+) {
+    // One row so the compact target chip only takes the width it needs. Overlaying two
+    // independently aligned pills forced a worst-case hole on the opposite side.
+    val chipOnStart = headerOverlay != null && breadcrumbAlignment == Alignment.TopEnd
+    val chipOnEnd = headerOverlay != null && !chipOnStart
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .align(Alignment.TopCenter)
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
+            .padding(
+                start = headerStartPadding,
+                top = 4.dp,
+                end = headerEndPadding,
+            ),
+    ) {
+        if (chipOnStart) {
+            headerOverlay?.invoke()
+            Spacer(Modifier.width(8.dp))
+        }
+        Box(
+            modifier = Modifier.weight(1f),
+            contentAlignment = if (chipOnStart) Alignment.CenterEnd else Alignment.CenterStart,
+        ) {
+            BreadcrumbBar(
+                focusedDirId = focusedDirId,
+                active = active,
+                onCrumbClick = onCrumbClick,
+                modifier = Modifier.wrapContentWidth(
+                    align = if (chipOnStart) Alignment.End else Alignment.Start,
+                    unbounded = false,
+                ),
+            )
+        }
+        if (chipOnEnd) {
+            Spacer(Modifier.width(8.dp))
+            headerOverlay?.invoke()
         }
     }
 }
@@ -206,9 +279,9 @@ fun PaneView(
 /**
  * Floating breadcrumb pill; the list scrolls underneath it.
  *
- * It occupies the same [CrumbBarHeight] box as the settings button opposite it, so the two
- * share a mid-line by construction. A floor rather than a fixed height: at large font
- * scales the pill grows instead of clipping the trail.
+ * It shares a row (and [CrumbBarHeight] mid-line) with the compact target chip. A floor
+ * rather than a fixed height: at large font scales the pill grows instead of clipping
+ * the trail.
  */
 @Composable
 private fun BreadcrumbBar(
@@ -220,7 +293,12 @@ private fun BreadcrumbBar(
     val crumbs = crumbsFor(focusedDirId)
     Surface(
         shape = RoundedCornerShape(CrumbBarHeight / 2),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+        // On wide screens both panes are visible: the inactive pane's breadcrumb is the target.
+        color = if (active) {
+            MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f)
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.92f)
+        },
         modifier = modifier.defaultMinSize(
             minWidth = CrumbBarHeight,
             minHeight = CrumbBarHeight,
@@ -249,7 +327,7 @@ private fun BreadcrumbBar(
                         Icons.Outlined.ChevronRight,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(horizontal = 2.dp),
+                        modifier = Modifier.size(16.dp),
                     )
                 }
                 Text(
@@ -259,12 +337,13 @@ private fun BreadcrumbBar(
                     overflow = TextOverflow.Ellipsis,
                     color = when {
                         index == crumbs.lastIndex && active -> MaterialTheme.colorScheme.primary
-                        index == crumbs.lastIndex -> MaterialTheme.colorScheme.onSurface
+                        index == crumbs.lastIndex -> MaterialTheme.colorScheme.onSecondaryContainer
+                        !active -> MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.72f)
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     },
                     modifier = Modifier
                         .clickable { onCrumbClick(id) }
-                        .padding(vertical = 4.dp, horizontal = 2.dp),
+                        .padding(vertical = 4.dp, horizontal = 1.dp),
                 )
             }
         }

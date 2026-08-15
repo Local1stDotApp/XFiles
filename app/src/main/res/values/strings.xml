@@ -28,7 +28,6 @@
     <string name="switch_pane">Switch pane</string>
     <string name="zip">Zip</string>
     <string name="compress">Compress</string>
-    <string name="extract_to">Extract to…</string>
     <string name="install">Install</string>
     <string name="details">Details</string>
     <string name="launch">Launch</string>
@@ -42,6 +41,7 @@
     <string name="copy_class_name">Copy class name</string>
     <string name="app_details">App details</string>
     <string name="copy_to_other_pane">Copy to other pane</string>
+    <string name="extract_to_other_pane">Extract to other pane</string>
     <string name="add_to_favorites">Add to favorites</string>
     <string name="remove_from_favorites">Remove from favorites</string>
     <string name="enable">Enable</string>
@@ -158,8 +158,6 @@
     <plurals name="item_count_plural"><item quantity="one">%1$d item</item><item quantity="other">%1$d items</item></plurals>
     <string name="this_device">This device</string>
     <string name="no_subfolders">No sub-folders here</string>
-    <string name="zip_here">Zip here</string>
-    <string name="extract_here">Extract here</string>
     <string name="move_here">Move here</string>
     <string name="copy_here">Copy here</string>
     <string name="cannot_create_folder">Cannot create folder</string>

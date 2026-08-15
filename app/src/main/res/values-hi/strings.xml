@@ -27,7 +27,6 @@
     <string name="switch_pane">फलक स्विच करें</string>
     <string name="zip">ज़िप</string>
     <string name="compress">संपीड़ित करें</string>
-    <string name="extract_to">को निकालें…</string>
     <string name="install">स्थापित करें</string>
     <string name="details">विवरण</string>
     <string name="launch">लॉन्च करें</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">कक्षा का नाम कॉपी करें</string>
     <string name="app_details">ऐप विवरण</string>
     <string name="copy_to_other_pane">अन्य फलक पर कॉपी करें</string>
+    <string name="extract_to_other_pane">अन्य फलक में निकालें</string>
     <string name="add_to_favorites">पसंदीदा में जोड़ें</string>
     <string name="remove_from_favorites">पसंदीदा से हटाएँ</string>
     <string name="enable">सक्षम करें</string>
@@ -158,8 +158,6 @@
     </plurals>
     <string name="this_device">यह उपकरण</string>
     <string name="no_subfolders">यहां कोई उप-फ़ोल्डर नहीं है</string>
-    <string name="zip_here">यहां ज़िप करें</string>
-    <string name="extract_here">यहां से निकालें</string>
     <string name="move_here">यहाँ स्थानांतरित करें</string>
     <string name="copy_here">यहां कॉपी करें</string>
     <string name="cannot_create_folder">फ़ोल्डर नहीं बनाया जा सकता</string>

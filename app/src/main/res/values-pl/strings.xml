@@ -27,7 +27,6 @@
     <string name="switch_pane">Przełącz panel</string>
     <string name="zip">Utwórz ZIP</string>
     <string name="compress">Kompresuj</string>
-    <string name="extract_to">Wypakuj do…</string>
     <string name="install">Zainstaluj</string>
     <string name="details">Szczegóły</string>
     <string name="launch">Uruchom</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">Skopiuj nazwę klasy</string>
     <string name="app_details">Szczegóły aplikacji</string>
     <string name="copy_to_other_pane">Kopiuj do drugiego panelu</string>
+    <string name="extract_to_other_pane">Wypakuj do drugiego panelu</string>
     <string name="add_to_favorites">Dodaj do ulubionych</string>
     <string name="remove_from_favorites">Usuń z ulubionych</string>
     <string name="enable">Włącz</string>
@@ -160,8 +160,6 @@
     </plurals>
     <string name="this_device">To urządzenie</string>
     <string name="no_subfolders">Brak podfolderów</string>
-    <string name="zip_here">Kompresuj tutaj</string>
-    <string name="extract_here">Wypakuj tutaj</string>
     <string name="move_here">Przenieś tutaj</string>
     <string name="copy_here">Kopiuj tutaj</string>
     <string name="cannot_create_folder">Nie można utworzyć folderu</string>

@@ -27,7 +27,6 @@
     <string name="switch_pane">Переключить панель</string>
     <string name="zip">Создать ZIP</string>
     <string name="compress">Сжать</string>
-    <string name="extract_to">Извлечь в…</string>
     <string name="install">Установить</string>
     <string name="details">Подробности</string>
     <string name="launch">Запустить</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">Скопировать название класса</string>
     <string name="app_details">Подробности приложения</string>
     <string name="copy_to_other_pane">Копировать на другую панель</string>
+    <string name="extract_to_other_pane">Извлечь на другую панель</string>
     <string name="add_to_favorites">Добавить в избранное</string>
     <string name="remove_from_favorites">Удалить из избранного</string>
     <string name="enable">Включить</string>
@@ -160,8 +160,6 @@
     </plurals>
     <string name="this_device">Это устройство</string>
     <string name="no_subfolders">Здесь нет подпапок</string>
-    <string name="zip_here">Заархивировать здесь</string>
-    <string name="extract_here">Извлечь здесь</string>
     <string name="move_here">Переместить сюда</string>
     <string name="copy_here">Копировать сюда</string>
     <string name="cannot_create_folder">Не могу создать папку</string>

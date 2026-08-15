@@ -27,7 +27,6 @@
     <string name="switch_pane">Changer de volet</string>
     <string name="zip">Créer un ZIP</string>
     <string name="compress">Compresser</string>
-    <string name="extract_to">Extraire vers…</string>
     <string name="install">Installer</string>
     <string name="details">Détails</string>
     <string name="launch">Lancer</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">Copier le nom de la classe</string>
     <string name="app_details">Détails de l\'application</string>
     <string name="copy_to_other_pane">Copier vers un autre volet</string>
+    <string name="extract_to_other_pane">Extraire vers l’autre volet</string>
     <string name="add_to_favorites">Ajouter aux favoris</string>
     <string name="remove_from_favorites">Supprimer des favoris</string>
     <string name="enable">Activer</string>
@@ -158,8 +158,6 @@
     </plurals>
     <string name="this_device">Cet appareil</string>
     <string name="no_subfolders">Aucun sous-dossier ici</string>
-    <string name="zip_here">Compresser ici</string>
-    <string name="extract_here">Extraire ici</string>
     <string name="move_here">Déplacer ici</string>
     <string name="copy_here">Copier ici</string>
     <string name="cannot_create_folder">Impossible de créer un dossier</string>

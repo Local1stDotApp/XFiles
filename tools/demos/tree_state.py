@@ -5,7 +5,7 @@ Each expandable row carries a chevron exposed to the accessibility tree as
 content-desc="Collapse" (the row is open) or "Expand" (the row is closed) — a
 direct expansion signal that holds even for a row that is open but rendered no
 children (the remembered-expansion bug). Chevron depth is encoded in its left
-edge (x1): one indent step (~49px) per tree level.
+edge (x1): one indent step (~42px) per tree level.
 
 Usage:
   tree_state.py DUMP collapse-deepest [MINX] -> "cx cy" of the deepest OPEN chevron

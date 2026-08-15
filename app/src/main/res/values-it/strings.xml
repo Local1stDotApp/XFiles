@@ -27,7 +27,6 @@
     <string name="switch_pane">Cambia riquadro</string>
     <string name="zip">Crea ZIP</string>
     <string name="compress">Comprimi</string>
-    <string name="extract_to">Estrai in…</string>
     <string name="install">Installa</string>
     <string name="details">Dettagli</string>
     <string name="launch">Avvia</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">Copia il nome della classe</string>
     <string name="app_details">Dettagli dell\'app</string>
     <string name="copy_to_other_pane">Copia in un altro riquadro</string>
+    <string name="extract_to_other_pane">Estrai nell’altro riquadro</string>
     <string name="add_to_favorites">Aggiungi ai preferiti</string>
     <string name="remove_from_favorites">Rimuovi dai preferiti</string>
     <string name="enable">Abilita</string>
@@ -158,8 +158,6 @@
     </plurals>
     <string name="this_device">Questo dispositivo</string>
     <string name="no_subfolders">Nessuna sottocartella qui</string>
-    <string name="zip_here">Comprimi qui</string>
-    <string name="extract_here">Estrai qui</string>
     <string name="move_here">Sposta qui</string>
     <string name="copy_here">Copia qui</string>
     <string name="cannot_create_folder">Impossibile creare la cartella</string>

@@ -16,9 +16,9 @@ access — on the latest Android stack with a Material 3 Expressive UI.
 
 English · [简体中文](README.zh-CN.md)
 
-<img src="docs/assets/demo.gif" width="300" alt="One tour on a OnePlus 7 Pro: multi-select two files in Download and Copy to… an explicit destination via the full-screen picker; open the App manager and expand an app in place to its Components node, base.apk and every split_config APK; open Root and browse the real filesystem, with /data revealing adb, anr, app, app-private and other root-only directories">
+<img src="docs/assets/demo.gif" width="300" alt="One tour on a OnePlus 7 Pro: copy files, inspect an installed app's components and APK splits, then browse the root-only directories under /data">
 
-<sub>Real capture on a OnePlus 7 Pro (Android 16), sped up. One run: <b>Copy to…</b> an explicit destination → <b>App manager</b> (an app's components &amp; APK splits) → <b>Root</b> (the real filesystem, <code>/data</code> and all).</sub>
+<sub>Real capture on a OnePlus 7 Pro (Android 16), sped up. One run: <b>file copy</b> → <b>App manager</b> (an app's components &amp; APK splits) → <b>Root</b> (the real filesystem, <code>/data</code> and all).</sub>
 
 </div>
 
@@ -47,7 +47,8 @@ Requires **Android 8.0 (API 26)** or newer. On first launch, grant *All files ac
 
 X-plore's signature: two independent panes — side-by-side on wide screens, a swipeable
 pager on phones. Folders expand **in place** as a tree with indent guide lines, and each
-pane carries its own floating breadcrumb pill.
+pane carries its own floating breadcrumb pill. On phones, a target chip at the top keeps
+the hidden pane's folder visible and switches to that pane when tapped.
 
 Archives sit in the tree like any other folder — the breadcrumb descends straight into
 `project.zip`.
@@ -60,11 +61,11 @@ and an icon fallback while loading.
 
 ### File operations
 
-Multi-select via right-edge checkmarks. **Copy/move/extract go to an explicit
-destination** chosen in a full-screen folder picker — it defaults to the other pane, but
-you can browse anywhere and make new folders — or use `Copy to…`/`Move to…` from the
-long-press menu. Plus delete, rename, new folder. On Android 8–10, writes to SD cards
-and other secondary volumes work through a one-time SAF grant.
+Multi-select via right-edge checkmarks. **The other pane is the destination** for
+copy, move, zip and extract: set its folder, return to the source pane, then run the
+operation directly. `Copy to…`/`Move to…` in the long-press menu remain available when
+you want a one-off explicit destination. Plus delete, rename, new folder. On Android
+8–10, writes to SD cards and other secondary volumes work through a one-time SAF grant.
 
 A background engine drives it all with progress (the wavy Expressive indicator),
 cancellation, and Skip / Overwrite / Keep-both conflict resolution.

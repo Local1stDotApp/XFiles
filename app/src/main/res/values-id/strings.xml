@@ -27,7 +27,6 @@
     <string name="switch_pane">Ganti panel</string>
     <string name="zip">Buat ZIP</string>
     <string name="compress">Kompres</string>
-    <string name="extract_to">Ekstrak ke…</string>
     <string name="install">Instal</string>
     <string name="details">Detail</string>
     <string name="launch">Jalankan</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">Salin nama kelas</string>
     <string name="app_details">Detail aplikasi</string>
     <string name="copy_to_other_pane">Salin ke panel lain</string>
+    <string name="extract_to_other_pane">Ekstrak ke panel lain</string>
     <string name="add_to_favorites">Tambahkan ke favorit</string>
     <string name="remove_from_favorites">Hapus dari favorit</string>
     <string name="enable">Aktifkan</string>
@@ -158,8 +158,6 @@
     </plurals>
     <string name="this_device">Perangkat ini</string>
     <string name="no_subfolders">Tidak ada sub-folder di sini</string>
-    <string name="zip_here">Kompres di sini</string>
-    <string name="extract_here">Ekstrak di sini</string>
     <string name="move_here">Pindah ke sini</string>
     <string name="copy_here">Salin di sini</string>
     <string name="cannot_create_folder">Tidak dapat membuat folder</string>

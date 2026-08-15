@@ -693,18 +693,25 @@ class MainViewModel : ViewModel() {
 
     // ---- file operations ----
 
-    /**
-     * Opens the destination picker for the current selection. The picker starts at the
-     * other pane's folder (the X-plore dual-pane default) but lets the user browse anywhere,
-     * so the destination is explicit instead of silently landing in the hidden pane.
-     */
+    /** Copies or moves the active pane's selection directly into the other pane's folder. */
     fun copySelection(move: Boolean, sources: List<XEntry> = activeCtrl.selectionEntries()) {
+        if (sources.isEmpty()) return
+        val destDir = validDestinationOrNotify(otherPaneDestination()) ?: return
+        Graph.opEngine.submit(FileOp.Copy(sources, destDir, move))
+        activeCtrl.clearSelection()
+    }
+
+    /** Secondary one-item workflow: choose a destination instead of using the other pane. */
+    fun chooseTransferDestination(
+        move: Boolean,
+        sources: List<XEntry> = activeCtrl.selectionEntries(),
+    ) {
         if (sources.isEmpty()) return
         showDestinationPicker(
             PendingTransfer(
                 sources = sources,
                 move = move,
-                startDirId = inactiveCtrl.focusedDirEntry()?.id,
+                startDirId = inactiveCtrl.state.value.focusedDirId,
             ),
         )
     }
@@ -714,39 +721,8 @@ class MainViewModel : ViewModel() {
         val current = screenBackStack.last()
         val transfer = (current.screen as? AppScreen.DestinationPicker)?.transfer ?: return
         navigateBack(current.id)
-        if (!isValidDest(destDir)) {
-            snackbar.tryEmit(text(R.string.cannot_write, destDir.name))
-            return
-        }
-        if (transfer.compress) {
-            // Destination now chosen explicitly in the picker; ask for the archive name next.
-            dialog.value = DialogRequest.CompressTo(transfer.sources, destDir)
-            activeCtrl.clearSelection()
-            return
-        }
-        val extractName = transfer.extractArchiveName
-        if (extractName != null) {
-            val archive = transfer.sources.first()
-            viewModelScope.launch {
-                val folder = withContext(Dispatchers.IO) {
-                    runCatching {
-                        // Never merge into a pre-existing folder: pick a free name.
-                        val fs = Graph.fsRegistry.forEntry(destDir)
-                        val taken = fs.list(destDir).map { it.name }.toSet()
-                        var name = extractName
-                        var i = 1
-                        while (name in taken) name = "$extractName ($i)".also { i++ }
-                        fs.mkdir(destDir, name)
-                    }
-                }
-                folder.fold(
-                    onSuccess = { Graph.opEngine.submit(FileOp.Extract(archive, it)) },
-                    onFailure = { snackbar.tryEmit(it.message ?: text(R.string.cannot_create_folder)) },
-                )
-            }
-        } else {
-            Graph.opEngine.submit(FileOp.Copy(transfer.sources, destDir, transfer.move))
-        }
+        val validDest = validDestinationOrNotify(destDir) ?: return
+        Graph.opEngine.submit(FileOp.Copy(transfer.sources, validDest, transfer.move))
         activeCtrl.clearSelection()
     }
 
@@ -761,17 +737,11 @@ class MainViewModel : ViewModel() {
         activeCtrl.clearSelection()
     }
 
-    /** Pick a destination folder for a new zip (like copy/move), then ask for its name. */
+    /** Creates a new zip in the other pane after asking only for its filename. */
     fun requestCompress(sources: List<XEntry> = activeCtrl.selectionEntries()) {
         if (sources.isEmpty()) return
-        showDestinationPicker(
-            PendingTransfer(
-                sources = sources,
-                move = false,
-                startDirId = activeCtrl.focusedDirEntry()?.id,
-                compress = true,
-            ),
-        )
+        val destDir = validDestinationOrNotify(otherPaneDestination()) ?: return
+        dialog.value = DialogRequest.CompressTo(sources, destDir)
     }
 
     fun performCompress(sources: List<XEntry>, destDir: XEntry, archiveName: String) {
@@ -780,21 +750,33 @@ class MainViewModel : ViewModel() {
         activeCtrl.clearSelection()
     }
 
-    /** Choose a folder to extract [archive] into (a new subfolder named after it). */
+    /** Extracts [archive] into a uniquely named subfolder in the other pane. */
     fun extractArchive(archive: XEntry) {
-        showDestinationPicker(
-            PendingTransfer(
-                sources = listOf(archive),
-                move = false,
-                startDirId = inactiveCtrl.focusedDirEntry()?.id,
-                extractArchiveName = archive.name.substringBeforeLast('.').ifBlank { archive.name },
-            ),
-        )
+        val destDir = validDestinationOrNotify(otherPaneDestination()) ?: return
+        val extractName = archive.name.substringBeforeLast('.').ifBlank { archive.name }
+        viewModelScope.launch {
+            val folder = withContext(Dispatchers.IO) {
+                runCatching {
+                    // Never merge into a pre-existing folder: pick a free name.
+                    val fs = Graph.fsRegistry.forEntry(destDir)
+                    val taken = fs.list(destDir).map { it.name }.toSet()
+                    var name = extractName
+                    var i = 1
+                    while (name in taken) name = "$extractName ($i)".also { i++ }
+                    fs.mkdir(destDir, name)
+                }
+            }
+            folder.fold(
+                onSuccess = { Graph.opEngine.submit(FileOp.Extract(archive, it)) },
+                onFailure = { snackbar.tryEmit(it.message ?: text(R.string.cannot_create_folder)) },
+            )
+        }
+        activeCtrl.clearSelection()
     }
 
     fun requestNewFolder() {
         val parent = activeCtrl.focusedDirEntry() ?: return
-        if (!isValidDest(parent)) {
+        if (!isFileOperationDestination(parent)) {
             snackbar.tryEmit(text(R.string.cannot_create_folder_in, parent.name))
             return
         }
@@ -899,20 +881,24 @@ class MainViewModel : ViewModel() {
         activeCtrl.revealPath(entryId)
     }
 
-    fun canCreateFileIn(parent: XEntry): Boolean = isValidDest(parent)
+    fun canCreateFileIn(parent: XEntry): Boolean = isFileOperationDestination(parent)
 
-    private fun isValidDest(dest: XEntry): Boolean =
-        dest.isDir && dest.canWrite &&
-            (dest.scheme == XId.SCHEME_FILE || dest.scheme == XId.SCHEME_ROOT)
+    fun otherPaneDestination(): XEntry? = inactiveCtrl.focusedDirEntry()
+
+    private fun validDestinationOrNotify(dest: XEntry?): XEntry? {
+        if (isFileOperationDestination(dest)) return dest
+        snackbar.tryEmit(text(R.string.cannot_write, dest?.name ?: text(R.string.this_device)))
+        return null
+    }
 }
 
-/** A copy/move/extract/compress whose destination folder is being chosen. */
+internal fun isFileOperationDestination(dest: XEntry?): Boolean =
+    dest != null && dest.isDir && dest.canWrite &&
+        (dest.scheme == XId.SCHEME_FILE || dest.scheme == XId.SCHEME_ROOT)
+
+/** A copy or move whose non-pane destination is being chosen. */
 data class PendingTransfer(
     val sources: List<XEntry>,
     val move: Boolean,
     val startDirId: String?,
-    /** Non-null for an extract: the subfolder name to create at the destination. */
-    val extractArchiveName: String? = null,
-    /** True when picking where to create a new zip; the name is asked afterwards. */
-    val compress: Boolean = false,
 )

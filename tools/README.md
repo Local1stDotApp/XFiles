@@ -74,7 +74,7 @@ instead of toggling or re-opening a remembered node.
 | `demos/tree_state.py` | parse a uiautomator dump: chevron state, indentation depth |
 | `demos/_reset.sh` | prep: normalize to a clean home, empty expansion set (thorough) |
 | `demos/_reset-shallow.sh` | prep: fast collapse-and-scroll-top (for non-tree demos) |
-| `demos/copy.sh` | driver: file copy with explicit-destination picker |
+| `demos/copy.sh` | driver: direct copy into the other pane's visible destination |
 | `demos/root.sh` | driver: Root access demo |
 | `demos/app-manager.sh` | driver: App manager demo |
 

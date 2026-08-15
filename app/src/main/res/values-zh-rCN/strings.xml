@@ -27,7 +27,6 @@
     <string name="switch_pane">切换窗格</string>
     <string name="zip">压缩</string>
     <string name="compress">压缩</string>
-    <string name="extract_to">解压到…</string>
     <string name="install">安装</string>
     <string name="details">详情</string>
     <string name="launch">启动</string>
@@ -41,6 +40,7 @@
     <string name="copy_class_name">复制类名</string>
     <string name="app_details">应用详情</string>
     <string name="copy_to_other_pane">复制到另一个窗格</string>
+    <string name="extract_to_other_pane">解压到另一个窗格</string>
     <string name="add_to_favorites">添加到收藏</string>
     <string name="remove_from_favorites">从收藏中移除</string>
     <string name="enable">启用</string>
@@ -156,8 +156,6 @@
     </plurals>
     <string name="this_device">此设备</string>
     <string name="no_subfolders">这里没有子文件夹</string>
-    <string name="zip_here">在此压缩</string>
-    <string name="extract_here">在此解压</string>
     <string name="move_here">移动到此处</string>
     <string name="copy_here">复制到此处</string>
     <string name="cannot_create_folder">无法创建文件夹</string>
