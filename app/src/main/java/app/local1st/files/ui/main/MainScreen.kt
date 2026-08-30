@@ -155,6 +155,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                             onActivate = { vm.setActivePane(index) },
                             onOpenEntry = { vm.openEntry(pane, it) },
                             onEntryMenu = { vm.dialog.value = DialogRequest.EntryMenu(it) },
+                            onAddLocation = { vm.requestAddLocation() },
                             onInitialLayoutReady = { version ->
                                 initiallyLaidOutPanes = initiallyLaidOutPanes + index
                                 vm.onPaneInitialLayoutReady(index, version)
@@ -195,6 +196,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                         onActivate = { vm.setActivePane(page) },
                         onOpenEntry = { vm.openEntry(pane, it) },
                         onEntryMenu = { vm.dialog.value = DialogRequest.EntryMenu(it) },
+                        onAddLocation = { vm.requestAddLocation() },
                         onInitialLayoutReady = { version ->
                             initiallyLaidOutPanes = initiallyLaidOutPanes + page
                             vm.onPaneInitialLayoutReady(page, version)

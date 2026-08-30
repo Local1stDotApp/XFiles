@@ -71,6 +71,7 @@ fun PaneView(
     onActivate: () -> Unit,
     onOpenEntry: (XEntry) -> Unit,
     onEntryMenu: (XEntry) -> Unit,
+    onAddLocation: () -> Unit,
     onInitialLayoutReady: (treeVersion: Long) -> Unit,
     breadcrumbAlignment: Alignment = Alignment.TopStart,
     headerStartPadding: Dp = 6.dp,
@@ -198,6 +199,21 @@ fun PaneView(
                             },
                             enabled = !state.snapshotOnly,
                             richContent = richRowsEnabled,
+                            modifier = Modifier
+                                .padding(horizontal = 4.dp)
+                                .then(
+                                    if (itemAnimationsEnabled) Modifier.animateItem()
+                                    else Modifier,
+                                ),
+                        )
+                    }
+                    item(key = "action:add-location") {
+                        AddLocationRow(
+                            enabled = !state.snapshotOnly,
+                            onClick = {
+                                onActivate()
+                                onAddLocation()
+                            },
                             modifier = Modifier
                                 .padding(horizontal = 4.dp)
                                 .then(
