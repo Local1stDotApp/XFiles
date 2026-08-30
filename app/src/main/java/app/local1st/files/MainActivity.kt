@@ -1,8 +1,10 @@
 package app.local1st.files
 
 import android.content.Intent
+import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -11,6 +13,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import app.local1st.files.R
+import app.local1st.files.core.prefs.LaunchTheme
 import app.local1st.files.core.prefs.ThemeMode
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.main.AppHost
@@ -26,7 +30,26 @@ class MainActivity : ComponentActivity() {
     private val incomingIntentFlow = incomingIntents.receiveAsFlow()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()
+        // SystemBarStyle.auto() turns on navigation-bar contrast enforcement on API 29,
+        // and Android 10 then paints an opaque light scrim over the bar. dark()/light()
+        // keep the bar transparent so the M3 window background shows through.
+        val dark = LaunchTheme.isDark(this)
+        window.setBackgroundDrawableResource(
+            if (dark) R.color.app_background_dark else R.color.app_background_light,
+        )
+        val transparent = Color.TRANSPARENT
+        enableEdgeToEdge(
+            statusBarStyle = if (dark) {
+                SystemBarStyle.dark(transparent)
+            } else {
+                SystemBarStyle.light(transparent, transparent)
+            },
+            navigationBarStyle = if (dark) {
+                SystemBarStyle.dark(transparent)
+            } else {
+                SystemBarStyle.light(transparent, transparent)
+            },
+        )
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) incomingIntents.trySend(intent)
         setContent {
@@ -43,7 +66,9 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun Root(incomingIntents: Flow<Intent>) {
-    val themeMode by Graph.settings.themeMode.collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+    val themeMode by Graph.settings.themeMode.collectAsStateWithLifecycle(
+        initialValue = LaunchTheme.mode(),
+    )
     val dynamicColor by Graph.settings.dynamicColor.collectAsStateWithLifecycle(initialValue = true)
 
     val darkTheme = when (themeMode) {

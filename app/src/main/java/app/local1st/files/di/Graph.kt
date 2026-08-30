@@ -10,6 +10,7 @@ import app.local1st.files.core.ops.OperationEngine
 import app.local1st.files.core.prefs.Favorite
 import app.local1st.files.core.prefs.SafLocation
 import app.local1st.files.core.prefs.SessionState
+import app.local1st.files.core.prefs.LaunchTheme
 import app.local1st.files.core.prefs.SettingsRepo
 import app.local1st.files.core.search.SearchEngine
 import kotlinx.coroutines.CoroutineScope
@@ -77,6 +78,7 @@ object Graph {
 
     fun init(context: Context) {
         appContext = context.applicationContext
+        LaunchTheme.syncBlocking(settings)
         startupSession = appScope.async(Dispatchers.IO) {
             settings.loadSession().also { startupSessionSnapshot = it }
         }

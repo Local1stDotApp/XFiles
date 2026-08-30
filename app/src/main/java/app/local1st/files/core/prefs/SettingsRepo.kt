@@ -442,7 +442,10 @@ class SettingsRepo(private val context: Context) {
     suspend fun setCollapseSiblingFolders(value: Boolean) = context.dataStore.edit {
         it[keyCollapseSiblingFolders] = value
     }
-    suspend fun setThemeMode(value: ThemeMode) = context.dataStore.edit { it[keyThemeMode] = value.name }
+    suspend fun setThemeMode(value: ThemeMode) {
+        context.dataStore.edit { it[keyThemeMode] = value.name }
+        LaunchTheme.persist(context, value)
+    }
     suspend fun setDynamicColor(value: Boolean) = context.dataStore.edit { it[keyDynamicColor] = value }
     suspend fun setTextWrap(value: Boolean) = context.dataStore.edit { it[keyTextWrap] = value }
     suspend fun setRootEnabled(value: Boolean) = context.dataStore.edit { it[keyRootEnabled] = value }

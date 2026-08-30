@@ -53,6 +53,11 @@ fun XFilesTheme(
                 } else {
                     LegacyLightNavigationBarScrim
                 }
+            } else {
+                // Android 10's contrast scrim is an opaque light bar; keep the
+                // transparent bars so Compose's background fills the insets.
+                activity.window.isStatusBarContrastEnforced = false
+                activity.window.isNavigationBarContrastEnforced = false
             }
             val controller = WindowCompat.getInsetsController(activity.window, view)
             controller.isAppearanceLightStatusBars = !darkTheme
