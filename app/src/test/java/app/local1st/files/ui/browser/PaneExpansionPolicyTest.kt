@@ -166,6 +166,39 @@ class PaneExpansionPolicyTest {
     }
 
     @Test
+    fun vanishedUsbVolumeDropsListingsUnderIt() {
+        val internal = "file:///storage/emulated/0"
+        val usb = "file:///storage/ABCD-1234"
+        val topLevelIds = setOf(internal, "apps://")
+        val listingIds = listOf(internal, "$internal/Download", usb, "$usb/DCIM")
+
+        assertEquals(
+            listOf(internal, "$internal/Download"),
+            listingIds.filter { pathInsidePaneRoots(it, topLevelIds) != null },
+        )
+    }
+
+    @Test
+    fun vanishedUsbVolumeDropsExpandedIdsUnderIt() {
+        val internal = "file:///storage/emulated/0"
+        val usb = "file:///storage/ABCD-1234"
+
+        assertEquals(
+            setOf(internal, "$internal/Download"),
+            reachableExpandedIds(
+                expandedIds = setOf(
+                    internal,
+                    "$internal/Download",
+                    usb,
+                    "$usb/DCIM",
+                    "$usb/DCIM/Camera",
+                ),
+                topLevelIds = setOf(internal, "apps://"),
+            ),
+        )
+    }
+
+    @Test
     fun visualRestorePathSkipsSyntheticArchiveRoot() {
         val volume = "file:///storage/emulated/0"
         val archive = "$volume/files.zip"

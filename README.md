@@ -64,8 +64,10 @@ and an icon fallback while loading.
 Multi-select via right-edge checkmarks. **The other pane is the destination** for
 copy, move, zip and extract: set its folder, return to the source pane, then run the
 operation directly. `Copy to…`/`Move to…` in the long-press menu remain available when
-you want a one-off explicit destination. Plus delete, rename, new folder. On Android
-8–10, writes to SD cards and other secondary volumes work through a one-time SAF grant.
+you want a one-off explicit destination. Plus delete, rename, new folder. Mounted USB
+OTG drives appear as pane roots next to internal storage and SD cards, and the list
+updates when a drive is plugged or unplugged. On Android 8–10, writes to SD cards, USB
+drives and other secondary volumes work through a one-time SAF grant.
 
 A background engine drives it all with progress (the wavy Expressive indicator),
 cancellation, and Skip / Overwrite / Keep-both conflict resolution.

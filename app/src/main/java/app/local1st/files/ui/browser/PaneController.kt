@@ -414,6 +414,8 @@ class PaneController(
     private var restoreGeneration = 0L
     private var startupRenderGeneration = if (initialStartupRender == null) 0L else 1L
     private var backgroundRestoreJob: Job? = null
+    /** Bumped for every pane-roots fetch so a slower older listing cannot overwrite a newer one. */
+    private var paneRootsGeneration = 0
 
     // Declared BEFORE `nodes`: its eager stateIn starts flatten() on another thread
     // during construction, so everything flatten touches must already be initialized.
@@ -575,15 +577,68 @@ class PaneController(
     // ---- loading ----
 
     fun reloadRoots(expandFirst: Boolean = false) {
+        // A USB event during restoreSession must update roots without cancelling
+        // off-path hydration. Overlapping fetches are dropped via paneRootsGeneration.
+        val generation = ++paneRootsGeneration
         scope.launch {
-            finishStartupRestoreForInteraction()
-            loadingRoots.value = true
-            val list = withContext(Dispatchers.IO) {
-                runCatching { Graph.roots.paneRoots() }.getOrDefault(emptyList())
-            }
-            tree.update { it.copy(roots = list) }
+            val hadRoots = tree.value.roots.isNotEmpty()
+            if (!hadRoots) loadingRoots.value = true
+            val list = loadPaneRoots()
+            if (generation != paneRootsGeneration) return@launch
+            applyPaneRoots(list)
             loadingRoots.value = false
             if (expandFirst) expandFirstRoot()
+        }
+    }
+
+    private suspend fun loadPaneRoots(fallback: List<XEntry> = emptyList()): List<XEntry> =
+        withContext(Dispatchers.IO) {
+            try {
+                Graph.roots.paneRoots()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Throwable) {
+                fallback
+            }
+        }
+
+    /**
+     * Replaces the pane-root list and drops expansion, listings, selection and focus that
+     * sat on a volume that is no longer mounted (USB unplug, SD eject).
+     */
+    private fun applyPaneRoots(list: List<XEntry>) {
+        val topLevelIds = list.mapTo(HashSet()) { it.id }
+        tree.update { current ->
+            val expanded = reachableExpandedIds(current.expanded, topLevelIds)
+            val children = current.children.filterKeys { id ->
+                id in topLevelIds || pathInsidePaneRoots(id, topLevelIds) != null
+            }
+            current.copy(
+                roots = list,
+                expanded = expanded,
+                children = children,
+                loading = current.loading.filterTo(LinkedHashSet()) {
+                    it in topLevelIds || pathInsidePaneRoots(it, topLevelIds) != null
+                },
+                errors = current.errors.filterKeys {
+                    it in topLevelIds || pathInsidePaneRoots(it, topLevelIds) != null
+                },
+            )
+        }
+        sessionExpanded.value = reachableExpandedIds(sessionExpanded.value, topLevelIds)
+        savedDirectoryHints.update { hints ->
+            hints.filterKeys { pathInsidePaneRoots(it, topLevelIds) != null }
+        }
+        selection.update { sel ->
+            sel.filterTo(LinkedHashSet()) { pathInsidePaneRoots(it, topLevelIds) != null }
+        }
+        val focus = focusedDirId.value
+        if (focus != null && pathInsidePaneRoots(focus, topLevelIds) == null) {
+            var candidate: String? = XId.parent(focus)
+            while (candidate != null && pathInsidePaneRoots(candidate, topLevelIds) == null) {
+                candidate = XId.parent(candidate)
+            }
+            focusedDirId.value = candidate ?: list.firstOrNull()?.id
         }
     }
 
@@ -693,17 +748,36 @@ class PaneController(
         // through fresh parent results.
         buffer.retainListings(criticalExpanded)
 
-        sessionExpanded.value = desiredExpanded
+        // Re-read roots immediately before publishing: a USB event during the listings
+        // above may already have a reload in flight, and the snapshot passed in may
+        // still include a volume that is gone.
+        val rootsGeneration = ++paneRootsGeneration
+        val latestRoots = loadPaneRoots(fallback = paneRoots)
+        val publishRoots = if (rootsGeneration == paneRootsGeneration) {
+            latestRoots
+        } else {
+            tree.value.roots.ifEmpty { latestRoots }
+        }
+        val topLevelIdsAtPublish = publishRoots.mapTo(HashSet()) { it.id }
+        sessionExpanded.value = reachableExpandedIds(desiredExpanded, topLevelIdsAtPublish)
         focusedDirId.value = target?.id
-        tree.value = PaneTree(
-            roots = paneRoots,
-            expanded = criticalExpanded,
-            children = buffer.children.toMap(),
-            errors = buffer.errors.toMap(),
-        )
-        settleInitialPosition(target?.id)
+        applyPaneRoots(publishRoots)
+        tree.update { current ->
+            current.copy(
+                expanded = reachableExpandedIds(criticalExpanded, topLevelIdsAtPublish),
+                children = buffer.children.filterKeys {
+                    pathInsidePaneRoots(it, topLevelIdsAtPublish) != null
+                },
+                errors = buffer.errors.filterKeys {
+                    pathInsidePaneRoots(it, topLevelIdsAtPublish) != null
+                },
+            )
+        }
+        settleInitialPosition(focusedDirId.value)
 
-        if (desiredExpanded == criticalExpanded) {
+        val remainingExpanded = reachableExpandedIds(desiredExpanded, topLevelIdsAtPublish)
+        val remainingCritical = reachableExpandedIds(criticalExpanded, topLevelIdsAtPublish)
+        if (remainingExpanded == remainingCritical) {
             startupSettled.value = true
             return null
         }
@@ -713,23 +787,33 @@ class PaneController(
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val hydratedIds = restoreExpandedTree(
-                    paneRoots = paneRoots,
-                    desiredExpanded = desiredExpanded,
+                    paneRoots = publishRoots,
+                    desiredExpanded = remainingExpanded,
                     savedDirectories = savedDirectories,
                     buffer = buffer,
                     listings = listings,
                 )
                 if (restoreGeneration != generation) return@launch
-                buffer.retainListings(criticalExpanded + hydratedIds)
-                val loadedIds = buffer.children.keys
+                buffer.retainListings(remainingCritical + hydratedIds)
                 tree.update { current ->
+                    val liveTopLevelIds = current.roots.mapTo(HashSet()) { it.id }
+                    val keptChildren = buffer.children.filterKeys {
+                        pathInsidePaneRoots(it, liveTopLevelIds) != null
+                    }
+                    val keptErrors = buffer.errors.filterKeys {
+                        pathInsidePaneRoots(it, liveTopLevelIds) != null
+                    }
                     val mergedErrors = current.errors.toMutableMap()
-                    loadedIds.forEach(mergedErrors::remove)
-                    mergedErrors.putAll(buffer.errors)
+                    keptChildren.keys.forEach(mergedErrors::remove)
+                    mergedErrors.putAll(keptErrors)
                     current.copy(
-                        expanded = desiredExpanded,
-                        children = current.children + buffer.children,
-                        errors = mergedErrors,
+                        expanded = reachableExpandedIds(remainingExpanded, liveTopLevelIds),
+                        children = (current.children + keptChildren).filterKeys {
+                            pathInsidePaneRoots(it, liveTopLevelIds) != null
+                        },
+                        errors = mergedErrors.filterKeys {
+                            pathInsidePaneRoots(it, liveTopLevelIds) != null
+                        },
                     )
                 }
             } finally {
@@ -911,6 +995,7 @@ class PaneController(
                 errors = current.errors - entry.id,
             )
         }
+        val generation = paneRootsGeneration
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching { registry.forEntry(entry).list(entry) }
@@ -919,13 +1004,17 @@ class PaneController(
             val error = result.exceptionOrNull()?.let {
                 it.message ?: Graph.appContext.getString(R.string.cannot_read_folder)
             }
-            tree.update { current ->
-                current.copy(
-                    children = current.children + (entry.id to kids),
-                    loading = current.loading - entry.id,
-                    errors = if (error == null) current.errors - entry.id
-                    else current.errors + (entry.id to error),
-                )
+            if (!applyListingIfCurrent(entry.id, generation, kids, error)) {
+                val current = tree.value
+                val topLevelIds = current.roots.mapTo(HashSet()) { it.id }
+                if (entry.id in current.expanded &&
+                    pathInsidePaneRoots(entry.id, topLevelIds) != null
+                ) {
+                    load(entry)
+                } else {
+                    reloadRequested.remove(entry.id)
+                }
+                return@launch
             }
 
             // Cascade into remembered-but-unloaded sub-expansions after the parent listing lands.
@@ -939,6 +1028,39 @@ class PaneController(
             }
             if (reloadRequested.remove(entry.id)) load(entry)
         }
+    }
+
+    /**
+     * Publishes a directory listing only if the pane roots have not changed since the
+     * read started and [id] is still on a mounted volume. Otherwise an unplug that
+     * raced this IO would put the vanished folder back, and a remount would show
+     * the pre-unplug cache.
+     */
+    private fun applyListingIfCurrent(
+        id: String,
+        startedGeneration: Int,
+        kids: List<XEntry>,
+        error: String?,
+    ): Boolean {
+        var applied = false
+        tree.update { current ->
+            val topLevelIds = current.roots.mapTo(HashSet()) { it.id }
+            if (startedGeneration != paneRootsGeneration ||
+                pathInsidePaneRoots(id, topLevelIds) == null
+            ) {
+                applied = false
+                current.copy(loading = current.loading - id)
+            } else {
+                applied = true
+                current.copy(
+                    children = current.children + (id to kids),
+                    loading = current.loading - id,
+                    errors = if (error == null) current.errors - id
+                    else current.errors + (id to error),
+                )
+            }
+        }
+        return applied
     }
 
     // ---- navigation / expansion ----
@@ -1060,6 +1182,7 @@ class PaneController(
                 errors = current.errors - entry.id,
             )
         }
+        val generation = paneRootsGeneration
         val result = withContext(Dispatchers.IO) {
             runCatching { registry.forEntry(entry).list(entry) }
         }
@@ -1067,14 +1190,7 @@ class PaneController(
         val error = result.exceptionOrNull()?.let {
             it.message ?: Graph.appContext.getString(R.string.cannot_read, entry.name)
         }
-        tree.update { current ->
-            current.copy(
-                children = current.children + (entry.id to kids),
-                loading = current.loading - entry.id,
-                errors = if (error == null) current.errors - entry.id
-                else current.errors + (entry.id to error),
-            )
-        }
+        if (!applyListingIfCurrent(entry.id, generation, kids, error)) return emptyList()
         return kids
     }
 

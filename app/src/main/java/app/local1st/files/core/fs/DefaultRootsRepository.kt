@@ -1,15 +1,23 @@
 package app.local1st.files.core.fs
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Environment
 import android.os.StatFs
 import android.os.storage.StorageManager
 import android.os.storage.StorageVolume
+import androidx.annotation.RequiresApi
 import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.prefs.Favorite
 import app.local1st.files.core.util.Format
 import java.io.File
+import java.util.concurrent.Executor
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 
 /**
  * Pane roots from [StorageManager]: mounted storage volumes, pinned favorites,
@@ -24,9 +32,54 @@ class DefaultRootsRepository(
     private val statById: (String) -> XEntry? = { null },
 ) : RootsRepository {
 
+    private val storageManager =
+        context.getSystemService(Context.STORAGE_SERVICE) as StorageManager
+    private val _volumeEpoch = MutableStateFlow(0L)
+    override val volumeEpoch: StateFlow<Long> = _volumeEpoch
+
+    private val mediaReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            bumpVolumeEpoch()
+        }
+    }
+
+    init {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            registerStorageVolumeCallback()
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_MEDIA_MOUNTED)
+            addAction(Intent.ACTION_MEDIA_UNMOUNTED)
+            addAction(Intent.ACTION_MEDIA_EJECT)
+            addAction(Intent.ACTION_MEDIA_REMOVED)
+            addAction(Intent.ACTION_MEDIA_BAD_REMOVAL)
+            addDataScheme("file")
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(mediaReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            context.registerReceiver(mediaReceiver, filter)
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun registerStorageVolumeCallback() {
+        storageManager.registerStorageVolumeCallback(
+            Executor { it.run() },
+            object : StorageManager.StorageVolumeCallback() {
+                override fun onStateChanged(volume: StorageVolume) {
+                    bumpVolumeEpoch()
+                }
+            },
+        )
+    }
+
+    private fun bumpVolumeEpoch() {
+        _volumeEpoch.update { it + 1 }
+    }
+
     override fun volumes(): List<Volume> {
-        val storageManager =
-            context.getSystemService(Context.STORAGE_SERVICE) as StorageManager
         return storageManager.storageVolumes.mapNotNull { volume ->
             if (volume.state != Environment.MEDIA_MOUNTED &&
                 volume.state != Environment.MEDIA_MOUNTED_READ_ONLY
@@ -91,51 +144,93 @@ class DefaultRootsRepository(
 
     private fun directoryOf(volume: StorageVolume): File? {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            return volume.directory
+            volume.directory?.let { return it }
         }
         // API 26-29: no public directory getter; StorageVolume#getPath is a
-        // stable hidden method on these releases.
+        // stable hidden method on these releases. API 30+ still has it as a
+        // fallback when `directory` is null for a just-mounted USB volume.
         val reflectedPath = try {
             StorageVolume::class.java.getMethod("getPath").invoke(volume) as? String
         } catch (e: ReflectiveOperationException) {
             null
         }
-        if (reflectedPath != null) return File(reflectedPath)
+        if (!reflectedPath.isNullOrBlank()) return File(reflectedPath)
+        val uuid = volume.uuid
+        if (!uuid.isNullOrBlank()) {
+            val guessed = File("/storage/$uuid")
+            if (guessed.isDirectory) return guessed
+        }
+        // Do not call getExternalFilesDirs: it mkdirs Android/data/<pkg>/files on a
+        // just-inserted USB stick. A later volumeEpoch retry picks the path up.
         return if (volume.isPrimary) Environment.getExternalStorageDirectory() else null
     }
 
-    private fun toVolume(volume: StorageVolume, dir: File): Volume? {
+    private fun toVolume(volume: StorageVolume, dir: File): Volume {
         val path = dir.absolutePath
-        val total: Long
-        val free: Long
+        var total = -1L
+        var free = -1L
         try {
             val stat = StatFs(path)
             total = stat.totalBytes
             free = stat.availableBytes
-        } catch (e: IllegalArgumentException) {
-            // Directory reported by the platform but not stat-able: not usable.
-            return null
+        } catch (_: IllegalArgumentException) {
+            // Just-mounted USB FUSE is sometimes not stat-able yet. Keep the root visible.
         }
         val label = volume.getDescription(context)?.takeIf { it.isNotBlank() }
             ?: if (volume.isPrimary) "Internal storage" else "Storage"
-        val used = (total - free).coerceAtLeast(0L)
+        val used = if (total > 0 && free >= 0) (total - free).coerceAtLeast(0L) else -1L
         val entry = XEntry(
             id = XId.file(path),
             name = label,
             isDir = true,
-            kind = kindOf(volume, label),
-            badge = "${Format.bytes(free)} free of ${Format.bytes(total)}",
-            progress = if (total > 0) used.toFloat() / total.toFloat() else -1f,
+            kind = volumeKind(
+                isPrimary = volume.isPrimary,
+                isEmulated = volume.isEmulated,
+                isRemovable = volume.isRemovable,
+                description = label,
+                path = path,
+                diskIsUsb = diskIsUsb(volume),
+            ),
+            badge = if (total > 0 && free >= 0) {
+                "${Format.bytes(free)} free of ${Format.bytes(total)}"
+            } else {
+                null
+            },
+            progress = if (total > 0 && used >= 0) used.toFloat() / total.toFloat() else -1f,
             localPath = path,
-            canWrite = true,
+            canWrite = volume.state != Environment.MEDIA_MOUNTED_READ_ONLY,
         )
-        return Volume(entry, label, total, free)
+        return Volume(entry, label, total.coerceAtLeast(0L), free.coerceAtLeast(0L))
     }
 
-    private fun kindOf(volume: StorageVolume, label: String): EntryKind = when {
-        volume.isPrimary || volume.isEmulated -> EntryKind.VOLUME_INTERNAL
-        label.contains("usb", ignoreCase = true) -> EntryKind.VOLUME_USB
-        volume.isRemovable -> EntryKind.VOLUME_SD
-        else -> EntryKind.VOLUME_INTERNAL
+    /**
+     * Best-effort USB bit from hidden DiskInfo. Returns null when the platform
+     * hides it; callers must not treat that as "not USB".
+     */
+    private fun diskIsUsb(volume: StorageVolume): Boolean? {
+        runCatching {
+            val method = volume.javaClass.methods.firstOrNull {
+                it.name == "isUsb" && it.parameterCount == 0
+            }
+            if (method != null) return method.invoke(volume) as? Boolean
+        }
+        return runCatching {
+            val infos = StorageManager::class.java.getMethod("getVolumes")
+                .invoke(storageManager) as? List<*> ?: return@runCatching null
+            val infoClass = Class.forName("android.os.storage.VolumeInfo")
+            val getFsUuid = infoClass.getMethod("getFsUuid")
+            val getDisk = infoClass.getMethod("getDisk")
+            val isUsb = Class.forName("android.os.storage.DiskInfo").getMethod("isUsb")
+            val uuid = volume.uuid
+            for (info in infos) {
+                if (info == null) continue
+                val fsUuid = getFsUuid.invoke(info) as? String
+                if (uuid.isNullOrBlank() || fsUuid == null) continue
+                if (!fsUuid.equals(uuid, ignoreCase = true)) continue
+                val disk = getDisk.invoke(info) ?: return@runCatching null
+                return@runCatching isUsb.invoke(disk) as? Boolean
+            }
+            null
+        }.getOrNull()
     }
 }

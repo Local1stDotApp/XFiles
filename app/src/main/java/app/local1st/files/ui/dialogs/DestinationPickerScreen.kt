@@ -42,12 +42,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.R
 import app.local1st.files.core.fs.XId
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.browser.EntryIcon
+import app.local1st.files.ui.browser.pathInsidePaneRoots
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.main.MainViewModel
 import app.local1st.files.ui.main.PendingTransfer
@@ -77,6 +79,9 @@ fun DestinationPickerScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var reloadTick by remember { mutableStateOf(0) }
     var nameDialog by remember { mutableStateOf(false) }
+    var listedId by remember(t) { mutableStateOf<String?>(null) }
+    var hasListing by remember(t) { mutableStateOf(false) }
+    val volumeEpoch by Graph.roots.volumeEpoch.collectAsStateWithLifecycle()
 
     fun goUp(from: XEntry) {
         scope.launch { current = withContext(Dispatchers.IO) { parentOf(from) } }
@@ -90,32 +95,52 @@ fun DestinationPickerScreen(
 
     LaunchedEffect(t) {
         current = t.startDirId?.let { id ->
-            withContext(Dispatchers.IO) {
-                runCatching { Graph.fsRegistry.forId(id).stat(id) }.getOrNull()
-            }
+            withContext(Dispatchers.IO) { resolvePickerDir(id) }
         }
     }
 
-    LaunchedEffect(current, reloadTick) {
-        loading = true
+    LaunchedEffect(current, reloadTick, volumeEpoch) {
+        val loadId = current?.id
+        val refreshInPlace = hasListing && listedId == loadId
+        if (!refreshInPlace) loading = true
         error = null
         val cur = current
-        folders = if (cur == null) {
+        if (cur == null) {
             // Roots (volumes, Root) keep their natural order.
-            withContext(Dispatchers.IO) {
-                runCatching { Graph.roots.paneRoots() }.getOrDefault(emptyList())
-            }.filter { it.isDir && it.kind != EntryKind.APPS_ROOT }
-        } else {
-            withContext(Dispatchers.IO) {
-                runCatching { Graph.fsRegistry.forEntry(cur).list(cur) }
-            }.fold(
-                onSuccess = { list ->
-                    list.filter { it.isDir }
-                        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
-                },
-                onFailure = { error = it.message ?: Graph.appContext.getString(R.string.cannot_open_folder); emptyList() },
-            )
+            folders = withContext(Dispatchers.IO) { pickerRootFolders() }
+            listedId = loadId
+            hasListing = true
+            loading = false
+            return@LaunchedEffect
         }
+        val listing = withContext(Dispatchers.IO) {
+            runCatching { Graph.fsRegistry.forEntry(cur).list(cur) }
+        }
+        if (listing.isFailure) {
+            val roots = withContext(Dispatchers.IO) {
+                runCatching { Graph.roots.paneRoots() }.getOrDefault(emptyList())
+            }
+            val topLevelIds = roots.mapTo(HashSet()) { it.id }
+            if (pathInsidePaneRoots(cur.id, topLevelIds) == null) {
+                // Volume unmounted. Publish roots in this frame so the header never
+                // reads "This device" above the vanished folder's rows.
+                folders = roots.filter(::isPickerRoot)
+                listedId = null
+                hasListing = true
+                current = null
+                loading = false
+                return@LaunchedEffect
+            }
+        }
+        folders = listing.fold(
+            onSuccess = { list ->
+                list.filter { it.isDir }
+                    .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+            },
+            onFailure = { error = it.message ?: Graph.appContext.getString(R.string.cannot_open_folder); emptyList() },
+        )
+        listedId = loadId
+        hasListing = true
         loading = false
     }
 
@@ -256,7 +281,46 @@ private fun parentOf(dir: XEntry): XEntry? {
         dir.kind == EntryKind.VOLUME_USB || dir.kind == EntryKind.ROOT
     ) return null
     val parentId = XId.parent(dir.id) ?: return null
-    return Graph.fsRegistry.forId(parentId).stat(parentId)
+    return resolvePickerDir(parentId)
+}
+
+/**
+ * [XFileSystem.stat] returns null for live Android/data (and similar) folders whose
+ * [XFileSystem.list] still works through the privileged fallback. Only treat a path
+ * as gone when it is no longer under a mounted pane root.
+ */
+private fun resolvePickerDir(id: String): XEntry? {
+    runCatching { Graph.fsRegistry.forId(id).stat(id) }.getOrNull()?.let { return it }
+    val roots = runCatching { Graph.roots.paneRoots() }.getOrDefault(emptyList())
+    return pickerDirFromId(id, roots)
+}
+
+private fun pickerRootFolders(): List<XEntry> =
+    runCatching { Graph.roots.paneRoots() }.getOrDefault(emptyList()).filter(::isPickerRoot)
+
+private fun isPickerRoot(entry: XEntry): Boolean =
+    entry.isDir && entry.kind != EntryKind.APPS_ROOT
+
+/** Placeholder used when stat is blind but the id still sits on a mounted volume. */
+internal fun pickerDirFromId(id: String, roots: List<XEntry>): XEntry? {
+    val topLevelIds = roots.mapTo(HashSet()) { it.id }
+    if (pathInsidePaneRoots(id, topLevelIds) == null) return null
+    roots.firstOrNull { it.id == id }?.let { return it }
+    val path = id.substringAfter("://").trimEnd('/')
+    val name = path.substringAfterLast('/').ifEmpty { "/" }
+    val scheme = XId.schemeOf(id)
+    val kind = if (scheme == XId.SCHEME_ROOT && (path.isEmpty() || path == "/")) {
+        EntryKind.ROOT
+    } else {
+        EntryKind.DIR
+    }
+    return XEntry(
+        id = id,
+        name = name,
+        isDir = true,
+        kind = kind,
+        localPath = if (scheme == XId.SCHEME_FILE) path.ifEmpty { "/" } else null,
+    )
 }
 
 private fun pathLabel(dir: XEntry): String = when (dir.scheme) {

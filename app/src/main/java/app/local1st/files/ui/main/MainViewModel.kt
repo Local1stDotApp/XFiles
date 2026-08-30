@@ -63,6 +63,7 @@ import kotlinx.coroutines.channels.Channel
 private const val CONFIRMATION_TIMEOUT_MS = 5L * 60 * 1000
 private const val WIDE_PANES_MIN_WIDTH_DP = 700
 private const val INITIAL_PANE_LAYOUT_TIMEOUT_MS = 1_000L
+private const val VOLUME_CHANGE_DEBOUNCE_MS = 300L
 
 private data class PaneInitialLayout(val pane: Int, val treeVersion: Long)
 
@@ -189,6 +190,17 @@ class MainViewModel : ViewModel() {
             Graph.favorites.filterNotNull().distinctUntilChanged().drop(1).collect {
                 panes.forEach { it.reloadRoots() }
             }
+        }
+        observeStorageVolumeChanges()
+    }
+
+    @OptIn(FlowPreview::class)
+    private fun observeStorageVolumeChanges() {
+        viewModelScope.launch {
+            Graph.roots.volumeEpoch
+                .drop(1)
+                .debounce(VOLUME_CHANGE_DEBOUNCE_MS)
+                .collect { panes.forEach { it.reloadRoots() } }
         }
     }
 

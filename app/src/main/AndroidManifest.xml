@@ -29,6 +29,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- USB OTG volumes are discovered through StorageManager once the system mounts them. -->
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false" />
+
     <application
         android:name=".XFilesApp"
         android:allowBackup="true"

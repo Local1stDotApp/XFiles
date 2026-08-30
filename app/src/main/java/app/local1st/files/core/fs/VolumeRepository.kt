@@ -1,5 +1,7 @@
 package app.local1st.files.core.fs
 
+import kotlinx.coroutines.flow.StateFlow
+
 /** A storage volume shown as a pane root. */
 data class Volume(
     val entry: XEntry,
@@ -15,4 +17,10 @@ interface RootsRepository {
 
     /** Full root list for a pane: volumes + special roots (app manager, ...). */
     fun paneRoots(): List<XEntry>
+
+    /**
+     * Bumps when a storage volume is mounted, unmounted, or changes state so the
+     * browser can rebuild pane roots without a manual refresh.
+     */
+    val volumeEpoch: StateFlow<Long>
 }
