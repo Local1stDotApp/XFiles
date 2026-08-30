@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">Wypakuj do drugiego panelu</string>
     <string name="add_to_favorites">Dodaj do ulubionych</string>
     <string name="remove_from_favorites">Usuń z ulubionych</string>
+    <string name="add_location">Dodaj lokalizację</string>
+    <string name="remove_location">Usuń lokalizację</string>
+    <string name="locations">Lokalizacje</string>
+    <string name="locations_summary">Foldery z innych aplikacji (SFTP, Nextcloud, SMB, …). XFiles sam nie łączy się z siecią — robi to tamta aplikacja.</string>
+    <string name="location_added">Dodano %1$s</string>
+    <string name="location_removed">Usunięto %1$s</string>
+    <string name="location_already_added">%1$s jest już lokalizacją</string>
+    <string name="location_already_local">%1$s jest już na tym urządzeniu</string>
+    <string name="location_pinned_local">Przypięto %1$s do ulubionych</string>
+    <string name="location_grant_failed">Nie można dodać lokalizacji: %1$s</string>
     <string name="enable">Włącz</string>
     <string name="disable">Wyłącz</string>
     <string name="copied">Skopiowano</string>

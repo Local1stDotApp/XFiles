@@ -92,6 +92,7 @@ fun PaneView(
                 LoadingIndicator()
                 PaneHeader(
                     focusedDirId = state.focusedDirId,
+                    crumbNames = emptyMap(),
                     active = active,
                     breadcrumbAlignment = breadcrumbAlignment,
                     headerStartPadding = headerStartPadding,
@@ -210,6 +211,7 @@ fun PaneView(
 
             PaneHeader(
                 focusedDirId = state.focusedDirId,
+                crumbNames = state.nodes.associate { it.entry.id to it.entry.name },
                 active = active,
                 breadcrumbAlignment = breadcrumbAlignment,
                 headerStartPadding = headerStartPadding,
@@ -228,6 +230,7 @@ fun PaneView(
 @Composable
 private fun BoxScope.PaneHeader(
     focusedDirId: String?,
+    crumbNames: Map<String, String>,
     active: Boolean,
     breadcrumbAlignment: Alignment,
     headerStartPadding: Dp,
@@ -261,6 +264,7 @@ private fun BoxScope.PaneHeader(
         ) {
             BreadcrumbBar(
                 focusedDirId = focusedDirId,
+                crumbNames = crumbNames,
                 active = active,
                 onCrumbClick = onCrumbClick,
                 modifier = Modifier.wrapContentWidth(
@@ -286,11 +290,12 @@ private fun BoxScope.PaneHeader(
 @Composable
 private fun BreadcrumbBar(
     focusedDirId: String?,
+    crumbNames: Map<String, String>,
     active: Boolean,
     onCrumbClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val crumbs = crumbsFor(focusedDirId)
+    val crumbs = crumbsFor(focusedDirId, crumbNames)
     Surface(
         shape = RoundedCornerShape(CrumbBarHeight / 2),
         // On wide screens both panes are visible: the inactive pane's breadcrumb is the target.
@@ -351,12 +356,16 @@ private fun BreadcrumbBar(
 }
 
 @Composable
-private fun crumbsFor(focusedDirId: String?): List<Pair<String, String>> {
+private fun crumbsFor(
+    focusedDirId: String?,
+    crumbNames: Map<String, String>,
+): List<Pair<String, String>> {
     focusedDirId ?: return emptyList()
     val chain = generateSequence(focusedDirId) { XId.parent(it) }.toList().reversed()
     return chain.map { id ->
+        val named = crumbNames[id]
         val raw = id.substringAfter("://")
-        val name = when (raw) {
+        val name = named ?: when (raw) {
             "@user" -> stringResource(R.string.installed_apps)
             "@system" -> stringResource(R.string.system_apps)
             else -> raw.trimEnd('/').substringAfterLast('/')

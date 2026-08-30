@@ -114,7 +114,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     } else {
         emptyList()
     }
-    val canShareSelection = selectedFiles.isNotEmpty() && selectedFiles.all { it.localPath != null }
+    val canShareSelection = selectedFiles.isNotEmpty() && selectedFiles.all { canHandoff(it) }
     val unavailableDestinationLabel = stringResource(R.string.cannot_write, otherPaneName)
     val copyTargetLabel = if (canUseOtherPane) {
         "${stringResource(R.string.copy_to_title)} $otherPaneName"
@@ -489,6 +489,10 @@ private fun paneLocationName(destination: XEntry?, focusedDirId: String?): Strin
 
 private fun paneLocationPath(destination: XEntry?, focusedDirId: String?): String {
     val id = destination?.id ?: focusedDirId ?: return "…"
+    if (XId.schemeOf(id) == XId.SCHEME_SAF) return destination?.name ?: "Location"
     val path = id.substringAfter("://")
     return if (id.startsWith("${XId.SCHEME_ROOT}://")) "root:$path" else path.ifBlank { "/" }
 }
+
+private fun canHandoff(entry: XEntry): Boolean =
+    entry.localPath != null || entry.scheme == XId.SCHEME_SAF

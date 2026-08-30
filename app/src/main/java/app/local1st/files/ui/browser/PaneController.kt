@@ -1234,7 +1234,7 @@ class PaneController(
     private fun selectable(entry: XEntry): Boolean = when (entry.kind) {
         EntryKind.VOLUME_INTERNAL, EntryKind.VOLUME_SD, EntryKind.VOLUME_USB,
         EntryKind.APPS_ROOT, EntryKind.APP_COMPONENT_GROUP, EntryKind.APP_COMPONENT,
-        EntryKind.ROOT,
+        EntryKind.ROOT, EntryKind.LOCATION,
         -> false
         else -> true
     }

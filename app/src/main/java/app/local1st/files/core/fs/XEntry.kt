@@ -11,6 +11,8 @@ import androidx.compose.runtime.Immutable
  *  - `zip:///storage/emulated/0/a.zip!/inner/dir`   (archive file path + `!/` + inner path)
  *  - `apps://`                                       (app manager root)
  *  - `apps://com.example.app`                        (one installed app)
+ *  - `saf://{locationId}`                            (a granted document tree)
+ *  - `saf://{locationId}/{enc(docId)}/…`            (document ids, not names)
  */
 @Immutable
 data class XEntry(
@@ -61,6 +63,8 @@ enum class EntryKind {
     APP_COMPONENT,
     /** The superuser filesystem root ("/") browsed via `su`. */
     ROOT,
+    /** A granted Storage Access Framework document tree, shown as a pane root. */
+    LOCATION,
 }
 
 object XId {
@@ -68,6 +72,7 @@ object XId {
     const val SCHEME_ZIP = "zip"
     const val SCHEME_APPS = "apps"
     const val SCHEME_ROOT = "root"
+    const val SCHEME_SAF = "saf"
     const val ARCHIVE_SEP = "!/"
 
     fun file(absolutePath: String): String = "$SCHEME_FILE://$absolutePath"
@@ -77,6 +82,32 @@ object XId {
 
     fun zip(archiveAbsolutePath: String, innerPath: String = ""): String =
         "$SCHEME_ZIP://$archiveAbsolutePath$ARCHIVE_SEP$innerPath"
+
+    /**
+     * A granted document tree. [documentIds] is the chain of provider document ids from the
+     * tree root (empty) down; each id is percent-encoded because providers put `:` and `/`
+     * in them.
+     */
+    fun saf(locationId: String, documentIds: List<String> = emptyList()): String {
+        require(locationId.isNotEmpty() && '/' !in locationId) { "Invalid location id" }
+        if (documentIds.isEmpty()) return "$SCHEME_SAF://$locationId"
+        val path = documentIds.joinToString("/") { encodeSafSegment(it) }
+        return "$SCHEME_SAF://$locationId/$path"
+    }
+
+    fun safLocationId(id: String): String {
+        val rest = id.substringAfter("://")
+        return rest.substringBefore('/', rest)
+    }
+
+    fun safDocumentIds(id: String): List<String> {
+        val rest = id.substringAfter("://")
+        val slash = rest.indexOf('/')
+        if (slash < 0 || slash == rest.lastIndex) return emptyList()
+        return rest.substring(slash + 1).trimEnd('/').split('/')
+            .filter { it.isNotEmpty() }
+            .map { decodeSafSegment(it) }
+    }
 
     fun schemeOf(id: String): String = id.substringBefore("://")
 
@@ -99,6 +130,7 @@ object XId {
             zip(zipArchivePath(parent.id), if (inner.isEmpty()) childName else "$inner/$childName")
         }
         SCHEME_APPS -> "$SCHEME_APPS://$childName"
+        SCHEME_SAF -> saf(safLocationId(parent.id), safDocumentIds(parent.id) + childName)
         else -> parent.id.trimEnd('/') + "/" + childName
     }
 
@@ -135,7 +167,52 @@ object XId {
                 return if (p.contains('/')) "$SCHEME_APPS://${p.substringBeforeLast('/')}"
                 else "$SCHEME_APPS://"
             }
+            SCHEME_SAF -> {
+                val locationId = safLocationId(id)
+                if (locationId.isEmpty()) return null
+                val docs = safDocumentIds(id)
+                return if (docs.isEmpty()) null else saf(locationId, docs.dropLast(1))
+            }
             else -> return null
         }
     }
+}
+
+/** Percent-encode a SAF document id so it can sit in one path segment. */
+internal fun encodeSafSegment(raw: String): String {
+    val bytes = raw.toByteArray(Charsets.UTF_8)
+    val out = StringBuilder(bytes.size)
+    for (b in bytes) {
+        val c = b.toInt() and 0xff
+        val unreserved = c in 0x41..0x5A || c in 0x61..0x7A || c in 0x30..0x39 ||
+            c == 0x2D || c == 0x2E || c == 0x5F || c == 0x7E
+        if (unreserved) {
+            out.append(c.toChar())
+        } else {
+            out.append('%')
+            out.append("0123456789ABCDEF"[c shr 4])
+            out.append("0123456789ABCDEF"[c and 0x0F])
+        }
+    }
+    return out.toString()
+}
+
+internal fun decodeSafSegment(encoded: String): String {
+    val bytes = ArrayList<Byte>(encoded.length)
+    var i = 0
+    while (i < encoded.length) {
+        val ch = encoded[i]
+        if (ch == '%' && i + 2 < encoded.length) {
+            val hi = encoded[i + 1].digitToIntOrNull(16)
+            val lo = encoded[i + 2].digitToIntOrNull(16)
+            if (hi != null && lo != null) {
+                bytes.add(((hi shl 4) or lo).toByte())
+                i += 3
+                continue
+            }
+        }
+        bytes.add(ch.code.toByte())
+        i++
+    }
+    return String(bytes.toByteArray(), Charsets.UTF_8)
 }

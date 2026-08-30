@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">다른 창에 압축 풀기</string>
     <string name="add_to_favorites">즐겨찾기에 추가</string>
     <string name="remove_from_favorites">즐겨찾기에서 제거</string>
+    <string name="add_location">위치 추가</string>
+    <string name="remove_location">위치 제거</string>
+    <string name="locations">위치</string>
+    <string name="locations_summary">다른 앱의 폴더(SFTP, Nextcloud, SMB 등). XFiles는 네트워크에 연결하지 않으며 상대 앱이 연결합니다.</string>
+    <string name="location_added">%1$s을(를) 추가했습니다</string>
+    <string name="location_removed">%1$s을(를) 제거했습니다</string>
+    <string name="location_already_added">%1$s은(는) 이미 위치입니다</string>
+    <string name="location_already_local">%1$s은(는) 이미 이 기기에 있습니다</string>
+    <string name="location_pinned_local">%1$s을(를) 즐겨찾기에 추가했습니다</string>
+    <string name="location_grant_failed">위치를 추가할 수 없습니다: %1$s</string>
     <string name="enable">활성화</string>
     <string name="disable">비활성화</string>
     <string name="copied">복사됨</string>

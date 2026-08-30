@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">Diğer bölmeye çıkar</string>
     <string name="add_to_favorites">Favorilere ekle</string>
     <string name="remove_from_favorites">Favorilerden kaldır</string>
+    <string name="add_location">Konum ekle</string>
+    <string name="remove_location">Konumu kaldır</string>
+    <string name="locations">Konumlar</string>
+    <string name="locations_summary">Diğer uygulamalardaki klasörler (SFTP, Nextcloud, SMB, …). XFiles ağa bağlanmaz; bağlantıyı diğer uygulama yapar.</string>
+    <string name="location_added">%1$s eklendi</string>
+    <string name="location_removed">%1$s kaldırıldı</string>
+    <string name="location_already_added">%1$s zaten bir konum</string>
+    <string name="location_already_local">%1$s zaten bu cihazda</string>
+    <string name="location_pinned_local">%1$s favorilere eklendi</string>
+    <string name="location_grant_failed">Konum eklenemedi: %1$s</string>
     <string name="enable">Etkinleştir</string>
     <string name="disable">Devre dışı bırak</string>
     <string name="copied">Kopyalandı</string>

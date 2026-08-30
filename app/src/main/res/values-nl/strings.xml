@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">Uitpakken naar het andere deelvenster</string>
     <string name="add_to_favorites">Toevoegen aan favorieten</string>
     <string name="remove_from_favorites">Verwijderen uit favorieten</string>
+    <string name="add_location">Locatie toevoegen</string>
+    <string name="remove_location">Locatie verwijderen</string>
+    <string name="locations">Locaties</string>
+    <string name="locations_summary">Mappen van andere apps (SFTP, Nextcloud, SMB, …). XFiles maakt zelf geen netwerkverbinding; dat doet de andere app.</string>
+    <string name="location_added">%1$s toegevoegd</string>
+    <string name="location_removed">%1$s verwijderd</string>
+    <string name="location_already_added">%1$s is al een locatie</string>
+    <string name="location_already_local">%1$s staat al op dit apparaat</string>
+    <string name="location_pinned_local">%1$s als favoriet vastgezet</string>
+    <string name="location_grant_failed">Locatie kon niet worden toegevoegd: %1$s</string>
     <string name="enable">Inschakelen</string>
     <string name="disable">Uitzetten</string>
     <string name="copied">Gekopieerd</string>

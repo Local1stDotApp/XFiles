@@ -30,23 +30,34 @@ object IntentUtils {
         false
     }
 
-    /** Open a local file with an external app chooser. Returns false when nothing handled it. */
-    fun openWith(context: Context, entry: XEntry): Boolean = try {
-        val path = entry.localPath ?: return false
+    /** Open a file with an external app chooser. [contentUri] is used for SAF documents. */
+    fun openWith(context: Context, entry: XEntry, contentUri: Uri? = null): Boolean = try {
+        val uri = contentUri ?: entry.localPath?.let { uriFor(context, it) } ?: return false
         val mime = entry.mime ?: FileTypes.mimeOf(entry.name) ?: "*/*"
         val intent = Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uriFor(context, path), mime)
+            .setDataAndType(uri, mime)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         context.launch(Intent.createChooser(intent, entry.name))
     } catch (_: Throwable) {
         false
     }
 
-    /** Shares local files through the system chooser. Returns false when the handoff fails. */
-    fun share(context: Context, entries: List<XEntry>): Boolean {
+    /**
+     * Shares files through the system chooser. [contentUris] is a parallel list of SAF
+     * document URIs; a null slot falls back to [XEntry.localPath]. Never silently shares
+     * only the local subset of a mixed selection.
+     */
+    fun share(
+        context: Context,
+        entries: List<XEntry>,
+        contentUris: List<Uri?> = emptyList(),
+    ): Boolean {
         return try {
-            // Never silently share only the local subset of a mixed selection.
-            val uris = entries.map { uriFor(context, it.localPath ?: return false) }
+            val uris = entries.mapIndexed { index, entry ->
+                contentUris.getOrNull(index)
+                    ?: entry.localPath?.let { uriFor(context, it) }
+                    ?: return false
+            }
             if (uris.isEmpty()) return false
             val intent = if (uris.size == 1) {
                 Intent(Intent.ACTION_SEND)
@@ -58,6 +69,11 @@ object IntentUtils {
                     .putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
             }
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val clip = android.content.ClipData.newUri(context.contentResolver, entries.first().name, uris.first())
+            for (i in 1 until uris.size) {
+                clip.addItem(android.content.ClipData.Item(uris[i]))
+            }
+            intent.clipData = clip
             context.launch(Intent.createChooser(intent, null))
         } catch (_: Throwable) {
             false

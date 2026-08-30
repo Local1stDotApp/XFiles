@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">استخراج إلى الجزء الآخر</string>
     <string name="add_to_favorites">أضف إلى المفضلة</string>
     <string name="remove_from_favorites">إزالة من المفضلة</string>
+    <string name="add_location">إضافة موقع</string>
+    <string name="remove_location">إزالة الموقع</string>
+    <string name="locations">المواقع</string>
+    <string name="locations_summary">مجلدات من تطبيقات أخرى (SFTP وNextcloud وSMB، …). لا يتصل XFiles بالشبكة؛ التطبيق الآخر يفعل ذلك.</string>
+    <string name="location_added">تمت إضافة %1$s</string>
+    <string name="location_removed">تمت إزالة %1$s</string>
+    <string name="location_already_added">%1$s موقع بالفعل</string>
+    <string name="location_already_local">%1$s موجود بالفعل على هذا الجهاز</string>
+    <string name="location_pinned_local">تمت إضافة %1$s إلى المفضلة</string>
+    <string name="location_grant_failed">تعذّر إضافة الموقع: %1$s</string>
     <string name="enable">تمكين</string>
     <string name="disable">تعطيل</string>
     <string name="copied">تم النسخ</string>

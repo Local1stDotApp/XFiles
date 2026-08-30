@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">In anderen Bereich extrahieren</string>
     <string name="add_to_favorites">Zu Favoriten hinzufügen</string>
     <string name="remove_from_favorites">Aus Favoriten entfernen</string>
+    <string name="add_location">Ort hinzufügen</string>
+    <string name="remove_location">Ort entfernen</string>
+    <string name="locations">Orte</string>
+    <string name="locations_summary">Ordner aus anderen Apps (SFTP, Nextcloud, SMB, …). XFiles stellt selbst keine Netzwerkverbindung her; das übernimmt die andere App.</string>
+    <string name="location_added">%1$s hinzugefügt</string>
+    <string name="location_removed">%1$s entfernt</string>
+    <string name="location_already_added">%1$s ist bereits ein Ort</string>
+    <string name="location_already_local">%1$s ist bereits auf diesem Gerät</string>
+    <string name="location_pinned_local">%1$s als Favorit angeheftet</string>
+    <string name="location_grant_failed">Ort konnte nicht hinzugefügt werden: %1$s</string>
     <string name="enable">Aktivieren</string>
     <string name="disable">Deaktivieren</string>
     <string name="copied">Kopiert</string>

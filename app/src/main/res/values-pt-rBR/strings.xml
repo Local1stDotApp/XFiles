@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">Extrair para outro painel</string>
     <string name="add_to_favorites">Adicionar aos favoritos</string>
     <string name="remove_from_favorites">Remover dos favoritos</string>
+    <string name="add_location">Adicionar local</string>
+    <string name="remove_location">Remover local</string>
+    <string name="locations">Locais</string>
+    <string name="locations_summary">Pastas de outros apps (SFTP, Nextcloud, SMB, …). O XFiles não se conecta à rede; o outro app faz isso.</string>
+    <string name="location_added">%1$s adicionado</string>
+    <string name="location_removed">%1$s removido</string>
+    <string name="location_already_added">%1$s já é um local</string>
+    <string name="location_already_local">%1$s já está neste dispositivo</string>
+    <string name="location_pinned_local">%1$s fixado nos favoritos</string>
+    <string name="location_grant_failed">Não foi possível adicionar o local: %1$s</string>
     <string name="enable">Habilitar</string>
     <string name="disable">Desativar</string>
     <string name="copied">Copiado</string>

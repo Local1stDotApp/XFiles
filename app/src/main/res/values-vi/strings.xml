@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">Giải nén sang khung khác</string>
     <string name="add_to_favorites">Thêm vào mục yêu thích</string>
     <string name="remove_from_favorites">Xóa khỏi mục yêu thích</string>
+    <string name="add_location">Thêm vị trí</string>
+    <string name="remove_location">Xóa vị trí</string>
+    <string name="locations">Vị trí</string>
+    <string name="locations_summary">Thư mục từ ứng dụng khác (SFTP, Nextcloud, SMB, …). XFiles không kết nối mạng; ứng dụng kia làm việc đó.</string>
+    <string name="location_added">Đã thêm %1$s</string>
+    <string name="location_removed">Đã xóa %1$s</string>
+    <string name="location_already_added">%1$s đã là một vị trí</string>
+    <string name="location_already_local">%1$s đã có trên thiết bị này</string>
+    <string name="location_pinned_local">Đã ghim %1$s vào mục yêu thích</string>
+    <string name="location_grant_failed">Không thể thêm vị trí: %1$s</string>
     <string name="enable">Kích hoạt</string>
     <string name="disable">Vô hiệu hóa</string>
     <string name="copied">Đã sao chép</string>

@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">Estrai nell’altro riquadro</string>
     <string name="add_to_favorites">Aggiungi ai preferiti</string>
     <string name="remove_from_favorites">Rimuovi dai preferiti</string>
+    <string name="add_location">Aggiungi posizione</string>
+    <string name="remove_location">Rimuovi posizione</string>
+    <string name="locations">Posizioni</string>
+    <string name="locations_summary">Cartelle di altre app (SFTP, Nextcloud, SMB, …). XFiles non si connette alla rete; lo fa l’altra app.</string>
+    <string name="location_added">Aggiunto %1$s</string>
+    <string name="location_removed">Rimosso %1$s</string>
+    <string name="location_already_added">%1$s è già una posizione</string>
+    <string name="location_already_local">%1$s è già su questo dispositivo</string>
+    <string name="location_pinned_local">Aggiunto %1$s ai preferiti</string>
+    <string name="location_grant_failed">Impossibile aggiungere la posizione: %1$s</string>
     <string name="enable">Abilita</string>
     <string name="disable">Disabilita</string>
     <string name="copied">Copiato</string>

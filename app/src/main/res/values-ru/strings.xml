@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">Извлечь на другую панель</string>
     <string name="add_to_favorites">Добавить в избранное</string>
     <string name="remove_from_favorites">Удалить из избранного</string>
+    <string name="add_location">Добавить расположение</string>
+    <string name="remove_location">Удалить расположение</string>
+    <string name="locations">Расположения</string>
+    <string name="locations_summary">Папки из других приложений (SFTP, Nextcloud, SMB, …). XFiles сам не подключается к сети — это делает другое приложение.</string>
+    <string name="location_added">Добавлено: %1$s</string>
+    <string name="location_removed">Удалено: %1$s</string>
+    <string name="location_already_added">%1$s уже является расположением</string>
+    <string name="location_already_local">%1$s уже есть на этом устройстве</string>
+    <string name="location_pinned_local">%1$s добавлено в избранное</string>
+    <string name="location_grant_failed">Не удалось добавить расположение: %1$s</string>
     <string name="enable">Включить</string>
     <string name="disable">Отключить</string>
     <string name="copied">Скопировано</string>

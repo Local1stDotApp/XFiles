@@ -65,6 +65,8 @@ class DefaultSearchEngine(private val registry: FsRegistry) : SearchEngine {
 
     private fun shouldDescend(entry: XEntry): Boolean = when {
         isDeniedPath(entry) -> false
+        // Remote document trees: match the current folder's children, never walk a NAS.
+        entry.scheme == XId.SCHEME_SAF -> false
         entry.isDir -> true
         entry.kind == EntryKind.ARCHIVE -> entry.size in 0 until MAX_ARCHIVE_BYTES
         else -> false

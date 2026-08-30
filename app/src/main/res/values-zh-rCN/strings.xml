@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">解压到另一个窗格</string>
     <string name="add_to_favorites">添加到收藏</string>
     <string name="remove_from_favorites">从收藏中移除</string>
+    <string name="add_location">添加位置</string>
+    <string name="remove_location">移除位置</string>
+    <string name="locations">位置</string>
+    <string name="locations_summary">来自其他应用的文件夹（SFTP、Nextcloud、SMB 等）。XFiles 本身不联网，由那个应用负责连接。</string>
+    <string name="location_added">已添加 %1$s</string>
+    <string name="location_removed">已移除 %1$s</string>
+    <string name="location_already_added">%1$s 已是位置</string>
+    <string name="location_already_local">%1$s 已在本机</string>
+    <string name="location_pinned_local">已将 %1$s 加入收藏</string>
+    <string name="location_grant_failed">无法添加位置：%1$s</string>
     <string name="enable">启用</string>
     <string name="disable">停用</string>
     <string name="copied">已复制</string>

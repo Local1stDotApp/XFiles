@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">Ekstrak ke panel lain</string>
     <string name="add_to_favorites">Tambahkan ke favorit</string>
     <string name="remove_from_favorites">Hapus dari favorit</string>
+    <string name="add_location">Tambah lokasi</string>
+    <string name="remove_location">Hapus lokasi</string>
+    <string name="locations">Lokasi</string>
+    <string name="locations_summary">Folder dari aplikasi lain (SFTP, Nextcloud, SMB, …). XFiles tidak tersambung ke jaringan; aplikasi itulah yang tersambung.</string>
+    <string name="location_added">%1$s ditambahkan</string>
+    <string name="location_removed">%1$s dihapus</string>
+    <string name="location_already_added">%1$s sudah menjadi lokasi</string>
+    <string name="location_already_local">%1$s sudah ada di perangkat ini</string>
+    <string name="location_pinned_local">%1$s disematkan sebagai favorit</string>
+    <string name="location_grant_failed">Tidak dapat menambah lokasi: %1$s</string>
     <string name="enable">Aktifkan</string>
     <string name="disable">Nonaktifkan</string>
     <string name="copied">Disalin</string>

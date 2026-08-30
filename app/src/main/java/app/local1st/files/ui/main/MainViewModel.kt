@@ -6,7 +6,9 @@ import android.provider.Settings
 import app.local1st.files.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import app.local1st.files.core.fs.AddLocationResult
 import app.local1st.files.core.fs.EntryKind
+import app.local1st.files.core.fs.SafFileSystem
 import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.fs.priv.SuTransport
 import app.local1st.files.core.fs.XEntry
@@ -15,6 +17,8 @@ import app.local1st.files.core.ops.BackgroundJob
 import app.local1st.files.core.ops.BackgroundJobs
 import app.local1st.files.core.ops.FileOp
 import app.local1st.files.core.ops.OpsService
+import app.local1st.files.core.ops.canEditCreatedTextFile
+import app.local1st.files.core.ops.canMoveSource
 import app.local1st.files.core.util.AabConverter
 import app.local1st.files.core.util.ApkInstaller
 import app.local1st.files.core.util.AppComponents
@@ -191,6 +195,11 @@ class MainViewModel : ViewModel() {
                 panes.forEach { it.reloadRoots() }
             }
         }
+        viewModelScope.launch {
+            Graph.safLocations.filterNotNull().distinctUntilChanged().drop(1).collect {
+                panes.forEach { it.reloadRoots() }
+            }
+        }
         observeStorageVolumeChanges()
     }
 
@@ -274,6 +283,7 @@ class MainViewModel : ViewModel() {
             PrivilegedAccess.enabled = Graph.settings.rootEnabled.first()
             PrivilegedAccess.preference = Graph.settings.privilegedTransport.first()
             Graph.favorites.first { it != null }
+            Graph.safLocations.first { it != null }
             restorePaneCriticalPaths { i, pane, paneRoots, listings ->
                 val saved = session.panes.getOrNull(i)
                 pane.restore(
@@ -391,6 +401,40 @@ class MainViewModel : ViewModel() {
         activePane.value = index
     }
 
+    fun requestAddLocation() {
+        Graph.locationActions.requestPicker()
+    }
+
+    fun completeAddLocation(uri: Uri?, resultFlags: Int) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                Graph.locationActions.addFromPicker(uri, resultFlags)
+            }
+            val message = when (result) {
+                AddLocationResult.Cancelled -> return@launch
+                is AddLocationResult.Added -> text(R.string.location_added, result.name)
+                is AddLocationResult.AlreadyAdded -> text(R.string.location_already_added, result.name)
+                is AddLocationResult.AlreadyLocal -> text(R.string.location_already_local, result.name)
+                is AddLocationResult.PinnedLocal -> text(R.string.location_pinned_local, result.name)
+                is AddLocationResult.Failed -> text(R.string.location_grant_failed, result.reason)
+            }
+            snackbar.tryEmit(message)
+        }
+    }
+
+    fun removeLocation(entry: XEntry) {
+        if (entry.scheme != XId.SCHEME_SAF) return
+        val locationId = XId.safLocationId(entry.id)
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { Graph.locationActions.remove(locationId) }
+            }.fold(
+                onSuccess = { snackbar.tryEmit(text(R.string.location_removed, entry.name)) },
+                onFailure = { snackbar.tryEmit(text(R.string.location_grant_failed, it.message ?: text(R.string.generic_error))) },
+            )
+        }
+    }
+
     /** Pin or unpin an entry as a top-level favorite shortcut. */
     fun toggleFavorite(entry: XEntry) {
         viewModelScope.launch {
@@ -417,6 +461,10 @@ class MainViewModel : ViewModel() {
         if (entry.isContainer) {
             // Apps and archives (incl. APKs) expand in place; long-press opens their menu.
             pane.toggleExpand(entry)
+            return
+        }
+        if (entry.scheme == XId.SCHEME_SAF) {
+            openWith(entry)
             return
         }
         if (entry.kind == EntryKind.APP_COMPONENT) {
@@ -458,11 +506,12 @@ class MainViewModel : ViewModel() {
     }
 
     fun openWith(entry: XEntry) {
-        if (entry.localPath == null) {
+        val contentUri = safContentUri(entry)
+        if (entry.localPath == null && contentUri == null) {
             snackbar.tryEmit(text(R.string.open_with_requires_local_file))
             return
         }
-        if (!IntentUtils.openWith(Graph.appContext, entry)) {
+        if (!IntentUtils.openWith(Graph.appContext, entry, contentUri)) {
             snackbar.tryEmit(text(R.string.no_app_can_open, entry.name))
         }
     }
@@ -712,6 +761,11 @@ class MainViewModel : ViewModel() {
     /** Copies or moves the active pane's selection directly into the other pane's folder. */
     fun copySelection(move: Boolean, sources: List<XEntry> = activeCtrl.selectionEntries()) {
         if (sources.isEmpty()) return
+        if (move && !sources.all(::canMoveSource)) {
+            val blocked = sources.first { !canMoveSource(it) }
+            snackbar.tryEmit(text(R.string.cannot_write, blocked.name))
+            return
+        }
         val destDir = validDestinationOrNotify(otherPaneDestination()) ?: return
         Graph.opEngine.submit(FileOp.Copy(sources, destDir, move))
         activeCtrl.clearSelection()
@@ -723,6 +777,11 @@ class MainViewModel : ViewModel() {
         sources: List<XEntry> = activeCtrl.selectionEntries(),
     ) {
         if (sources.isEmpty()) return
+        if (move && !sources.all(::canMoveSource)) {
+            val blocked = sources.first { !canMoveSource(it) }
+            snackbar.tryEmit(text(R.string.cannot_write, blocked.name))
+            return
+        }
         showDestinationPicker(
             PendingTransfer(
                 sources = sources,
@@ -838,7 +897,9 @@ class MainViewModel : ViewModel() {
                 onSuccess = { entry ->
                     activeCtrl.expand(parent)
                     panes.forEach { it.refresh(parent.id) }
-                    showViewer(ViewerRequest.Text(entry, startEditing = true))
+                    if (canEditCreatedTextFile(entry)) {
+                        showViewer(ViewerRequest.Text(entry, startEditing = true))
+                    }
                 },
                 onFailure = { error ->
                     val alreadyExists = generateSequence(error) { it.cause }
@@ -877,13 +938,20 @@ class MainViewModel : ViewModel() {
             snackbar.tryEmit(text(R.string.select_file_to_share))
             return
         }
-        if (files.any { it.localPath == null }) {
+        if (files.any { it.localPath == null && safContentUri(it) == null }) {
             snackbar.tryEmit(text(R.string.share_requires_local_files))
             return
         }
-        if (!IntentUtils.share(Graph.appContext, files)) {
+        val uris = files.map { safContentUri(it) }
+        if (!IntentUtils.share(Graph.appContext, files, uris)) {
             snackbar.tryEmit(text(R.string.cannot_share_files))
         }
+    }
+
+    private fun safContentUri(entry: XEntry): Uri? {
+        if (entry.scheme != XId.SCHEME_SAF) return null
+        val fs = Graph.fsRegistry.forScheme(XId.SCHEME_SAF) as? SafFileSystem ?: return null
+        return runCatching { fs.documentUri(entry)?.let(Uri::parse) }.getOrNull()
     }
 
     fun openSearch() {
@@ -910,7 +978,9 @@ class MainViewModel : ViewModel() {
 
 internal fun isFileOperationDestination(dest: XEntry?): Boolean =
     dest != null && dest.isDir && dest.canWrite &&
-        (dest.scheme == XId.SCHEME_FILE || dest.scheme == XId.SCHEME_ROOT)
+        (dest.scheme == XId.SCHEME_FILE ||
+            dest.scheme == XId.SCHEME_ROOT ||
+            dest.scheme == XId.SCHEME_SAF)
 
 /** A copy or move whose non-pane destination is being chosen. */
 data class PendingTransfer(

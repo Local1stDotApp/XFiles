@@ -28,6 +28,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -202,6 +203,42 @@ fun SettingsScreen(onBack: () -> Unit) {
                     checked = sortDescending,
                     onCheckedChange = { scope.launch { settings.setSortDescending(it) } },
                 )
+
+                SectionHeader(stringResource(R.string.locations))
+                Text(
+                    stringResource(R.string.locations_summary),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+                val locations by Graph.safLocations.collectAsState()
+                locations.orEmpty().forEach { location ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            location.displayName,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(
+                            onClick = {
+                                scope.launch { Graph.locationActions.remove(location.id) }
+                            },
+                        ) {
+                            Text(stringResource(R.string.remove_location))
+                        }
+                    }
+                }
+                OutlinedButton(
+                    onClick = { Graph.locationActions.requestPicker() },
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                ) {
+                    Text(stringResource(R.string.add_location))
+                }
 
                 SectionHeader(stringResource(R.string.file_associations))
                 SwitchRow(

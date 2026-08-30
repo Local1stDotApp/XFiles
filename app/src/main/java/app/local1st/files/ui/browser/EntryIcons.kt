@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Android
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -79,6 +80,7 @@ object EntryIcons {
         EntryKind.APP -> Icons.Outlined.Android
         EntryKind.APP_COMPONENT_GROUP, EntryKind.APP_COMPONENT -> componentIcon(entry)
         EntryKind.ROOT -> Icons.Outlined.Security
+        EntryKind.LOCATION -> Icons.Outlined.Cloud
         EntryKind.ARCHIVE -> Icons.Outlined.FolderZip
         EntryKind.DIR -> if (expanded) Icons.Outlined.FolderOpen else Icons.Outlined.Folder
         EntryKind.FILE -> forCategory(FileTypes.categoryOf(entry.name, entry.mime))

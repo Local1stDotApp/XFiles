@@ -34,6 +34,7 @@ happens locally, on your device only:
 | What it accesses | Why | Leaves the device? |
 |---|---|---|
 | Files and folders in shared storage | To list, open, copy, move, rename, delete, compress and extract them — the app's core function | No |
+| Document trees you grant via **Add location** | To browse and copy files exposed by another app (for example a DocumentsProvider that mounts SFTP). XFiles talks to that app over Binder, not over the network | Only if the other app sends them; XFiles itself cannot open a socket |
 | The list of installed apps | To show the App manager, with icons, versions and components | No |
 | Files anywhere on the filesystem, as superuser | Only if you explicitly enable **Root access** in Settings, and only on a rooted device | No |
 

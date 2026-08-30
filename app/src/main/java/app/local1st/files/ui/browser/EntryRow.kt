@@ -35,15 +35,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -65,10 +64,12 @@ import app.local1st.files.core.util.FileTypes
 import app.local1st.files.core.util.Format
 import java.io.File
 
-// One tree level. The expand chevron is drawn inside this slot (no Material icon
-// padding), centered a hairline (its 1px lead) right of the children's vertical spine —
-// the lead keeps a visible gap between a branch line's round cap and the chevron.
-private val IndentWidth = 12.dp
+// One tree level: 2.dp + 12.dp chevron. The lead keeps the chevron off the
+// selection highlight / branch-line cap. Guides use the same width so a child's
+// spine runs through the chevron.
+private val ChevronGapStart = 2.dp
+private val ChevronSize = 12.dp
+private val IndentWidth = ChevronGapStart + ChevronSize
 private val RowHeight = 56.dp
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -91,6 +92,7 @@ fun EntryRow(
     val selectable = !isVolume &&
         entry.kind != EntryKind.APPS_ROOT &&
         entry.kind != EntryKind.ROOT &&
+        entry.kind != EntryKind.LOCATION &&
         entry.kind != EntryKind.APP_COMPONENT_GROUP &&
         entry.kind != EntryKind.APP_COMPONENT
 
@@ -151,7 +153,7 @@ fun EntryRow(
                 val x = unit * (node.depth - 1) + unit / 2
                 val midY = size.height / 2
                 // Round caps extend past the end by half the stroke; stop at the
-                // column edge so the chevron's 1px leading gap stays visible.
+                // column edge so the chevron's leading gap stays visible.
                 val endX = x + unit / 2 - stroke / 2f
                 if (node.isLastChild) {
                     // Rounded "└": the vertical stops here and curves into the branch — the arc
@@ -186,7 +188,7 @@ fun EntryRow(
                 animate = true,
             )
         } else {
-            Spacer(Modifier.width(expandSlotWidth()))
+            Spacer(Modifier.width(IndentWidth))
         }
 
         // Icon or thumbnail (selection is the trailing control, to avoid mis-taps here).
@@ -273,9 +275,6 @@ fun EntryRow(
 }
 
 @Composable
-private fun expandSlotWidth() = IndentWidth + with(LocalDensity.current) { 1.toDp() }
-
-@Composable
 private fun ExpandChevron(
     expanded: Boolean,
     label: String?,
@@ -285,36 +284,42 @@ private fun ExpandChevron(
     val animated by animateFloatAsState(target, label = "chevron")
     val rotation = if (animate) animated else target
     val color = MaterialTheme.colorScheme.onSurfaceVariant
-    val lead = with(LocalDensity.current) { 1.toDp() }
+    // Separate sibling so Layout Inspector reports the canvas inset from the
+    // selection highlight. Padding on the canvas itself is part of that node's
+    // bounds, so the gap disappears.
+    Spacer(Modifier.width(ChevronGapStart))
     Canvas(
         Modifier
-            .padding(start = lead)
-            .size(IndentWidth)
-            .rotate(rotation)
+            .size(ChevronSize)
             .semantics {
                 if (label != null) {
                     contentDescription = label
                 }
             },
     ) {
-        // 90° tip (45° arms), same opening as Material's chevron, without its
-        // 24dp-viewport padding. A square corner-to-corner stroke was ~53° and
-        // read as a spike.
-        val stroke = 1.25.dp.toPx()
-        val pad = stroke / 2f + 0.5.dp.toPx()
-        val half = size.minDimension / 2f - pad
-        val cx = size.width / 2f
-        val cy = size.height / 2f
-        val path = Path().apply {
-            moveTo(cx - half / 2f, cy - half)
-            lineTo(cx + half / 2f, cy)
-            lineTo(cx - half / 2f, cy + half)
+        // Rotate in the draw scope so the layout box stays in this slot.
+        // Modifier.rotate() attaches a graphics layer; when the chevron points
+        // down, Layout Inspector reports that layer on top of the folder icon.
+        rotate(rotation) {
+            // 90° tip (45° arms), same opening as Material's chevron, without its
+            // 24dp-viewport padding. A square corner-to-corner stroke was ~53° and
+            // read as a spike.
+            val stroke = 1.25.dp.toPx()
+            val pad = stroke / 2f + 0.5.dp.toPx()
+            val half = size.minDimension / 2f - pad
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val path = Path().apply {
+                moveTo(cx - half / 2f, cy - half)
+                lineTo(cx + half / 2f, cy)
+                lineTo(cx - half / 2f, cy + half)
+            }
+            drawPath(
+                path,
+                color,
+                style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
         }
-        drawPath(
-            path,
-            color,
-            style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
-        )
     }
 }
 
@@ -365,7 +370,7 @@ private fun StartupEntryRow(
                 animate = false,
             )
         } else {
-            Spacer(Modifier.width(expandSlotWidth()))
+            Spacer(Modifier.width(IndentWidth))
         }
         Box(
             Modifier.padding(end = 8.dp),

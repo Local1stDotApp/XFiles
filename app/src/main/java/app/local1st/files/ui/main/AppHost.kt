@@ -53,6 +53,7 @@ fun AppHost(vm: MainViewModel) {
     }
     if (sessionReady) RequestNotificationPermission()
     if (sessionReady) LegacySafGrantHost(vm)
+    if (sessionReady) SafLocationPickerHost(vm)
 
     Box(
         Modifier
@@ -134,6 +135,24 @@ private fun RequestNotificationPermission() {
             Manifest.permission.POST_NOTIFICATIONS,
         ) == PackageManager.PERMISSION_GRANTED
         if (!granted) launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+}
+
+/** Opens the system folder picker for Add location on every API level. */
+@Composable
+private fun SafLocationPickerHost(vm: MainViewModel) {
+    val nonce by Graph.locationActions.pickerNonce.collectAsStateWithLifecycle()
+    val launcher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val data = result.data
+        val uri = if (result.resultCode == Activity.RESULT_OK) data?.data else null
+        vm.completeAddLocation(uri, data?.flags ?: 0)
+    }
+    LaunchedEffect(nonce) {
+        if (!Graph.locationActions.takePickerLaunch(nonce)) return@LaunchedEffect
+        runCatching { launcher.launch(Graph.locationActions.pickerIntent()) }
+            .onFailure { vm.completeAddLocation(null, 0) }
     }
 }
 

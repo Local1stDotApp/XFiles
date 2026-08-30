@@ -5,8 +5,10 @@ import android.os.Build
 import app.local1st.files.core.fs.FsRegistry
 import app.local1st.files.core.fs.LegacySafAccess
 import app.local1st.files.core.fs.RootsRepository
+import app.local1st.files.core.fs.SafLocationActions
 import app.local1st.files.core.ops.OperationEngine
 import app.local1st.files.core.prefs.Favorite
+import app.local1st.files.core.prefs.SafLocation
 import app.local1st.files.core.prefs.SessionState
 import app.local1st.files.core.prefs.SettingsRepo
 import app.local1st.files.core.search.SearchEngine
@@ -58,7 +60,12 @@ object Graph {
         settings.favorites.stateIn<List<Favorite>?>(appScope, SharingStarted.Eagerly, null)
     }
 
+    val safLocations: StateFlow<List<SafLocation>?> by lazy {
+        settings.safLocations.stateIn<List<SafLocation>?>(appScope, SharingStarted.Eagerly, null)
+    }
+
     lateinit var roots: RootsRepository
+    lateinit var locationActions: SafLocationActions
     lateinit var opEngine: OperationEngine
     lateinit var searchEngine: SearchEngine
 

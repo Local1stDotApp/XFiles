@@ -4,7 +4,10 @@ import app.local1st.files.core.fs.AppsFileSystem
 import app.local1st.files.core.fs.ArchiveFileSystem
 import app.local1st.files.core.fs.DefaultRootsRepository
 import app.local1st.files.core.fs.LocalFileSystem
+import app.local1st.files.core.fs.ResolverDocumentsBackend
 import app.local1st.files.core.fs.RootFileSystem
+import app.local1st.files.core.fs.SafFileSystem
+import app.local1st.files.core.fs.SafLocationActions
 import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.fs.priv.ShizukuGate
 import app.local1st.files.core.ops.DefaultOperationEngine
@@ -22,11 +25,23 @@ fun initGraph(graph: Graph) {
     graph.fsRegistry.register(ArchiveFileSystem())
     graph.fsRegistry.register(AppsFileSystem(Graph.appContext))
     graph.fsRegistry.register(rootFs)
+    graph.fsRegistry.register(
+        SafFileSystem(
+            backend = ResolverDocumentsBackend(Graph.appContext),
+            locations = { Graph.safLocations.value.orEmpty() },
+        ),
+    )
 
     graph.roots = DefaultRootsRepository(
         Graph.appContext,
         favorites = { Graph.favorites.value.orEmpty() },
+        safLocations = { Graph.safLocations.value.orEmpty() },
         statById = { id -> Graph.fsRegistry.forId(id).stat(id) },
+    )
+    graph.locationActions = SafLocationActions(
+        Graph.appContext,
+        Graph.settings,
+        volumes = { graph.roots.volumes() },
     )
     graph.opEngine = DefaultOperationEngine(Graph.appScope, graph.fsRegistry, Graph.appContext.cacheDir)
     graph.searchEngine = DefaultSearchEngine(graph.fsRegistry)

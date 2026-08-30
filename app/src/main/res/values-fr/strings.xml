@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">Extraire vers l’autre volet</string>
     <string name="add_to_favorites">Ajouter aux favoris</string>
     <string name="remove_from_favorites">Supprimer des favoris</string>
+    <string name="add_location">Ajouter un emplacement</string>
+    <string name="remove_location">Retirer l’emplacement</string>
+    <string name="locations">Emplacements</string>
+    <string name="locations_summary">Dossiers d’autres applis (SFTP, Nextcloud, SMB, …). XFiles ne se connecte pas au réseau ; c’est l’autre appli qui le fait.</string>
+    <string name="location_added">%1$s ajouté</string>
+    <string name="location_removed">%1$s retiré</string>
+    <string name="location_already_added">%1$s est déjà un emplacement</string>
+    <string name="location_already_local">%1$s est déjà sur cet appareil</string>
+    <string name="location_pinned_local">%1$s ajouté aux favoris</string>
+    <string name="location_grant_failed">Impossible d’ajouter l’emplacement : %1$s</string>
     <string name="enable">Activer</string>
     <string name="disable">Désactiver</string>
     <string name="copied">Copié</string>

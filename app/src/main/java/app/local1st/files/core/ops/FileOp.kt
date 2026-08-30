@@ -1,6 +1,8 @@
 package app.local1st.files.core.ops
 
+import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.XEntry
+import app.local1st.files.core.fs.XId
 
 /** A long-running file operation submitted to the [OperationEngine]. */
 sealed interface FileOp {
@@ -61,3 +63,17 @@ data class ConflictResolution(
     val choice: ConflictChoice,
     val applyToAll: Boolean = false,
 )
+
+/**
+ * Move copies then deletes the source. Pane roots and virtual nodes cannot be deleted as a
+ * unit (SAF location roots, volumes, `/`, apps), so they are copy-only.
+ */
+internal fun canMoveSource(entry: XEntry): Boolean =
+    entry.canWrite &&
+        (entry.kind == EntryKind.DIR ||
+            entry.kind == EntryKind.FILE ||
+            entry.kind == EntryKind.ARCHIVE)
+
+/** In-app text editing is a local-file path; SAF/root entries open as a read-only stream. */
+internal fun canEditCreatedTextFile(entry: XEntry): Boolean =
+    entry.scheme == XId.SCHEME_FILE && entry.canWrite

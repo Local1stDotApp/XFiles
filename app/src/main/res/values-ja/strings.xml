@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">もう一方のペインに展開</string>
     <string name="add_to_favorites">お気に入りに追加</string>
     <string name="remove_from_favorites">お気に入りから削除</string>
+    <string name="add_location">場所を追加</string>
+    <string name="remove_location">場所を削除</string>
+    <string name="locations">場所</string>
+    <string name="locations_summary">他のアプリのフォルダ（SFTP、Nextcloud、SMB など）。XFiles はネットワークに接続せず、接続は相手のアプリが行います。</string>
+    <string name="location_added">%1$s を追加しました</string>
+    <string name="location_removed">%1$s を削除しました</string>
+    <string name="location_already_added">%1$s はすでに場所です</string>
+    <string name="location_already_local">%1$s はこの端末にあります</string>
+    <string name="location_pinned_local">%1$s をお気に入りに追加しました</string>
+    <string name="location_grant_failed">場所を追加できませんでした: %1$s</string>
     <string name="enable">有効にする</string>
     <string name="disable">無効にする</string>
     <string name="copied">コピーしました</string>

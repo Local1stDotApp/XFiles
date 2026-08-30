@@ -43,6 +43,16 @@
     <string name="extract_to_other_pane">अन्य फलक में निकालें</string>
     <string name="add_to_favorites">पसंदीदा में जोड़ें</string>
     <string name="remove_from_favorites">पसंदीदा से हटाएँ</string>
+    <string name="add_location">स्थान जोड़ें</string>
+    <string name="remove_location">स्थान हटाएँ</string>
+    <string name="locations">स्थान</string>
+    <string name="locations_summary">अन्य ऐप्स के फ़ोल्डर (SFTP, Nextcloud, SMB, …)। XFiles नेटवर्क से कनेक्ट नहीं होता; दूसरा ऐप करता है।</string>
+    <string name="location_added">%1$s जोड़ा गया</string>
+    <string name="location_removed">%1$s हटाया गया</string>
+    <string name="location_already_added">%1$s पहले से एक स्थान है</string>
+    <string name="location_already_local">%1$s पहले से इस डिवाइस पर है</string>
+    <string name="location_pinned_local">%1$s को पसंदीदा में जोड़ा गया</string>
+    <string name="location_grant_failed">स्थान नहीं जोड़ा जा सका: %1$s</string>
     <string name="enable">सक्षम करें</string>
     <string name="disable">अक्षम करें</string>
     <string name="copied">कॉपी किया गया</string>

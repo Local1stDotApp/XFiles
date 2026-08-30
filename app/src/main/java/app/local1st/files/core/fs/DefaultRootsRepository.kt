@@ -12,6 +12,7 @@ import android.os.storage.StorageVolume
 import androidx.annotation.RequiresApi
 import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.prefs.Favorite
+import app.local1st.files.core.prefs.SafLocation
 import app.local1st.files.core.util.Format
 import java.io.File
 import java.util.concurrent.Executor
@@ -20,8 +21,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 
 /**
- * Pane roots from [StorageManager]: mounted storage volumes, pinned favorites,
- * plus the app-manager root and (when the Settings switch is on) the filesystem root `/`.
+ * Pane roots from [StorageManager]: mounted storage volumes, granted document trees,
+ * pinned favorites, plus the app-manager root and (when the Settings switch is on)
+ * the filesystem root `/`.
  *
  * Favorites and stat are injected as lambdas so this class stays free of the
  * DI graph (wired in GraphInit).
@@ -29,6 +31,7 @@ import kotlinx.coroutines.flow.update
 class DefaultRootsRepository(
     private val context: Context,
     private val favorites: () -> List<Favorite> = { emptyList() },
+    private val safLocations: () -> List<SafLocation> = { emptyList() },
     private val statById: (String) -> XEntry? = { null },
 ) : RootsRepository {
 
@@ -115,9 +118,23 @@ class DefaultRootsRepository(
         specials.mapTo(taken) { it.id }
         val roots = ArrayList<XEntry>(volumeEntries.size + specials.size + 4)
         roots += volumeEntries
+        addSafLocations(roots, taken)
         addFavorites(roots, taken)
         roots += specials
         return roots
+    }
+
+    /**
+     * Appends granted document trees as pane roots. A location whose provider is currently
+     * missing still shows, marked unavailable, so the grant isn't silently lost.
+     */
+    private fun addSafLocations(roots: MutableList<XEntry>, taken: MutableSet<String>) {
+        for (location in safLocations()) {
+            val id = runCatching { XId.saf(location.id) }.getOrNull() ?: continue
+            if (!taken.add(id)) continue
+            val stat = runCatching { statById(id) }.getOrNull()
+            roots += safLocationRoot(location, stat)
+        }
     }
 
     /**

@@ -278,7 +278,8 @@ fun DestinationPickerScreen(
 private fun parentOf(dir: XEntry): XEntry? {
     // A top-level volume/root has no browsable parent in the picker → back to the roots list.
     if (dir.kind == EntryKind.VOLUME_INTERNAL || dir.kind == EntryKind.VOLUME_SD ||
-        dir.kind == EntryKind.VOLUME_USB || dir.kind == EntryKind.ROOT
+        dir.kind == EntryKind.VOLUME_USB || dir.kind == EntryKind.ROOT ||
+        dir.kind == EntryKind.LOCATION
     ) return null
     val parentId = XId.parent(dir.id) ?: return null
     return resolvePickerDir(parentId)
@@ -307,12 +308,18 @@ internal fun pickerDirFromId(id: String, roots: List<XEntry>): XEntry? {
     if (pathInsidePaneRoots(id, topLevelIds) == null) return null
     roots.firstOrNull { it.id == id }?.let { return it }
     val path = id.substringAfter("://").trimEnd('/')
-    val name = path.substringAfterLast('/').ifEmpty { "/" }
     val scheme = XId.schemeOf(id)
-    val kind = if (scheme == XId.SCHEME_ROOT && (path.isEmpty() || path == "/")) {
-        EntryKind.ROOT
-    } else {
-        EntryKind.DIR
+    val name = when (scheme) {
+        XId.SCHEME_SAF -> {
+            val docs = XId.safDocumentIds(id)
+            if (docs.isEmpty()) path.ifEmpty { "Location" } else docs.last()
+        }
+        else -> path.substringAfterLast('/').ifEmpty { "/" }
+    }
+    val kind = when {
+        scheme == XId.SCHEME_ROOT && (path.isEmpty() || path == "/") -> EntryKind.ROOT
+        scheme == XId.SCHEME_SAF && XId.safDocumentIds(id).isEmpty() -> EntryKind.LOCATION
+        else -> EntryKind.DIR
     }
     return XEntry(
         id = id,
@@ -325,6 +332,7 @@ internal fun pickerDirFromId(id: String, roots: List<XEntry>): XEntry? {
 
 private fun pathLabel(dir: XEntry): String = when (dir.scheme) {
     XId.SCHEME_ROOT -> "root:" + dir.path
+    XId.SCHEME_SAF -> dir.name
     else -> dir.path
 }
 

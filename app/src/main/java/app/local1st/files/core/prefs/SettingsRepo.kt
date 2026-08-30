@@ -89,6 +89,18 @@ data class SessionState(val panes: List<SessionPane>, val activePane: Int)
  */
 data class Favorite(val id: String, val isDir: Boolean)
 
+/**
+ * A granted document tree shown as a pane root. [treeUri] is the persisted SAF tree URI.
+ * [writable] reflects the persistable grant, not a live provider probe.
+ */
+data class SafLocation(
+    val id: String,
+    val treeUri: String,
+    val displayName: String,
+    val writable: Boolean,
+    val createdAt: Long = 0L,
+)
+
 /** Default for the Root-access switch: the home-screen row is visible; writes stay read-only. */
 const val DEFAULT_ROOT_ENABLED = true
 
@@ -251,6 +263,7 @@ class SettingsRepo(private val context: Context) {
     private val keySafVolumeTrees = stringPreferencesKey("saf_volume_trees")
     // JSON array, not a string set: favorites keep their user-defined order.
     private val keyFavorites = stringPreferencesKey("favorites")
+    private val keySafLocations = stringPreferencesKey("saf_locations")
     private val keySessionActivePane = intPreferencesKey("session_active_pane")
     private val keySessionExpanded = listOf(
         stringSetPreferencesKey("session_expanded_0"),
@@ -339,6 +352,43 @@ class SettingsRepo(private val context: Context) {
         val arr = JSONArray()
         favorites.forEach { arr.put(JSONObject().put("id", it.id).put("dir", it.isDir)) }
         prefs[keyFavorites] = arr.toString()
+    }
+
+    /** Granted document trees, in display order. Separate from API 26–29 [safVolumeTrees]. */
+    val safLocations: Flow<List<SafLocation>> = setting { prefs ->
+        val json = prefs[keySafLocations] ?: return@setting emptyList()
+        runCatching {
+            val arr = JSONArray(json)
+            List(arr.length()) { i ->
+                val o = arr.getJSONObject(i)
+                SafLocation(
+                    id = o.getString("id"),
+                    treeUri = o.getString("uri"),
+                    displayName = o.optString("name").ifBlank { "Location" },
+                    writable = o.optBoolean("w", true),
+                    createdAt = o.optLong("t", 0L),
+                )
+            }.filter { it.id.isNotEmpty() && it.treeUri.isNotEmpty() }
+        }.getOrDefault(emptyList())
+    }
+
+    suspend fun setSafLocations(locations: List<SafLocation>) = context.dataStore.edit { prefs ->
+        if (locations.isEmpty()) {
+            prefs.remove(keySafLocations)
+            return@edit
+        }
+        val arr = JSONArray()
+        locations.forEach { loc ->
+            arr.put(
+                JSONObject()
+                    .put("id", loc.id)
+                    .put("uri", loc.treeUri)
+                    .put("name", loc.displayName)
+                    .put("w", loc.writable)
+                    .put("t", loc.createdAt),
+            )
+        }
+        prefs[keySafLocations] = arr.toString()
     }
 
     suspend fun setSafVolumeTree(volumeId: String, treeUri: String?) =

@@ -32,12 +32,14 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import app.local1st.files.R
 import app.local1st.files.core.fs.EntryKind
+import app.local1st.files.core.fs.XId
 import app.local1st.files.core.util.AppComponents
 import app.local1st.files.core.util.ComponentType
 import app.local1st.files.core.util.FileTypes
 import app.local1st.files.core.util.Format
 import app.local1st.files.core.util.IntentUtils
 import app.local1st.files.di.Graph
+import app.local1st.files.core.ops.canMoveSource
 import app.local1st.files.ui.main.MainViewModel
 import app.local1st.files.ui.main.isFileOperationDestination
 import kotlinx.coroutines.Dispatchers
@@ -259,6 +261,13 @@ private fun EntryMenuContent(
             // top level (volumes, App manager, Root) is excluded: pinning it again would
             // be a silent no-op. Pinned rows
             // themselves stay, for "Remove from favorites".
+            if (entry.kind == EntryKind.LOCATION && vm.activeCtrl.isTopLevelRoot(entry.id)) {
+                MenuItem(stringResource(R.string.remove_location)) {
+                    vm.removeLocation(entry)
+                    dismiss()
+                }
+            }
+
             if ((entry.kind == EntryKind.DIR || entry.kind == EntryKind.FILE ||
                     entry.kind == EntryKind.ARCHIVE) &&
                 (entry.pinned || !vm.activeCtrl.isTopLevelRoot(entry.id))
@@ -279,16 +288,19 @@ private fun EntryMenuContent(
 
             if (!entry.isDir) {
                 val hasLocalFile = entry.localPath != null
+                val canHandoff = hasLocalFile || entry.scheme == XId.SCHEME_SAF
                 MenuItem(
                     label = stringResource(R.string.open_with),
-                    enabled = hasLocalFile,
+                    enabled = canHandoff,
                     disabledReason = stringResource(R.string.requires_local_file),
                 ) { vm.openWith(entry); dismiss() }
-                MenuItem(stringResource(R.string.open_as_text)) { vm.openAsText(entry); dismiss() }
-                MenuItem(stringResource(R.string.open_as_hex)) { vm.openAsHex(entry); dismiss() }
+                if (hasLocalFile) {
+                    MenuItem(stringResource(R.string.open_as_text)) { vm.openAsText(entry); dismiss() }
+                    MenuItem(stringResource(R.string.open_as_hex)) { vm.openAsHex(entry); dismiss() }
+                }
                 MenuItem(
                     label = stringResource(R.string.share),
-                    enabled = hasLocalFile,
+                    enabled = canHandoff,
                     disabledReason = stringResource(R.string.requires_local_file),
                 ) { vm.shareSelection(listOf(entry)); dismiss() }
             }
@@ -297,9 +309,9 @@ private fun EntryMenuContent(
                 vm.chooseTransferDestination(move = false, sources = listOf(entry))
                 dismiss()
             }
-            // Move deletes the source, so only when the source itself is writable (not a read-only
-            // root entry or an archive member).
-            if (entry.canWrite) {
+            // Move deletes the source, so only writable files/folders — not location or volume
+            // roots, whose delete is refused after the copy has already landed.
+            if (canMoveSource(entry)) {
                 MenuItem(stringResource(R.string.move_to)) {
                     vm.chooseTransferDestination(move = true, sources = listOf(entry))
                     dismiss()
@@ -327,7 +339,7 @@ private fun EntryMenuContent(
                     ) { vm.installPackage(entry); dismiss() }
                 }
             }
-            if (entry.canWrite) {
+            if (entry.canWrite && entry.kind != EntryKind.LOCATION) {
                 MenuItem(stringResource(R.string.rename)) { vm.requestRename(entry) }
                 MenuItem(stringResource(R.string.delete)) { vm.requestDelete(listOf(entry)) }
             }
@@ -336,6 +348,10 @@ private fun EntryMenuContent(
         if (req.showSettings) {
             if (entry != null) {
                 HorizontalDivider(Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+            }
+            MenuItem(stringResource(R.string.add_location)) {
+                vm.requestAddLocation()
+                dismiss()
             }
             MenuItem(stringResource(R.string.settings)) {
                 vm.openSettings()

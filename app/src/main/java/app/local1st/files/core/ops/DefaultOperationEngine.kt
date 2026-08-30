@@ -130,6 +130,11 @@ class DefaultOperationEngine(
         // Guard: never copy/move a container into itself or one of its own descendants;
         // that recurses on a live listing and fills the disk with nested copies.
         val validSources = op.sources.filterNot { isSelfOrInside(destDir, it) }
+        if (op.move) {
+            validSources.firstOrNull { !canMoveSource(it) }?.let { blocked ->
+                throw IOException("Cannot move ${blocked.name}")
+            }
+        }
         val rejected = op.sources.size - validSources.size
 
         // Move fast path: same-scheme local rename covers instant same-volume moves.
@@ -185,12 +190,14 @@ class DefaultOperationEngine(
                         // no per-child merge. Overwriting the source itself, or a dir that
                         // *contains* the source, would destroy the data we are about to
                         // read, so skip instead.
-                        val destChildId = XId.child(destDir, name)
-                        if (destChildId == src.id || src.id.startsWith("$destChildId/")) {
+                        val existing = childNamed(destDir, name)
+                        if (existing != null && isSelfOrInside(src, existing)) {
                             t.skipItems(perSource[i])
                             continue
                         }
-                        deleteChildIfExists(destDir, name)
+                        if (existing != null) {
+                            registry.forScheme(existing.scheme).delete(existing)
+                        }
                     }
                     ConflictChoice.RENAME -> name = uniqueName(name, src.isDir, destNames)
                 }
@@ -589,9 +596,21 @@ class DefaultOperationEngine(
     }
 
     private fun deleteChildIfExists(parentDir: XEntry, name: String) {
-        val childId = XId.child(parentDir, name)
-        val existing = registry.forId(childId).stat(childId) ?: return
+        val existing = childNamed(parentDir, name) ?: return
         registry.forScheme(existing.scheme).delete(existing)
+    }
+
+    /**
+     * Destination child for [name]. SAF ids are provider document ids, not display names, so
+     * [XId.child] cannot be used to look them up.
+     */
+    private fun childNamed(parentDir: XEntry, name: String): XEntry? {
+        if (parentDir.scheme == XId.SCHEME_SAF) {
+            return registry.forEntry(parentDir).list(parentDir)
+                .firstOrNull { it.name.equals(name, ignoreCase = true) }
+        }
+        val childId = XId.child(parentDir, name)
+        return registry.forId(childId).stat(childId)
     }
 
     private fun uniqueName(name: String, isDir: Boolean, taken: Set<String>): String {
