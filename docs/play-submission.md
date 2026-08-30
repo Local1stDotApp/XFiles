@@ -97,7 +97,7 @@ Mandatory even though the app collects nothing.
 - Justification if queried: the app declares no `INTERNET` permission, so it is
   incapable of transmitting anything off-device.
 
-Keep this consistent with `PRIVACY.md` — an inconsistency here is a common rejection.
+Keep this consistent with [`PRIVACY.md`](PRIVACY.md) — an inconsistency here is a common rejection.
 
 ---
 
@@ -107,7 +107,7 @@ Required, because the app requests sensitive permissions. Must be reachable publ
 linked in Console.
 
 ```
-https://github.com/Local1stDotApp/XFiles/blob/main/PRIVACY.md
+https://github.com/Local1stDotApp/XFiles/blob/main/docs/PRIVACY.md
 ```
 
 A GitHub blob URL is accepted and needs no hosting. (If you'd rather have a real page,

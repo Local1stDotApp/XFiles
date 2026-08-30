@@ -3,7 +3,7 @@
 **Last updated: 2026-07-19**
 
 XFiles (`app.local1st.files`) is an offline file manager for Android, published as
-open source under [GPL-3.0-only](LICENSE).
+open source under [GPL-3.0-only](../LICENSE).
 
 ## The short version
 
@@ -13,7 +13,7 @@ The app does not request the `INTERNET` permission. Android therefore blocks it 
 opening any network connection at all — this is enforced by the operating system, not by
 a promise in this document. You can verify it yourself:
 
-- read [`AndroidManifest.xml`](app/src/main/AndroidManifest.xml) in this repository, or
+- read [`AndroidManifest.xml`](../app/src/main/AndroidManifest.xml) in this repository, or
 - run `aapt dump permissions` against the published APK, or
 - put the device in a monitored network and watch it stay silent.
 
@@ -47,7 +47,7 @@ DataStore.
 ## Permissions
 
 Every permission the app declares, and why, is documented in the
-[README](README.md#permissions--privacy). Notably absent: `INTERNET`.
+[README](../README.md#permissions--privacy). Notably absent: `INTERNET`.
 
 ## Children
 
