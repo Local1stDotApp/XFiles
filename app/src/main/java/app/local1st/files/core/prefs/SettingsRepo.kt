@@ -404,6 +404,10 @@ class SettingsRepo(private val context: Context) {
     /** One-shot read of the persisted session (last browsing position). */
     suspend fun loadSession(): SessionState {
         val prefs = data.first()
+        LaunchTheme.cacheFromStore(
+            runCatching { ThemeMode.valueOf(prefs[keyThemeMode] ?: "") }
+                .getOrDefault(ThemeMode.SYSTEM),
+        )
         return SessionState(
             panes = List(2) { i ->
                 SessionPane(

@@ -4,13 +4,13 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 
 /**
- * In-app theme is in DataStore, which is too late for the first window frame.
- * [syncBlocking] reads it once at process start into memory — not SharedPreferences,
- * and without overlaying [Configuration.uiMode], which would make "System" lie.
+ * First window chrome and the first tree frame follow [Configuration] night mode.
+ * [cacheFromStore] is filled off the main thread from the same DataStore read as
+ * the session snapshot; Compose applies that in-app theme only after the restored
+ * tree has committed a frame. [persist] is the user-change path so API 31+ already
+ * has the right night mode on the next process.
  */
 object LaunchTheme {
     @Volatile
@@ -27,13 +27,14 @@ object LaunchTheme {
         }
     }
 
+    /** In-memory only — do not call [UiModeManager.setApplicationNightMode] here. */
+    fun cacheFromStore(mode: ThemeMode) {
+        cached = mode
+    }
+
     fun persist(context: Context, mode: ThemeMode) {
         cached = mode
         applyApplicationNightMode(context, mode)
-    }
-
-    fun syncBlocking(settings: SettingsRepo) {
-        cached = runBlocking { settings.themeMode.first() }
     }
 
     private fun applyApplicationNightMode(context: Context, mode: ThemeMode) {

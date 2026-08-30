@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- M3 baseline surface/background. Light = Neutral98, dark = Neutral6. -->
-    <color name="app_background_light">#FEF7FF</color>
-    <color name="app_background_dark">#141218</color>
-    <color name="app_background">@color/app_background_light</color>
-</resources>
