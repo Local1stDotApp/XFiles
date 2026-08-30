@@ -14,11 +14,9 @@ import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -76,6 +74,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.local1st.files.R
+import app.local1st.files.ui.navigationBarsStable
+import app.local1st.files.ui.statusBarsStable
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.ui.browser.CrumbBarHeight
@@ -238,11 +238,10 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
 
         // The list scrolls under the transparent status bar; this gradient keeps the
         // clock and icons readable over whatever content passes beneath.
-        // All insets on this screen use the IgnoringVisibility variants: the video
-        // player hides the system bars for its own window, and the plain insets would
-        // collapse to 0 and reflow this whole page under it — every trip through a
-        // video would visibly shift the browser.
-        val statusPad = WindowInsets.statusBarsIgnoringVisibility
+        // IgnoringVisibility so a hidden bar in the viewer does not reflow this page
+        // underneath; union with live insets because pre-R IgnoringVisibility can
+        // stick at 0 after the viewer restores the bars.
+        val statusPad = WindowInsets.statusBarsStable
             .asPaddingValues().calculateTopPadding()
         Box(
             Modifier
@@ -263,7 +262,7 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
             expanded = true,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility)
+                .windowInsetsPadding(WindowInsets.navigationBarsStable)
                 .offset(y = (-24).dp),
             content = {
                 AnimatedContent(

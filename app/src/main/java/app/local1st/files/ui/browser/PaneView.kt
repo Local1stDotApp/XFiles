@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
@@ -51,6 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
+import app.local1st.files.ui.statusBarsStable
 import kotlinx.coroutines.flow.first
 
 /**
@@ -157,9 +157,9 @@ fun PaneView(
         Box(Modifier.fillMaxSize()) {
             // Rows scroll edge-to-edge under the status bar and the floating breadcrumb;
             // the top inset only keeps row 0 initially clear of both.
-            // IgnoringVisibility: the video player hides the system bars, and reacting
-            // to that would reflow (and permanently shift) this list on every return.
-            val statusPad = WindowInsets.statusBarsIgnoringVisibility
+            // IgnoringVisibility so a hidden bar in the viewer does not reflow this list;
+            // union with live insets because pre-R IgnoringVisibility can stick at 0 after return.
+            val statusPad = WindowInsets.statusBarsStable
                 .asPaddingValues().calculateTopPadding()
 
             if (state.loadingRoots && state.nodes.isEmpty()) {
@@ -247,7 +247,7 @@ private fun BoxScope.PaneHeader(
         modifier = Modifier
             .align(Alignment.TopCenter)
             .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.statusBarsIgnoringVisibility)
+            .windowInsetsPadding(WindowInsets.statusBarsStable)
             .padding(
                 start = headerStartPadding,
                 top = 4.dp,

@@ -2,7 +2,6 @@ package app.local1st.files.ui.viewer
 
 import android.app.Activity
 import android.content.ContextWrapper
-import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
@@ -117,23 +116,16 @@ fun ViewerChrome(
  * full-screen. Touches the window **only** while [hidden] is true; on exit the pre-hide state is
  * restored (not a forced "normal").
  *
- * **API 28–29 (pre-R):** immersive [hide] is skipped. Restoring `systemUiVisibility` after
- * immersive correctly fixes the platform flags, but Compose's
- * [WindowInsets.navigationBarsIgnoringVisibility] stays at 0 afterwards (platform `stable`
- * insets remain 144px — only Compose's IgnoringVisibility cache is wrong). That is what drops
- * MainScreen's bottom safe area after returning from the image/video viewer even though cold
- * start is fine. App chrome still toggles; system bars stay put on pre-R.
+ * Hide/show via [WindowInsetsControllerCompat] while this viewer destination is resumed.
+ * Navigation 3 keeps an outgoing entry composed during its transition, so waiting for
+ * composition disposal can leave the browser visible behind window-level immersive state.
+ * Losing `RESUMED` restores each system bar independently, together with [systemBarsBehavior].
  *
- * **API 30+:** hide/show via [WindowInsetsControllerCompat] while this viewer destination is
- * resumed. Navigation 3 keeps an outgoing entry composed during its transition, so waiting for
- * composition disposal can leave the browser visible behind window-level immersive state. Losing
- * `RESUMED` restores each system bar independently, together with [systemBarsBehavior].
+ * Pre-R can leave Compose's IgnoringVisibility at 0 after restore even though platform
+ * stable insets recover; screens that must not collapse union the live insets with it.
  */
 @Composable
 fun SystemBarsHidden(hidden: Boolean) {
-    // Pre-R: do not call hide/show — see KDoc. Keeps IgnoringVisibility alive for MainScreen.
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
-
     val view = LocalView.current
     LifecycleResumeEffect(view, hidden) {
         if (!hidden) {

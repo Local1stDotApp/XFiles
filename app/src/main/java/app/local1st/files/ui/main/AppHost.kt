@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
@@ -29,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.ui.NavDisplay
 import app.local1st.files.di.Graph
+import app.local1st.files.ui.navigationBarsStable
 import app.local1st.files.ui.appinfo.AppInfoScreen
 import app.local1st.files.ui.dialogs.DestinationPickerScreen
 import app.local1st.files.ui.dialogs.MainDialogs
@@ -116,7 +116,7 @@ fun AppHost(vm: MainViewModel) {
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .windowInsetsPadding(WindowInsets.navigationBarsIgnoringVisibility),
+                .windowInsetsPadding(WindowInsets.navigationBarsStable),
         )
     }
 }

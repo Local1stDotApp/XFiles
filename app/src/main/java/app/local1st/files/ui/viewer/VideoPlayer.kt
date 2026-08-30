@@ -24,12 +24,10 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsIgnoringVisibility
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsIgnoringVisibility
 import androidx.compose.foundation.layout.systemGestures
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -90,6 +88,8 @@ import androidx.media3.ui.PlayerView
 import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.ui.components.TooltipIconButton
+import app.local1st.files.ui.navigationBarsStable
+import app.local1st.files.ui.statusBarsStable
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.floor
@@ -231,8 +231,8 @@ fun VideoPlayerScreen(
     // IgnoringVisibility: the bars come and go with this chrome, and chrome anchored to the
     // live insets would collapse into the top/bottom edges as they leave (and jump when they
     // or transient bars return). The close row keeps one status-bar height of clearance regardless.
-    val statusBarsIns = WindowInsets.statusBarsIgnoringVisibility
-    val navBarsIns = WindowInsets.navigationBarsIgnoringVisibility
+    val statusBarsIns = WindowInsets.statusBarsStable
+    val navBarsIns = WindowInsets.navigationBarsStable
     val cutout = WindowInsets.displayCutout
     var parentHeightPx by remember { mutableIntStateOf(0) }
     var cardHeightPx by remember { mutableIntStateOf(0) }
