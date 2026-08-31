@@ -44,9 +44,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.XFiles">
 
+        <!-- Night mode is applied in Compose; recreating on uiMode remounts Settings and
+             replays Switch animations from collectAsState defaults. -->
         <activity
             android:name=".MainActivity"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|smallestScreenSize"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|smallestScreenSize|uiMode"
             android:exported="true"
             android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize">

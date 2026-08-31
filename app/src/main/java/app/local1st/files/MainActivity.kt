@@ -1,6 +1,7 @@
 package app.local1st.files
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -37,6 +38,26 @@ class MainActivity : ComponentActivity() {
         // and Android 10 then paints an opaque light scrim over the bar. dark()/light()
         // keep the bar transparent so the window background shows through. First chrome
         // follows process night mode; the in-app theme is applied after the first tree frame.
+        applyEdgeToEdge()
+        super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) incomingIntents.trySend(intent)
+        setContent {
+            Root(incomingIntentFlow)
+        }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyEdgeToEdge()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        incomingIntents.trySend(intent)
+    }
+
+    private fun applyEdgeToEdge() {
         val dark = LaunchTheme.isDark(this)
         val transparent = Color.TRANSPARENT
         enableEdgeToEdge(
@@ -51,17 +72,6 @@ class MainActivity : ComponentActivity() {
                 SystemBarStyle.light(transparent, transparent)
             },
         )
-        super.onCreate(savedInstanceState)
-        if (savedInstanceState == null) incomingIntents.trySend(intent)
-        setContent {
-            Root(incomingIntentFlow)
-        }
-    }
-
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        setIntent(intent)
-        incomingIntents.trySend(intent)
     }
 }
 
