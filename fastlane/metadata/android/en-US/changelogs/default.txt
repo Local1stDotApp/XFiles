@@ -1,4 +1,5 @@
-What's new in 1.3.1
+What's new in 1.4.0
 
-• Harden APK install confirmation against intent redirection
-• Only the system installer / Settings UI can be launched from install callbacks
+• Add location: pin folders from other apps (RSAF/rclone, Nextcloud, SMB providers) as pane roots — XFiles still has no network permission
+• USB OTG drives appear as pane roots and refresh when plugged or unplugged
+• System night mode no longer recreates the activity (Settings switches stay put)
