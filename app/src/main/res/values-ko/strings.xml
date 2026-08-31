@@ -46,13 +46,20 @@
     <string name="add_location">위치 추가</string>
     <string name="remove_location">위치 제거</string>
     <string name="locations">위치</string>
-    <string name="locations_summary">다른 앱의 폴더(SFTP, Nextcloud, SMB 등). XFiles는 네트워크에 연결하지 않으며 상대 앱이 연결합니다.</string>
+    <string name="locations_summary">다른 앱의 네트워크 폴더. XFiles는 네트워크에 연결하지 않으며 상대 앱이 연결합니다.</string>
     <string name="location_added">%1$s을(를) 추가했습니다</string>
     <string name="location_removed">%1$s을(를) 제거했습니다</string>
     <string name="location_already_added">%1$s은(는) 이미 위치입니다</string>
     <string name="location_already_local">%1$s은(는) 이미 이 기기에 있습니다</string>
     <string name="location_pinned_local">%1$s을(를) 즐겨찾기에 추가했습니다</string>
     <string name="location_grant_failed">위치를 추가할 수 없습니다: %1$s</string>
+    <string name="location_guide_title">네트워크 위치를 추가할까요?</string>
+    <string name="location_guide_body">XFiles에는 네트워크 권한이 없어 SFTP, SMB, WebDAV, Google Drive 등 원격 위치에 직접 연결할 수 없습니다.
+
+먼저 다른 앱에서 그 위치를 폴더로 마운트한 다음 여기에서 선택하세요. RCX(rclone), Nextcloud, 시스템 선택기에 나타나는 파일 앱이면 됩니다. 복사는 XFiles가 하고, 네트워크 연결은 상대 앱이 합니다.</string>
+    <string name="location_guide_continue">폴더 선택</string>
+    <string name="location_guide_open">전체 가이드 열기</string>
+    <string name="location_guide_dont_remind">다음부터 다시 보지 않기</string>
     <string name="enable">활성화</string>
     <string name="disable">비활성화</string>
     <string name="copied">복사됨</string>

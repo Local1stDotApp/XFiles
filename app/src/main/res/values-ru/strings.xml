@@ -46,13 +46,20 @@
     <string name="add_location">Добавить расположение</string>
     <string name="remove_location">Удалить расположение</string>
     <string name="locations">Расположения</string>
-    <string name="locations_summary">Папки из других приложений (SFTP, Nextcloud, SMB, …). XFiles сам не подключается к сети — это делает другое приложение.</string>
+    <string name="locations_summary">Сетевые папки из других приложений. XFiles сам не подключается к сети — это делает другое приложение.</string>
     <string name="location_added">Добавлено: %1$s</string>
     <string name="location_removed">Удалено: %1$s</string>
     <string name="location_already_added">%1$s уже является расположением</string>
     <string name="location_already_local">%1$s уже есть на этом устройстве</string>
     <string name="location_pinned_local">%1$s добавлено в избранное</string>
     <string name="location_grant_failed">Не удалось добавить расположение: %1$s</string>
+    <string name="location_guide_title">Добавить сетевое расположение?</string>
+    <string name="location_guide_body">У XFiles нет разрешения на сеть, поэтому он не может сам открыть SFTP, SMB, WebDAV, Google Drive или любое другое удалённое расположение.
+
+Сначала смонтируйте его в другом приложении как папку — RCX (rclone), Nextcloud или любое файловое приложение из системного выбора — затем выберите эту папку здесь. XFiles копирует файлы; в сеть выходит другое приложение.</string>
+    <string name="location_guide_continue">Выбрать папку</string>
+    <string name="location_guide_open">Открыть полное руководство</string>
+    <string name="location_guide_dont_remind">Больше не напоминать</string>
     <string name="enable">Включить</string>
     <string name="disable">Отключить</string>
     <string name="copied">Скопировано</string>

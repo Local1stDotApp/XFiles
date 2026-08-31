@@ -46,13 +46,20 @@
     <string name="add_location">新增位置</string>
     <string name="remove_location">移除位置</string>
     <string name="locations">位置</string>
-    <string name="locations_summary">來自其他應用程式的資料夾（SFTP、Nextcloud、SMB 等）。XFiles 本身不連網，由該應用程式負責連線。</string>
+    <string name="locations_summary">來自其他應用程式的網路資料夾。XFiles 本身不連網，由該應用程式負責連線。</string>
     <string name="location_added">已新增 %1$s</string>
     <string name="location_removed">已移除 %1$s</string>
     <string name="location_already_added">%1$s 已是位置</string>
     <string name="location_already_local">%1$s 已在本機</string>
     <string name="location_pinned_local">已將 %1$s 加入我的最愛</string>
     <string name="location_grant_failed">無法新增位置：%1$s</string>
+    <string name="location_guide_title">要新增網路位置？</string>
+    <string name="location_guide_body">XFiles 沒有網路權限，無法自行連線 SFTP、SMB、WebDAV、Google Drive 或任何其他遠端位置。
+
+請先在其他應用程式把該位置掛成資料夾——RCX（rclone）、Nextcloud，或任何會出現在系統選擇器中的檔案應用程式——再回到這裡選取它。複製仍由 XFiles 完成，連網的是對方應用程式。</string>
+    <string name="location_guide_continue">選擇資料夾</string>
+    <string name="location_guide_open">開啟完整指南</string>
+    <string name="location_guide_dont_remind">下次不要再提醒</string>
     <string name="enable">啟用</string>
     <string name="disable">停用</string>
     <string name="copied">已複製</string>

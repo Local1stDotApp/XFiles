@@ -46,13 +46,20 @@
     <string name="add_location">Tambah lokasi</string>
     <string name="remove_location">Hapus lokasi</string>
     <string name="locations">Lokasi</string>
-    <string name="locations_summary">Folder dari aplikasi lain (SFTP, Nextcloud, SMB, …). XFiles tidak tersambung ke jaringan; aplikasi itulah yang tersambung.</string>
+    <string name="locations_summary">Folder jaringan dari aplikasi lain. XFiles tidak tersambung ke jaringan; aplikasi itulah yang tersambung.</string>
     <string name="location_added">%1$s ditambahkan</string>
     <string name="location_removed">%1$s dihapus</string>
     <string name="location_already_added">%1$s sudah menjadi lokasi</string>
     <string name="location_already_local">%1$s sudah ada di perangkat ini</string>
     <string name="location_pinned_local">%1$s disematkan sebagai favorit</string>
     <string name="location_grant_failed">Tidak dapat menambah lokasi: %1$s</string>
+    <string name="location_guide_title">Tambah lokasi jaringan?</string>
+    <string name="location_guide_body">XFiles tidak punya izin jaringan, jadi tidak bisa membuka SFTP, SMB, WebDAV, Google Drive, atau lokasi jarak jauh lainnya sendiri.
+
+Pasang dulu lokasi itu sebagai folder di aplikasi lain — RCX (rclone), Nextcloud, atau aplikasi berkas apa pun yang muncul di pemilih sistem — lalu pilih folder itu di sini. XFiles menyalin berkas; aplikasi itulah yang daring.</string>
+    <string name="location_guide_continue">Pilih folder</string>
+    <string name="location_guide_open">Buka panduan lengkap</string>
+    <string name="location_guide_dont_remind">Jangan ingatkan lagi</string>
     <string name="enable">Aktifkan</string>
     <string name="disable">Nonaktifkan</string>
     <string name="copied">Disalin</string>

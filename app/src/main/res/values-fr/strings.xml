@@ -46,13 +46,20 @@
     <string name="add_location">Ajouter un emplacement</string>
     <string name="remove_location">Retirer l’emplacement</string>
     <string name="locations">Emplacements</string>
-    <string name="locations_summary">Dossiers d’autres applis (SFTP, Nextcloud, SMB, …). XFiles ne se connecte pas au réseau ; c’est l’autre appli qui le fait.</string>
+    <string name="locations_summary">Dossiers réseau d’autres applis. XFiles ne se connecte pas au réseau ; c’est l’autre appli qui le fait.</string>
     <string name="location_added">%1$s ajouté</string>
     <string name="location_removed">%1$s retiré</string>
     <string name="location_already_added">%1$s est déjà un emplacement</string>
     <string name="location_already_local">%1$s est déjà sur cet appareil</string>
     <string name="location_pinned_local">%1$s ajouté aux favoris</string>
     <string name="location_grant_failed">Impossible d’ajouter l’emplacement : %1$s</string>
+    <string name="location_guide_title">Ajouter un emplacement réseau ?</string>
+    <string name="location_guide_body">XFiles n’a pas la permission réseau, il ne peut donc pas ouvrir SFTP, SMB, WebDAV, Google Drive ni aucun autre emplacement distant lui-même.
+
+Montez d’abord cet emplacement comme dossier dans une autre appli — RCX (rclone), Nextcloud, ou toute appli Fichiers qui apparaît dans le sélecteur système — puis choisissez ce dossier ici. XFiles copie les fichiers ; c’est l’autre appli qui se connecte.</string>
+    <string name="location_guide_continue">Choisir un dossier</string>
+    <string name="location_guide_open">Ouvrir le guide complet</string>
+    <string name="location_guide_dont_remind">Ne plus me le rappeler</string>
     <string name="enable">Activer</string>
     <string name="disable">Désactiver</string>
     <string name="copied">Copié</string>

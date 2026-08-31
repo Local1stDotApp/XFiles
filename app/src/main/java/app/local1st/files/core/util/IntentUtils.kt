@@ -80,6 +80,13 @@ object IntentUtils {
         }
     }
 
+    /** Opens [url] in the default browser. XFiles itself has no INTERNET permission. */
+    fun openUrl(context: Context, url: String): Boolean = try {
+        context.launch(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    } catch (_: Throwable) {
+        false
+    }
+
     fun uninstall(context: Context, packageName: String) {
         context.launch(Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName")))
     }

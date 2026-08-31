@@ -46,13 +46,20 @@
     <string name="add_location">Konum ekle</string>
     <string name="remove_location">Konumu kaldır</string>
     <string name="locations">Konumlar</string>
-    <string name="locations_summary">Diğer uygulamalardaki klasörler (SFTP, Nextcloud, SMB, …). XFiles ağa bağlanmaz; bağlantıyı diğer uygulama yapar.</string>
+    <string name="locations_summary">Diğer uygulamalardaki ağ klasörleri. XFiles ağa bağlanmaz; bağlantıyı diğer uygulama yapar.</string>
     <string name="location_added">%1$s eklendi</string>
     <string name="location_removed">%1$s kaldırıldı</string>
     <string name="location_already_added">%1$s zaten bir konum</string>
     <string name="location_already_local">%1$s zaten bu cihazda</string>
     <string name="location_pinned_local">%1$s favorilere eklendi</string>
     <string name="location_grant_failed">Konum eklenemedi: %1$s</string>
+    <string name="location_guide_title">Bir ağ konumu mu eklenecek?</string>
+    <string name="location_guide_body">XFiles’ın ağ izni yok, bu yüzden SFTP, SMB, WebDAV, Google Drive veya başka bir uzak konumu kendisi açamaz.
+
+Önce o konumu başka bir uygulamada klasör olarak bağlayın — RCX (rclone), Nextcloud veya sistem seçicisinde görünen herhangi bir dosya uygulaması — sonra o klasörü burada seçin. Kopyalamayı XFiles yapar; ağa diğer uygulama çıkar.</string>
+    <string name="location_guide_continue">Klasör seç</string>
+    <string name="location_guide_open">Tam kılavuzu aç</string>
+    <string name="location_guide_dont_remind">Bir daha hatırlatma</string>
     <string name="enable">Etkinleştir</string>
     <string name="disable">Devre dışı bırak</string>
     <string name="copied">Kopyalandı</string>

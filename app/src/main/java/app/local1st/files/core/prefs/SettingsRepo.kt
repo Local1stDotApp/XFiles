@@ -264,6 +264,7 @@ class SettingsRepo(private val context: Context) {
     // JSON array, not a string set: favorites keep their user-defined order.
     private val keyFavorites = stringPreferencesKey("favorites")
     private val keySafLocations = stringPreferencesKey("saf_locations")
+    private val keyLocationGuideSeen = booleanPreferencesKey("location_guide_seen")
     private val keySessionActivePane = intPreferencesKey("session_active_pane")
     private val keySessionExpanded = listOf(
         stringSetPreferencesKey("session_expanded_0"),
@@ -353,6 +354,9 @@ class SettingsRepo(private val context: Context) {
         favorites.forEach { arr.put(JSONObject().put("id", it.id).put("dir", it.isDir)) }
         prefs[keyFavorites] = arr.toString()
     }
+
+    /** False until the user continues past the one-time Add location explanation. */
+    val locationGuideSeen: Flow<Boolean> = setting { it[keyLocationGuideSeen] ?: false }
 
     /** Granted document trees, in display order. Separate from API 26–29 [safVolumeTrees]. */
     val safLocations: Flow<List<SafLocation>> = setting { prefs ->
@@ -456,5 +460,8 @@ class SettingsRepo(private val context: Context) {
     suspend fun setRootReadOnly(value: Boolean) = context.dataStore.edit { it[keyRootReadOnly] = value }
     suspend fun setPrivilegedTransport(value: TransportPref) = context.dataStore.edit {
         it[keyPrivilegedTransport] = value.storedValue
+    }
+    suspend fun setLocationGuideSeen(value: Boolean) = context.dataStore.edit {
+        it[keyLocationGuideSeen] = value
     }
 }

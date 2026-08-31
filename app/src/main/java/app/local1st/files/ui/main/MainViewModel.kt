@@ -402,7 +402,21 @@ class MainViewModel : ViewModel() {
     }
 
     fun requestAddLocation() {
-        Graph.locationActions.requestPicker()
+        viewModelScope.launch {
+            if (Graph.settings.locationGuideSeen.first()) {
+                Graph.locationActions.requestPicker()
+            } else {
+                dialog.value = DialogRequest.LocationGuide
+            }
+        }
+    }
+
+    fun finishLocationGuide(continueToPicker: Boolean, dontRemind: Boolean) {
+        dialog.value = null
+        viewModelScope.launch {
+            if (dontRemind) Graph.settings.setLocationGuideSeen(true)
+            if (continueToPicker) Graph.locationActions.requestPicker()
+        }
     }
 
     fun completeAddLocation(uri: Uri?, resultFlags: Int) {

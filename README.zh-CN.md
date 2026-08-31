@@ -64,9 +64,10 @@ X-plore 的招牌：两栏互不干扰 —— 宽屏左右并排，手机上是�
 系统已挂载的 USB OTG（U 盘、移动硬盘、读卡器）会作为栏根出现在内置存储和 SD 卡旁边，插拔后自动更新。
 Android 8–10 上，对 SD 卡、USB 等第二存储卷的写入通过一次性的 SAF 授权自动完成。
 
-**添加位置**（More 菜单或设置）可以把其他应用提供的文档树变成栏根——rclone/RCX、Nextcloud、SMB
-客户端，或任何 `DocumentsProvider`。复制和移动走系统 IPC；XFiles 仍然没有 `INTERNET` 权限，联网的是对方应用。
+**添加位置**（首页或设置）可以把其他应用提供的文档树变成栏根——RSAF（rclone）、CIFS Documents Provider、Nextcloud，或任何 `DocumentsProvider`。复制和移动走系统 IPC；XFiles 仍然没有 `INTERNET` 权限，联网的是对方应用。
 如果选中的是本机已有的存储路径，会改成收藏，避免出现重复的根。
+逐步说明：[把网络位置加进 XFiles](https://xfiles.local1st.app/zh/add-location)
+（[文稿](docs/add-location.zh-CN.md)）。
 
 这些都跑在后台引擎上，带进度（Expressive 的波浪进度条）、可取消，
 冲突时可选 跳过 / 覆盖 / 两个都留。

@@ -69,11 +69,13 @@ OTG drives appear as pane roots next to internal storage and SD cards, and the l
 updates when a drive is plugged or unplugged. On Android 8–10, writes to SD cards, USB
 drives and other secondary volumes work through a one-time SAF grant.
 
-**Add location** (More menu or Settings) grants a document tree from another app —
-rclone/RCX, Nextcloud, an SMB provider, or any `DocumentsProvider` — and pins it as a
-pane root. Copy and move then stream through the system; XFiles still has no
-`INTERNET` permission, so the other app is what actually talks to the network. A tree
-that is already local storage is pinned as a favorite instead of a duplicate root.
+**Add location** (home screen or Settings) grants a document tree from another app —
+RSAF (rclone), CIFS Documents Provider, Nextcloud, or any `DocumentsProvider` — and
+pins it as a pane root. Copy and move then stream through the system; XFiles still has
+no `INTERNET` permission, so the other app is what actually talks to the network. A
+tree that is already local storage is pinned as a favorite instead of a duplicate root.
+Step-by-step: [Add a network location](https://xfiles.local1st.app/add-location)
+([source](docs/add-location.md)).
 
 A background engine drives it all with progress (the wavy Expressive indicator),
 cancellation, and Skip / Overwrite / Keep-both conflict resolution.

@@ -169,6 +169,20 @@ class SafLocationActions(
     }
 }
 
+/** Canonical guide; the Chinese page is the same path under `/zh/`. */
+const val ADD_LOCATION_GUIDE_URL = "https://xfiles.local1st.app/add-location"
+const val ADD_LOCATION_GUIDE_URL_ZH = "https://xfiles.local1st.app/zh/add-location"
+
+fun addLocationGuideUrl(context: Context): String {
+    val locales = context.resources.configuration.locales
+    val language = if (locales.isEmpty) {
+        java.util.Locale.getDefault().language
+    } else {
+        locales[0].language
+    }
+    return if (language == "zh") ADD_LOCATION_GUIDE_URL_ZH else ADD_LOCATION_GUIDE_URL
+}
+
 internal const val EXTERNAL_STORAGE_AUTHORITY = "com.android.externalstorage.documents"
 
 /**

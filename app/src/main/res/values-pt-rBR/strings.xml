@@ -46,13 +46,20 @@
     <string name="add_location">Adicionar local</string>
     <string name="remove_location">Remover local</string>
     <string name="locations">Locais</string>
-    <string name="locations_summary">Pastas de outros apps (SFTP, Nextcloud, SMB, …). O XFiles não se conecta à rede; o outro app faz isso.</string>
+    <string name="locations_summary">Pastas de rede de outros apps. O XFiles não se conecta à rede; o outro app faz isso.</string>
     <string name="location_added">%1$s adicionado</string>
     <string name="location_removed">%1$s removido</string>
     <string name="location_already_added">%1$s já é um local</string>
     <string name="location_already_local">%1$s já está neste dispositivo</string>
     <string name="location_pinned_local">%1$s fixado nos favoritos</string>
     <string name="location_grant_failed">Não foi possível adicionar o local: %1$s</string>
+    <string name="location_guide_title">Adicionar um local de rede?</string>
+    <string name="location_guide_body">O XFiles não tem permissão de rede, então não pode abrir SFTP, SMB, WebDAV, Google Drive ou qualquer outro local remoto sozinho.
+
+Monte esse local como pasta em outro app primeiro — RCX (rclone), Nextcloud ou qualquer app de arquivos que apareça no seletor do sistema — e escolha essa pasta aqui. O XFiles copia os arquivos; o outro app é quem se conecta.</string>
+    <string name="location_guide_continue">Escolher pasta</string>
+    <string name="location_guide_open">Abrir o guia completo</string>
+    <string name="location_guide_dont_remind">Não lembrar na próxima vez</string>
     <string name="enable">Habilitar</string>
     <string name="disable">Desativar</string>
     <string name="copied">Copiado</string>

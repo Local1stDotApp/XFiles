@@ -36,6 +36,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,7 +67,11 @@ import app.local1st.files.core.util.ExternalOpenKind
 import app.local1st.files.core.util.ExternalOpenRegistry
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.components.TooltipIconButton
+import app.local1st.files.core.fs.addLocationGuideUrl
+import app.local1st.files.core.util.IntentUtils
+import app.local1st.files.ui.dialogs.LocationGuideDialog
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import rikka.shizuku.ShizukuProvider
@@ -81,20 +86,22 @@ fun SettingsScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    val themeMode by settings.themeMode.collectAsState(initial = ThemeMode.SYSTEM)
-    val dynamicColor by settings.dynamicColor.collectAsState(initial = true)
-    val showHidden by settings.showHidden.collectAsState(initial = false)
-    val dirsFirst by settings.dirsFirst.collectAsState(initial = true)
-    val collapseSiblingFolders by settings.collapseSiblingFolders.collectAsState(initial = true)
-    val sortBy by settings.sortBy.collectAsState(initial = SortBy.NAME)
-    val sortDescending by settings.sortDescending.collectAsState(initial = false)
-    val rootEnabled by settings.rootEnabled.collectAsState(initial = DEFAULT_ROOT_ENABLED)
-    val rootReadOnly by settings.rootReadOnly.collectAsState(initial = true)
+    val themeMode = settings.themeMode.collectSetting(ThemeMode.SYSTEM)
+    val dynamicColor = settings.dynamicColor.collectSetting(true)
+    val showHidden = settings.showHidden.collectSetting(false)
+    val dirsFirst = settings.dirsFirst.collectSetting(true)
+    val collapseSiblingFolders = settings.collapseSiblingFolders.collectSetting(true)
+    val sortBy = settings.sortBy.collectSetting(SortBy.NAME)
+    val sortDescending = settings.sortDescending.collectSetting(false)
+    val rootEnabled = settings.rootEnabled.collectSetting(DEFAULT_ROOT_ENABLED)
+    val rootReadOnly = settings.rootReadOnly.collectSetting(true)
     val transportPref by settings.privilegedTransport.collectAsState(initial = null)
     val shizukuState by ShizukuGate.state.collectAsState()
     val permissionPermanentlyDenied by
         ShizukuGate.permissionPermanentlyDeniedState.collectAsState()
     var showShizukuHelp by rememberSaveable { mutableStateOf(false) }
+    val locationGuideSeen = settings.locationGuideSeen.collectSetting(false)
+    var showLocationGuide by rememberSaveable { mutableStateOf(false) }
 
     val activeTransport by produceState<TransportId?>(
         null,
@@ -211,6 +218,12 @@ fun SettingsScreen(onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                 )
+                TextButton(
+                    onClick = { IntentUtils.openUrl(context, addLocationGuideUrl(context)) },
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                ) {
+                    Text(stringResource(R.string.location_guide_open))
+                }
                 val locations by Graph.safLocations.collectAsState()
                 locations.orEmpty().forEach { location ->
                     Row(
@@ -234,7 +247,10 @@ fun SettingsScreen(onBack: () -> Unit) {
                     }
                 }
                 OutlinedButton(
-                    onClick = { Graph.locationActions.requestPicker() },
+                    onClick = {
+                        if (locationGuideSeen) Graph.locationActions.requestPicker()
+                        else showLocationGuide = true
+                    },
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
                 ) {
                     Text(stringResource(R.string.add_location))
@@ -385,6 +401,21 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
         }
     }
+    if (showLocationGuide) {
+        LocationGuideDialog(
+            onContinue = { dontRemind ->
+                showLocationGuide = false
+                scope.launch {
+                    if (dontRemind) settings.setLocationGuideSeen(true)
+                    Graph.locationActions.requestPicker()
+                }
+            },
+            onDismiss = { dontRemind ->
+                showLocationGuide = false
+                scope.launch { if (dontRemind) settings.setLocationGuideSeen(true) }
+            },
+        )
+    }
 }
 
 @StringRes
@@ -450,6 +481,18 @@ private fun openShizuku(context: Context) {
     if (!launched) {
         Toast.makeText(context, R.string.shizuku_app_not_available, Toast.LENGTH_SHORT).show()
     }
+}
+
+/**
+ * Last emitted value survives configuration changes. [collectAsState] would otherwise start
+ * from [initial] again, and a Switch whose saved value is not that default would animate.
+ */
+@Composable
+private fun <T> Flow<T>.collectSetting(initial: T): T {
+    var saved by rememberSaveable { mutableStateOf(initial) }
+    val current by collectAsState(initial = saved)
+    SideEffect { saved = current }
+    return current
 }
 
 @Composable

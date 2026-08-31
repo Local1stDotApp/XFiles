@@ -1,10 +1,13 @@
 package app.local1st.files.ui.dialogs
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ModalBottomSheet
@@ -19,10 +22,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -33,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import app.local1st.files.R
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.XId
+import app.local1st.files.core.fs.addLocationGuideUrl
 import app.local1st.files.core.util.AppComponents
 import app.local1st.files.core.util.ComponentType
 import app.local1st.files.core.util.FileTypes
@@ -122,7 +129,64 @@ fun MainDialogs(vm: MainViewModel) {
         is DialogRequest.EntryMenu -> ModalBottomSheet(onDismissRequest = dismiss) {
             EntryMenuContent(vm, req, dismiss)
         }
+
+        is DialogRequest.LocationGuide -> LocationGuideDialog(
+            onContinue = { vm.finishLocationGuide(continueToPicker = true, dontRemind = it) },
+            onDismiss = { vm.finishLocationGuide(continueToPicker = false, dontRemind = it) },
+        )
     }
+}
+
+@Composable
+fun LocationGuideDialog(
+    onContinue: (dontRemind: Boolean) -> Unit,
+    onDismiss: (dontRemind: Boolean) -> Unit,
+) {
+    var dontRemind by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+    AlertDialog(
+        onDismissRequest = { onDismiss(dontRemind) },
+        title = { Text(stringResource(R.string.location_guide_title)) },
+        text = {
+            Column {
+                Text(stringResource(R.string.location_guide_body))
+                TextButton(
+                    onClick = { IntentUtils.openUrl(context, addLocationGuideUrl(context)) },
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    Text(stringResource(R.string.location_guide_open))
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .padding(top = 20.dp)
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = dontRemind,
+                            role = Role.Checkbox,
+                            onValueChange = { dontRemind = it },
+                        ),
+                ) {
+                    Checkbox(
+                        checked = dontRemind,
+                        onCheckedChange = null,
+                        modifier = Modifier.padding(end = 8.dp),
+                    )
+                    Text(stringResource(R.string.location_guide_dont_remind))
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onContinue(dontRemind) }) {
+                Text(stringResource(R.string.location_guide_continue))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { onDismiss(dontRemind) }) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 @Composable
@@ -348,10 +412,6 @@ private fun EntryMenuContent(
         if (req.showSettings) {
             if (entry != null) {
                 HorizontalDivider(Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
-            }
-            MenuItem(stringResource(R.string.add_location)) {
-                vm.requestAddLocation()
-                dismiss()
             }
             MenuItem(stringResource(R.string.settings)) {
                 vm.openSettings()

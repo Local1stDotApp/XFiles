@@ -46,13 +46,20 @@
     <string name="add_location">Dodaj lokalizację</string>
     <string name="remove_location">Usuń lokalizację</string>
     <string name="locations">Lokalizacje</string>
-    <string name="locations_summary">Foldery z innych aplikacji (SFTP, Nextcloud, SMB, …). XFiles sam nie łączy się z siecią — robi to tamta aplikacja.</string>
+    <string name="locations_summary">Foldery sieciowe z innych aplikacji. XFiles sam nie łączy się z siecią — robi to tamta aplikacja.</string>
     <string name="location_added">Dodano %1$s</string>
     <string name="location_removed">Usunięto %1$s</string>
     <string name="location_already_added">%1$s jest już lokalizacją</string>
     <string name="location_already_local">%1$s jest już na tym urządzeniu</string>
     <string name="location_pinned_local">Przypięto %1$s do ulubionych</string>
     <string name="location_grant_failed">Nie można dodać lokalizacji: %1$s</string>
+    <string name="location_guide_title">Dodać lokalizację sieciową?</string>
+    <string name="location_guide_body">XFiles nie ma uprawnienia do sieci, więc sam nie otworzy SFTP, SMB, WebDAV, Google Drive ani żadnej innej zdalnej lokalizacji.
+
+Najpierw zamontuj tę lokalizację w innej aplikacji jako folder — RCX (rclone), Nextcloud albo dowolna aplikacja plików widoczna w systemowym selektorze — a potem wybierz ten folder tutaj. XFiles kopiuje pliki; połączenie nawiązuje tamta aplikacja.</string>
+    <string name="location_guide_continue">Wybierz folder</string>
+    <string name="location_guide_open">Otwórz pełny przewodnik</string>
+    <string name="location_guide_dont_remind">Nie przypominaj następnym razem</string>
     <string name="enable">Włącz</string>
     <string name="disable">Wyłącz</string>
     <string name="copied">Skopiowano</string>

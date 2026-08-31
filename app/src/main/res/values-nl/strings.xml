@@ -46,13 +46,20 @@
     <string name="add_location">Locatie toevoegen</string>
     <string name="remove_location">Locatie verwijderen</string>
     <string name="locations">Locaties</string>
-    <string name="locations_summary">Mappen van andere apps (SFTP, Nextcloud, SMB, …). XFiles maakt zelf geen netwerkverbinding; dat doet de andere app.</string>
+    <string name="locations_summary">Netwerkmappen van andere apps. XFiles maakt zelf geen netwerkverbinding; dat doet de andere app.</string>
     <string name="location_added">%1$s toegevoegd</string>
     <string name="location_removed">%1$s verwijderd</string>
     <string name="location_already_added">%1$s is al een locatie</string>
     <string name="location_already_local">%1$s staat al op dit apparaat</string>
     <string name="location_pinned_local">%1$s als favoriet vastgezet</string>
     <string name="location_grant_failed">Locatie kon niet worden toegevoegd: %1$s</string>
+    <string name="location_guide_title">Een netwerklocatie toevoegen?</string>
+    <string name="location_guide_body">XFiles heeft geen netwerkrechten, dus het kan SFTP, SMB, WebDAV, Google Drive of een andere externe locatie niet zelf openen.
+
+Koppel die locatie eerst in een andere app als map — RCX (rclone), Nextcloud, of elke bestandsapp die in de systeemkiezer verschijnt — en kies die map hier. XFiles kopieert de bestanden; de andere app gaat online.</string>
+    <string name="location_guide_continue">Map kiezen</string>
+    <string name="location_guide_open">Volledige gids openen</string>
+    <string name="location_guide_dont_remind">Niet meer herinneren</string>
     <string name="enable">Inschakelen</string>
     <string name="disable">Uitzetten</string>
     <string name="copied">Gekopieerd</string>

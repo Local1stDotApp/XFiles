@@ -46,13 +46,20 @@
     <string name="add_location">Thêm vị trí</string>
     <string name="remove_location">Xóa vị trí</string>
     <string name="locations">Vị trí</string>
-    <string name="locations_summary">Thư mục từ ứng dụng khác (SFTP, Nextcloud, SMB, …). XFiles không kết nối mạng; ứng dụng kia làm việc đó.</string>
+    <string name="locations_summary">Thư mục mạng từ ứng dụng khác. XFiles không kết nối mạng; ứng dụng kia làm việc đó.</string>
     <string name="location_added">Đã thêm %1$s</string>
     <string name="location_removed">Đã xóa %1$s</string>
     <string name="location_already_added">%1$s đã là một vị trí</string>
     <string name="location_already_local">%1$s đã có trên thiết bị này</string>
     <string name="location_pinned_local">Đã ghim %1$s vào mục yêu thích</string>
     <string name="location_grant_failed">Không thể thêm vị trí: %1$s</string>
+    <string name="location_guide_title">Thêm vị trí mạng?</string>
+    <string name="location_guide_body">XFiles không có quyền mạng, nên không thể tự mở SFTP, SMB, WebDAV, Google Drive hay bất kỳ vị trí từ xa nào khác.
+
+Hãy gắn vị trí đó thành thư mục trong ứng dụng khác trước — RCX (rclone), Nextcloud, hoặc bất kỳ ứng dụng tệp nào hiện trong bộ chọn hệ thống — rồi chọn thư mục đó tại đây. XFiles sao chép tệp; ứng dụng kia mới kết nối mạng.</string>
+    <string name="location_guide_continue">Chọn thư mục</string>
+    <string name="location_guide_open">Mở hướng dẫn đầy đủ</string>
+    <string name="location_guide_dont_remind">Lần sau đừng nhắc lại</string>
     <string name="enable">Kích hoạt</string>
     <string name="disable">Vô hiệu hóa</string>
     <string name="copied">Đã sao chép</string>
