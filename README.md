@@ -266,15 +266,15 @@ Requires JDK 17+ and an Android SDK with platform 37. On first launch grant
 
 ## Releases
 
-A **self-hosted** GitHub Actions workflow ([`.github/workflows/release.yml`](.github/workflows/release.yml))
-builds a signed APK on every push to `main`:
+A GitHub Actions workflow ([`.github/workflows/release.yml`](.github/workflows/release.yml))
+builds a signed APK on every push to `main` on GitHub-hosted Ubuntu runners:
 
 - The build number (`versionCode`) increments each run (`github.run_number`).
 - `versionName` lives in `version.properties`. While it's unchanged, each push just
   refreshes a single rolling **`nightly`** prerelease with the latest build. Bump
   `versionName` to cut a new stable `vX.Y` release.
 - Signing keys/passwords come from repo secrets: `KEYSTORE_BASE64`,
-  `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. The runner needs the Android SDK.
+  `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
 
 ## License
 
