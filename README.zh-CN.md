@@ -246,14 +246,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 ## 发布
 
-一个**自建 runner** 上的 GitHub Actions 工作流
-（[`.github/workflows/release.yml`](.github/workflows/release.yml)）在每次推送到 `main` 时构建签名 APK：
+GitHub Actions 工作流（[`.github/workflows/release.yml`](.github/workflows/release.yml)）
+在每次推送到 `main` 时，用 GitHub 托管的 Ubuntu runner 构建签名 APK：
 
 - 构建号（`versionCode`）每次运行自增（`github.run_number`）。
 - `versionName` 写在 `version.properties` 里。只要它没变，每次推送就只刷新那个滚动的
   **`nightly`** 预发布；提升 `versionName` 才会切出新的稳定版 `vX.Y`。
 - 签名密钥和口令来自仓库 secrets：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、
-  `KEY_ALIAS`、`KEY_PASSWORD`。runner 上需要装 Android SDK。
+  `KEY_ALIAS`、`KEY_PASSWORD`。
 
 ## 许可证
 
