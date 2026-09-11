@@ -126,6 +126,12 @@ fun SettingsScreen(onBack: () -> Unit) {
     var imagesRegistered by remember {
         mutableStateOf(ExternalOpenRegistry.isEnabled(context, ExternalOpenKind.IMAGE))
     }
+    var pdfsRegistered by remember {
+        mutableStateOf(ExternalOpenRegistry.isEnabled(context, ExternalOpenKind.PDF))
+    }
+    var textRegistered by remember {
+        mutableStateOf(ExternalOpenRegistry.isEnabled(context, ExternalOpenKind.TEXT))
+    }
     var videosRegistered by remember {
         mutableStateOf(ExternalOpenRegistry.isEnabled(context, ExternalOpenKind.VIDEO))
     }
@@ -272,6 +278,22 @@ fun SettingsScreen(onBack: () -> Unit) {
                     onCheckedChange = {
                         ExternalOpenRegistry.setEnabled(context, ExternalOpenKind.IMAGE, it)
                         imagesRegistered = it
+                    },
+                )
+                SwitchRow(
+                    title = stringResource(R.string.view_pdfs_with_xfiles),
+                    checked = pdfsRegistered,
+                    onCheckedChange = {
+                        ExternalOpenRegistry.setEnabled(context, ExternalOpenKind.PDF, it)
+                        pdfsRegistered = it
+                    },
+                )
+                SwitchRow(
+                    title = stringResource(R.string.view_text_with_xfiles),
+                    checked = textRegistered,
+                    onCheckedChange = {
+                        ExternalOpenRegistry.setEnabled(context, ExternalOpenKind.TEXT, it)
+                        textRegistered = it
                     },
                 )
                 SwitchRow(

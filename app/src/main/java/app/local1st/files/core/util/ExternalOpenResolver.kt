@@ -24,6 +24,8 @@ object ExternalOpenResolver {
         val entry = when (expectedKind) {
             ExternalOpenKind.ARCHIVE -> cacheArchive(context, uri, metadata)
             ExternalOpenKind.IMAGE,
+            ExternalOpenKind.PDF,
+            ExternalOpenKind.TEXT,
             ExternalOpenKind.VIDEO,
             -> XEntry(
                 id = uri.toString(),
@@ -78,6 +80,11 @@ object ExternalOpenResolver {
                 FileTypes.isSupportedArchive(name) || mime in ARCHIVE_MIME_TYPES_WITHOUT_OCTET_STREAM
             ExternalOpenKind.IMAGE -> mime?.startsWith("image/") == true ||
                 FileTypes.categoryOf(name, mime) == FileCategory.IMAGE
+            ExternalOpenKind.PDF -> mime == "application/pdf" ||
+                FileTypes.categoryOf(name, mime) == FileCategory.PDF
+            ExternalOpenKind.TEXT -> mime?.startsWith("text/") == true ||
+                mime in TEXT_APPLICATION_MIME_TYPES ||
+                FileTypes.categoryOf(name, mime) == FileCategory.TEXT
             ExternalOpenKind.VIDEO -> mime?.startsWith("video/") == true ||
                 FileTypes.categoryOf(name, mime) == FileCategory.VIDEO
         }
@@ -133,6 +140,13 @@ object ExternalOpenResolver {
             localPath = cached.absolutePath,
         )
     }
+
+    private val TEXT_APPLICATION_MIME_TYPES = setOf(
+        "application/json",
+        "application/xml",
+        "application/javascript",
+        "application/x-javascript",
+    )
 
     private val ARCHIVE_MIME_TYPES_WITHOUT_OCTET_STREAM = setOf(
         "application/zip",

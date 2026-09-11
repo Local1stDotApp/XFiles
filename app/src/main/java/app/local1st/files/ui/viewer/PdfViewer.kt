@@ -58,12 +58,14 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.components.TooltipIconButton
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlin.math.min
@@ -104,7 +106,7 @@ fun PdfViewer(entry: XEntry, onClose: () -> Unit, onOpenWith: () -> Unit) {
     ) {
         var opened: PdfDocument? = null
         try {
-            val document = PdfDocument.open(context.applicationContext, entry) { opened = it }
+            val document = PdfDocument.open(context, entry) { opened = it }
             opened = document
             value = PdfDocumentState.Ready(document)
             awaitDispose { document.close() }
@@ -488,7 +490,7 @@ private class PdfDocument private constructor(
                 throw PdfSourceException(error)
             }
             try {
-                Graph.fsRegistry.forId(entry.id).openIn(entry).use { input ->
+                openSource(context, entry).use { input ->
                     outputFile.outputStream().use { output ->
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                         while (true) {
@@ -507,6 +509,15 @@ private class PdfDocument private constructor(
                 outputFile.delete()
                 throw PdfSourceException(error)
             }
+        }
+
+        /** ACTION_VIEW hands us a content URI, not an XFiles filesystem id. */
+        private fun openSource(context: Context, entry: XEntry): InputStream {
+            if (entry.scheme == "content") {
+                return context.contentResolver.openInputStream(entry.id.toUri())
+                    ?: throw PdfSourceException()
+            }
+            return Graph.fsRegistry.forId(entry.id).openIn(entry)
         }
     }
 }

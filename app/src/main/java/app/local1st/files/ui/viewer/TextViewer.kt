@@ -1,5 +1,6 @@
 package app.local1st.files.ui.viewer
 
+import android.content.Context
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -50,6 +51,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -59,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import app.local1st.files.R
 import app.local1st.files.core.fs.LocalFileSystem
 import app.local1st.files.core.fs.XEntry
@@ -120,6 +123,7 @@ private const val MAX_CACHED_ROW_PAGES = 32
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit) {
+    val context = LocalContext.current
     val cannotRead = stringResource(R.string.cannot_read, entry.name)
     val saveFailed = stringResource(R.string.save_failed)
     val saved = stringResource(R.string.saved, entry.name)
@@ -136,7 +140,7 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
     val wrap by Graph.settings.textWrap.collectAsState(initial = false)
 
     val file = remember(entry.id, startEditing) { pageableFile(entry, allowEmpty = startEditing) }
-    val document = remember(entry.id, reloads) { TextDocument(entry, file) }
+    val document = remember(entry.id, reloads) { TextDocument(context, entry, file) }
     DisposableEffect(document) {
         document.start()
         onDispose { document.close() }
@@ -526,7 +530,11 @@ private fun pageableFile(entry: XEntry, allowEmpty: Boolean = false): File? {
  * of decoded rows. Composition only ever reads the cache; a miss schedules the page and shows a
  * blank row until it lands.
  */
-private class TextDocument(private val entry: XEntry, private val file: File?) {
+private class TextDocument(
+    private val context: Context,
+    private val entry: XEntry,
+    private val file: File?,
+) {
     /** True once the bytes are open and rows can start arriving. */
     val opened = mutableStateOf(false)
     val rowCount = mutableStateOf(0)
@@ -650,7 +658,7 @@ private class TextDocument(private val entry: XEntry, private val file: File?) {
         }
         // One byte over the limit tells truncation from a file that ends exactly on it. The window
         // is told to stop at the limit rather than copied down to it.
-        val bytes = Graph.fsRegistry.forId(entry.id).openIn(entry)
+        val bytes = openSource(context, entry)
             .use { it.readUpTo(STREAM_LIMIT_BYTES + 1) }
         val cut = bytes.size > STREAM_LIMIT_BYTES
         if (AxmlDecoder.isAxml(bytes)) {
@@ -677,6 +685,15 @@ private class TextDocument(private val entry: XEntry, private val file: File?) {
     }
 
     private fun message(resId: Int): String = Graph.appContext.getString(resId, entry.name)
+}
+
+/** ACTION_VIEW hands us a content URI, not an XFiles filesystem id. */
+private fun openSource(context: Context, entry: XEntry): InputStream {
+    if (entry.scheme == "content") {
+        return context.contentResolver.openInputStream(entry.id.toUri())
+            ?: throw IOException("Cannot read ${entry.name}")
+    }
+    return Graph.fsRegistry.forId(entry.id).openIn(entry)
 }
 
 /** Counts lines the way [TextRowIndex] does, so the header does not jump when editing starts. */

@@ -103,6 +103,36 @@
         </activity-alias>
 
         <activity-alias
+            android:name=".OpenPdfActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".OpenTextActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="application/javascript" />
+                <data android:mimeType="application/x-javascript" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
             android:name=".OpenVideoActivity"
             android:enabled="false"
             android:exported="true"

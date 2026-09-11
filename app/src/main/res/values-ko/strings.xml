@@ -106,6 +106,8 @@
     <string name="open_supported_archives_with_xfiles">지원되는 모든 압축 파일을 XFiles로 열기</string>
     <string name="supported_archives_summary">ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2, XZ 지원</string>
     <string name="view_images_with_xfiles">XFiles로 이미지 보기</string>
+    <string name="view_pdfs_with_xfiles">XFiles로 PDF 보기</string>
+    <string name="view_text_with_xfiles">XFiles로 텍스트 파일 보기</string>
     <string name="play_videos_with_xfiles">XFiles로 동영상 재생</string>
     <string name="root">Root</string>
     <string name="root_access">Root 액세스</string>

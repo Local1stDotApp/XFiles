@@ -47,10 +47,16 @@ object FileTypes {
             ext == "apk" || ext == "aab" || ext in apkBundleExtensions -> FileCategory.APK
             ext == "db" || ext == "sqlite" || ext == "sqlite3" -> FileCategory.DATABASE
             ext in archiveExtensions -> FileCategory.ARCHIVE
+            ext == "pdf" -> FileCategory.PDF
             mime == null -> if (ext in textExtensions) FileCategory.TEXT else FileCategory.GENERIC
             mime.startsWith("image/") -> FileCategory.IMAGE
             mime.startsWith("video/") -> FileCategory.VIDEO
             mime.startsWith("audio/") -> FileCategory.AUDIO
+            // .ts is TypeScript or MPEG-TS. Generic MIME is too common on transport
+            // streams to treat as editable text.
+            ext in textExtensions ->
+                if (ext == "ts" && !mime.startsWith("text/")) FileCategory.GENERIC
+                else FileCategory.TEXT
             mime == "application/pdf" -> FileCategory.PDF
             mime.startsWith("text/") -> FileCategory.TEXT
             else -> FileCategory.GENERIC

@@ -542,6 +542,8 @@ class MainViewModel : ViewModel() {
                     when (kind) {
                         ExternalOpenKind.ARCHIVE -> dialog.value = DialogRequest.EntryMenu(entry)
                         ExternalOpenKind.IMAGE -> showViewer(ViewerRequest.Image(listOf(entry), 0))
+                        ExternalOpenKind.PDF -> showViewer(ViewerRequest.Pdf(entry))
+                        ExternalOpenKind.TEXT -> showViewer(ViewerRequest.Text(entry))
                         ExternalOpenKind.VIDEO -> showViewer(ViewerRequest.Media(entry, listOf(entry)))
                     }
                 },

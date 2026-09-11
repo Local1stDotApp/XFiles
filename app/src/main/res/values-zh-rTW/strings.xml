@@ -106,6 +106,8 @@
     <string name="open_supported_archives_with_xfiles">使用 XFiles 開啟任意支援的壓縮檔</string>
     <string name="supported_archives_summary">支援 ZIP、JAR、APK、AAB、APKS、APKM、XAPK、7Z、RAR、TAR、TAR.GZ/TGZ、TAR.BZ2/TBZ2、TAR.XZ/TXZ、GZ、BZ2 和 XZ</string>
     <string name="view_images_with_xfiles">使用 XFiles 檢視圖片</string>
+    <string name="view_pdfs_with_xfiles">使用 XFiles 檢視 PDF</string>
+    <string name="view_text_with_xfiles">使用 XFiles 檢視文字檔</string>
     <string name="play_videos_with_xfiles">使用 XFiles 播放影片</string>
     <string name="root">Root</string>
     <string name="root_access">Root 存取權</string>

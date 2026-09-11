@@ -106,6 +106,8 @@
     <string name="open_supported_archives_with_xfiles">किसी भी समर्थित आर्काइव को XFiles से खोलें</string>
     <string name="supported_archives_summary">ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2 और XZ समर्थित</string>
     <string name="view_images_with_xfiles">XFiles से चित्र देखें</string>
+    <string name="view_pdfs_with_xfiles">XFiles से PDF देखें</string>
+    <string name="view_text_with_xfiles">XFiles से टेक्स्ट फ़ाइलें देखें</string>
     <string name="play_videos_with_xfiles">XFiles से वीडियो चलाएँ</string>
     <string name="root">Root</string>
     <string name="root_access">रूट पहुंच</string>

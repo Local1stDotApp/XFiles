@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 enum class ExternalOpenKind(val aliasName: String) {
     ARCHIVE("OpenArchiveActivity"),
     IMAGE("OpenImageActivity"),
+    PDF("OpenPdfActivity"),
+    TEXT("OpenTextActivity"),
     VIDEO("OpenVideoActivity"),
 }
 
