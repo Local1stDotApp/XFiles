@@ -2,6 +2,8 @@ package app.local1st.files.ui.viewer
 
 import android.media.MediaMetadataRetriever
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.ViewGroup
 import androidx.compose.animation.AnimatedVisibility
@@ -129,7 +131,7 @@ fun VideoPlayerScreen(
     var scrubLabel by remember { mutableStateOf<String?>(null) }
     var interactionTick by remember { mutableIntStateOf(0) }
     var sliderPos by remember { mutableStateOf<Float?>(null) }
-    var sliderWasPlaying by remember { mutableStateOf(false) }
+    var resumeAfterScrub by remember { mutableStateOf(false) }
     var cardDragging by remember { mutableStateOf(false) }
 
     // The system bars belong to the same chrome as the close row and the control card: they go
@@ -154,11 +156,17 @@ fun VideoPlayerScreen(
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() = seekGate.onFrameRendered()
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) =
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 seekGate.reset()
+                player.pauseAtEndOfMediaItems = false
+            }
         }
         player.addListener(listener)
-        onDispose { player.removeListener(listener) }
+        onDispose {
+            player.removeListener(listener)
+            seekGate.release()
+            player.pauseAtEndOfMediaItems = false
+        }
     }
 
     LaunchedEffect(player, entry.id) {
@@ -282,22 +290,28 @@ fun VideoPlayerScreen(
                             .union(WindowInsets(left = EDGE_GUARD_DP.dp, right = EDGE_GUARD_DP.dp)),
                     )
                     .pointerInput(Unit) {
-                        var wasPlaying = false
                         var accumPx = 0f
                         var baseMs = 0L
                         var baseFrame = 0L
                         val endScrub: () -> Unit = {
                             scrubbing = false
                             scrubLabel = null
-                            // Frame mode exists to inspect a chosen frame — stay on it
-                            // instead of resuming playback over it.
-                            if (wasPlaying && !frameMode) player.play()
+                            // Exact seeks can still be decoding; dropping the flag first lets a
+                            // seek that lands on EOS auto-advance the playlist.
+                            seekGate.whenIdle {
+                                val resume = resumeAfterScrub && !frameMode &&
+                                    player.playbackState != Player.STATE_ENDED
+                                resumeAfterScrub = false
+                                player.pauseAtEndOfMediaItems = false
+                                if (resume) player.play()
+                            }
                             interactionTick++
                         }
                         detectHorizontalDragGestures(
                             onDragStart = {
                                 scrubbing = true
-                                wasPlaying = player.isPlaying
+                                if (player.playWhenReady) resumeAfterScrub = true
+                                player.pauseAtEndOfMediaItems = true
                                 player.pause()
                                 accumPx = 0f
                                 baseMs = anchorMs()
@@ -475,11 +489,12 @@ fun VideoPlayerScreen(
                                 ?: if (durationMs > 0) positionMs.toFloat() / durationMs else 0f,
                             onValueChange = { v ->
                                 if (durationMs > 0) {
+                                    // Pause like the swipe path: playback racing the thumb
+                                    // fights the exact-seek, and can hit EOS (playWhenReady
+                                    // false via pauseAtEndOfMediaItems) before the seek lands.
                                     if (sliderPos == null) {
-                                        // Pause while scrubbing: playback racing the
-                                        // thumb fights the user, and a video ending
-                                        // mid-drag would auto-advance under the finger.
-                                        sliderWasPlaying = player.isPlaying
+                                        if (player.playWhenReady) resumeAfterScrub = true
+                                        player.pauseAtEndOfMediaItems = true
                                         player.pause()
                                     }
                                     sliderPos = v
@@ -489,8 +504,13 @@ fun VideoPlayerScreen(
                             onValueChangeFinished = {
                                 sliderPos?.let { seekGate.request((it * durationMs).toLong()) }
                                 sliderPos = null
-                                if (sliderWasPlaying && !frameMode) player.play()
-                                sliderWasPlaying = false
+                                seekGate.whenIdle {
+                                    val play = resumeAfterScrub && !frameMode &&
+                                        player.playbackState != Player.STATE_ENDED
+                                    resumeAfterScrub = false
+                                    player.pauseAtEndOfMediaItems = false
+                                    if (play) player.play()
+                                }
                                 interactionTick++
                             },
                             modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
@@ -634,6 +654,21 @@ private class SeekGate(private val player: ExoPlayer) {
         private set
     private var queuedMs = -1L
     private var busySince = 0L
+    private var onIdle: (() -> Unit)? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private val staleIdle = Runnable {
+        val queued = queuedMs
+        if (queued >= 0) {
+            queuedMs = -1L
+            targetMs = queued
+            busySince = SystemClock.uptimeMillis()
+            player.seekTo(queued)
+            armStaleIdle()
+            return@Runnable
+        }
+        targetMs = -1L
+        fireIdle()
+    }
 
     fun request(ms: Long) {
         val now = SystemClock.uptimeMillis()
@@ -642,12 +677,14 @@ private class SeekGate(private val player: ExoPlayer) {
         if (targetMs >= 0 && now - busySince < STALE_SEEK_MS) {
             queuedMs = ms
             targetMs = ms
+            armStaleIdle()
             return
         }
         targetMs = ms
         queuedMs = -1L
         busySince = now
         player.seekTo(ms)
+        armStaleIdle()
     }
 
     fun onFrameRendered() {
@@ -656,15 +693,49 @@ private class SeekGate(private val player: ExoPlayer) {
             queuedMs = -1L
             busySince = SystemClock.uptimeMillis()
             player.seekTo(t)
+            armStaleIdle()
         } else {
             targetMs = -1L
+            handler.removeCallbacks(staleIdle)
+            fireIdle()
         }
     }
 
     /** A queued seek targets the old item's timeline; drop it on item transitions. */
     fun reset() {
+        handler.removeCallbacks(staleIdle)
         targetMs = -1L
         queuedMs = -1L
+        onIdle = null
+    }
+
+    fun release() {
+        handler.removeCallbacks(staleIdle)
+        onIdle = null
+    }
+
+    /** Runs [block] now if idle, else after the seek renders or the last queued target is issued. */
+    fun whenIdle(block: () -> Unit) {
+        if (targetMs < 0) {
+            handler.removeCallbacks(staleIdle)
+            onIdle = null
+            block()
+        } else {
+            onIdle = block
+            armStaleIdle()
+        }
+    }
+
+    private fun armStaleIdle() {
+        handler.removeCallbacks(staleIdle)
+        val remaining = STALE_SEEK_MS - (SystemClock.uptimeMillis() - busySince)
+        handler.postDelayed(staleIdle, remaining.coerceAtLeast(0L))
+    }
+
+    private fun fireIdle() {
+        val idle = onIdle
+        onIdle = null
+        idle?.invoke()
     }
 }
 

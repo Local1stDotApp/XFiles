@@ -140,7 +140,9 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
         val listener = object : Player.Listener {
             override fun onEvents(p: Player, events: Player.Events) {
                 currentIndex = p.currentMediaItemIndex
-                playing = p.isPlaying
+                // isPlaying drops to false for the whole exact-seek decode, which made
+                // the pause control flip to play and looked like scrubbing paused the video.
+                playing = playbackIntended(p)
                 metadata = p.mediaMetadata
                 hasPrevious = p.hasPreviousMediaItem()
                 hasNext = p.hasNextMediaItem()
@@ -311,6 +313,12 @@ private fun AudioPlayerScreen(
         }
     }
 }
+
+/** Play/pause chrome follows the user's intent, not decoder liveness. */
+internal fun playbackIntended(player: Player): Boolean =
+    player.playWhenReady &&
+        player.playbackState != Player.STATE_ENDED &&
+        player.playbackState != Player.STATE_IDLE
 
 internal fun formatPlayTime(ms: Long): String {
     if (ms <= 0) return "0:00"
