@@ -125,6 +125,41 @@ class TextRowIndexTest {
     }
 
     @Test
+    fun rowStart_isTheByteOffsetOfThatRow() {
+        val index = index("aa\nbbb\nc")
+
+        assertEquals(0L, index.rowStart(0))
+        assertEquals(3L, index.rowStart(1))
+        assertEquals(7L, index.rowStart(2))
+        assertEquals(-1L, index.rowStart(3))
+        assertEquals(-1L, index.rowStart(-1))
+    }
+
+    @Test
+    fun rowStart_skipsAByteOrderMark() {
+        val index = index("\uFEFFalpha\nbeta\n")
+
+        assertEquals(3L, index.rowStart(0))
+        assertEquals(9L, index.rowStart(1))
+    }
+
+    @Test
+    fun rowStart_isExactWhenTheCheckpointTableKeepsHalving() {
+        val lines = (0 until 200).map { "line $it padded with a little text" }
+        val joined = lines.joinToString("\n")
+        val bytes = joined.toByteArray(Charsets.UTF_8)
+        val index = index(joined, initialCheckpoints = 2, maxCheckpoints = 2)
+
+        var offset = 0L
+        lines.forEachIndexed { row, line ->
+            assertEquals("row $row", offset, index.rowStart(row))
+            offset += line.toByteArray(Charsets.UTF_8).size
+            if (row < lines.lastIndex) offset++ // the newline between lines
+        }
+        assertEquals(bytes.size.toLong(), offset)
+    }
+
+    @Test
     fun rowsPastTheFourGigabyteMark_areFoundExactly() {
         // 4.5 GiB of numbered lines, generated as they are read: past the 2^32 byte mark every
         // offset needs 64-bit arithmetic, from the scan through to the row that comes back.

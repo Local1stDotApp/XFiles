@@ -200,6 +200,7 @@ Najpierw zamontuj tę lokalizację w innej aplikacji jako folder — RCX (rclone
     <string name="lines">%1$d wierszy</string>
     <string name="edit">Edytuj</string>
     <string name="stop_editing">Zakończ edycję</string>
+    <string name="editing_portion">Edytowanie %1$s z %2$s</string>
     <string name="wrap_lines">Zawijaj wiersze</string>
     <string name="stop_wrapping">Nie zawijaj wierszy</string>
     <string name="decoded_binary_xml">Zdekodowano z binarnego pliku XML Androida (tylko do odczytu)</string>

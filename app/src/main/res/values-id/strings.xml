@@ -198,6 +198,7 @@ Pasang dulu lokasi itu sebagai folder di aplikasi lain — RCX (rclone), Nextclo
     <string name="lines">%1$d baris</string>
     <string name="edit">Sunting</string>
     <string name="stop_editing">Berhenti mengedit</string>
+    <string name="editing_portion">Mengedit %1$s dari %2$s</string>
     <string name="wrap_lines">Bungkus baris</string>
     <string name="stop_wrapping">Berhenti membungkus</string>
     <string name="decoded_binary_xml">Didekodekan dari XML biner Android (hanya baca)</string>

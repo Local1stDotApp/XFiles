@@ -196,6 +196,7 @@
     <string name="lines">%1$d lines</string>
     <string name="edit">Edit</string>
     <string name="stop_editing">Stop editing</string>
+    <string name="editing_portion">Editing %1$s of %2$s</string>
     <string name="wrap_lines">Wrap lines</string>
     <string name="stop_wrapping">Stop wrapping</string>
     <string name="decoded_binary_xml">Decoded from Android binary XML (read-only)</string>

@@ -39,11 +39,13 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -70,6 +72,7 @@ import app.local1st.files.core.text.ArrayByteWindow
 import app.local1st.files.core.text.ByteWindow
 import app.local1st.files.core.text.FileByteWindow
 import app.local1st.files.core.text.TextRowIndex
+import app.local1st.files.core.text.loadEditWindowAround
 import app.local1st.files.core.util.AxmlDecoder
 import app.local1st.files.core.util.Format
 import app.local1st.files.di.Graph
@@ -92,14 +95,29 @@ import kotlinx.coroutines.withContext
 private const val STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 
 /**
- * Editing holds the whole text in memory in one text field, and Compose lays that field out whole —
- * so what it costs tracks the file, not the screen, and it is paid on the main thread before the
- * editor appears. Measured on a OnePlus 7 Pro, release build: 200 KB opens in about a second, 512 KB
- * in ten, 1 MB in half a minute, 2 MB never finishes, and 20 MB exhausts the heap. Half a megabyte
- * is the last size that still ends in an editor rather than in a wait, so that is where this sits.
- * Raising it means not laying the whole document out at once — a different editor, not a bigger cap.
+ * Editing holds its text in one Compose field that is laid out whole, so the field itself is
+ * capped — not the file. Measured on a OnePlus 7 Pro, release build: 200 KB opens in about a
+ * second, 512 KB in ten, 1 MB in half a minute, 2 MB never finishes, and 20 MB exhausts the heap.
+ * A larger file is still editable: the field loads this much around the row on screen, and save
+ * splices that slice back. Scroll to another place and edit again to change a different part.
  */
 private const val EDIT_LIMIT_BYTES = 512L * 1024
+
+private fun utf8ByteCount(s: String): Int {
+    var bytes = 0
+    var i = 0
+    while (i < s.length) {
+        val cp = s.codePointAt(i)
+        bytes += when {
+            cp < 0x80 -> 1
+            cp < 0x800 -> 2
+            cp < 0x10000 -> 3
+            else -> 4
+        }
+        i += Character.charCount(cp)
+    }
+    return bytes
+}
 
 private const val AXML_PROBE_BYTES = 64
 private const val AXML_LIMIT_BYTES = 8L * 1024 * 1024
@@ -113,12 +131,13 @@ private const val ROWS_PER_PAGE = 128
 private const val MAX_CACHED_ROW_PAGES = 32
 
 /**
- * Plain-text viewer with optional in-place editing for small writable local files.
+ * Plain-text viewer with optional in-place editing for writable local files.
  *
  * A real file is never read whole: [TextRowIndex] walks it once to learn where its rows start and
  * the list decodes only the rows on screen, so a multi-gigabyte log opens at once, scrolls at a
  * constant few megabytes of memory, and reports its line count as it goes. Entries that can only be
- * streamed (archive members, su paths) still show their leading 8 MiB.
+ * streamed (archive members, su paths) still show their leading 8 MiB. Editing a large file uses
+ * the same bound as a small one: one [EDIT_LIMIT_BYTES] slice, spliced back on save.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -130,6 +149,10 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
     var reloads by remember { mutableStateOf(0) }
     var editing by remember { mutableStateOf(false) }
     var editText by remember { mutableStateOf("") }
+    var editFrom by remember { mutableLongStateOf(0L) }
+    var editTo by remember { mutableLongStateOf(0L) }
+    var editFileSize by remember { mutableLongStateOf(0L) }
+    var firstVisibleRow by remember { mutableIntStateOf(0) }
     var saving by remember { mutableStateOf(false) }
     var preparingEdit by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf<String?>(null) }
@@ -159,7 +182,36 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
     val complete by document.complete
     // A pageable file is never the truncated kind, so only the decoded-XML case has to be ruled out.
     val canEdit = file != null && entry.scheme == XId.SCHEME_FILE && entry.canWrite &&
-        !document.axml.value && document.sizeBytes.value in 0..EDIT_LIMIT_BYTES
+        opened && !document.axml.value
+
+    fun reloadEditorFromDisk(centerOffset: Long) {
+        val target = file ?: return
+        if (preparingEdit) return
+        preparingEdit = true
+        scope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                runCatching {
+                    FileByteWindow(target).use { window ->
+                        val center = centerOffset.takeIf { it in 0L until window.size } ?: 0L
+                        loadEditWindowAround(window, center, EDIT_LIMIT_BYTES)
+                    }
+                }
+            }
+            preparingEdit = false
+            loaded.fold(
+                onSuccess = {
+                    editText = it.text
+                    editFrom = it.from
+                    editTo = it.to
+                    editFileSize = it.fileSize
+                },
+                onFailure = {
+                    editing = false
+                    feedback = it.message ?: cannotRead
+                },
+            )
+        }
+    }
 
     fun save() {
         if (saving) return
@@ -168,22 +220,32 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
         // written is what was on screen when Save was pressed. The field is read-only meanwhile, so
         // nothing can be typed into the gap and then thrown away by the re-index below.
         val pending = editText
+        val from = editFrom
+        val to = editTo
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     // LocalFileSystem preserves this editor's atomic File replacement where
                     // permitted and owns the narrow API 26-29 secondary-volume SAF fallback.
                     val fs = Graph.fsRegistry.forId(entry.id) as LocalFileSystem
-                    fs.replaceContents(entry, pending.toByteArray(Charsets.UTF_8))
+                    fs.replaceRange(entry, from, to, pending.toByteArray(Charsets.UTF_8))
                 }
             }
             saving = false
             result.fold(
-                onSuccess = {
-                    editing = false
-                    feedback = saved
-                    // The bytes on disk moved: index them again rather than trust the old rows.
-                    reloads++
+                onSuccess = { wroteReplacement ->
+                    if (wroteReplacement) {
+                        editing = false
+                        feedback = saved
+                        reloads++
+                    } else {
+                        // Leftover restored instead of this buffer — keep editing and reload
+                        // the recovered file so the next Save uses matching offsets.
+                        feedback = saveFailed
+                        val center = editFrom
+                        reloadEditorFromDisk(center)
+                        reloads++
+                    }
                 },
                 onFailure = { feedback = it.message ?: saveFailed },
             )
@@ -199,20 +261,25 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
         // whatever has been typed in the meantime.
         if (preparingEdit) return
         val target = file ?: return
+        val fromRow = firstVisibleRow
         preparingEdit = true
         scope.launch {
             val loaded = withContext(Dispatchers.IO) {
                 runCatching {
-                    // Re-checked against the file as it is now: the button was enabled from a length
-                    // read when the viewer opened, and a live log can have grown past editing since.
-                    if (target.length() > EDIT_LIMIT_BYTES) throw IOException(cannotRead)
-                    target.readText()
+                    FileByteWindow(target).use { window ->
+                        val center = document.rowOffset(fromRow)
+                            .takeIf { it in 0L until window.size } ?: 0L
+                        loadEditWindowAround(window, center, EDIT_LIMIT_BYTES)
+                    }
                 }
             }
             preparingEdit = false
             loaded.fold(
                 onSuccess = {
-                    editText = it
+                    editText = it.text
+                    editFrom = it.from
+                    editTo = it.to
+                    editFileSize = it.fileSize
                     editing = true
                 },
                 onFailure = {
@@ -249,8 +316,16 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
                         Text(entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             if (editing) {
-                                val lines = remember(editText) { countLines(editText) }
-                                stringResource(R.string.lines, lines)
+                                if (editFrom > 0L || editTo < editFileSize) {
+                                    stringResource(
+                                        R.string.editing_portion,
+                                        Format.bytes(editTo - editFrom),
+                                        Format.bytes(editFileSize),
+                                    )
+                                } else {
+                                    val lines = remember(editText) { countLines(editText) }
+                                    stringResource(R.string.lines, lines)
+                                }
                             } else {
                                 documentSubtitle(document)
                             },
@@ -300,7 +375,9 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
             when {
                 editing -> BasicTextField(
                     value = editText,
-                    onValueChange = { editText = it },
+                    onValueChange = { next ->
+                        if (utf8ByteCount(next) <= EDIT_LIMIT_BYTES) editText = next
+                    },
                     // Frozen while the write is in flight: a keystroke that lands after the bytes
                     // were snapshotted would be discarded by the re-index, silently.
                     readOnly = saving,
@@ -335,7 +412,7 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
                 rowCount == 0 -> ViewerNotice(chrome) {
                     Text(stringResource(R.string.empty_file), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                else -> TextRows(entry, document, rowCount, chrome, wrap)
+                else -> TextRows(entry, document, rowCount, chrome, wrap) { firstVisibleRow = it }
             }
 
             feedback?.let { message ->
@@ -387,9 +464,19 @@ private fun TextRows(
     rowCount: Int,
     chrome: PaddingValues,
     wrap: Boolean,
+    onFirstVisibleRow: (Int) -> Unit,
 ) {
     val listState = rememberLazyListState()
     val horizontal = rememberScrollState()
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            var headers = 0
+            if (document.error.value != null) headers++
+            if (document.axml.value) headers++
+            if (document.truncated.value) headers++
+            (listState.firstVisibleItemIndex - headers).coerceAtLeast(0)
+        }.collect { onFirstVisibleRow(it) }
+    }
     var widest by remember { mutableIntStateOf(0) }
     val baseStyle = MaterialTheme.typography.bodySmall
     val rowStyle = remember(baseStyle, wrap) {
@@ -595,6 +682,15 @@ private class TextDocument(
     }
 
     fun row(row: Int): String? = pages[row / ROWS_PER_PAGE]?.getOrNull(row % ROWS_PER_PAGE)
+
+    /**
+     * Byte offset of [row], or -1 if the index is gone or has not reached it.
+     * Blocking IO: call from an IO dispatcher.
+     */
+    fun rowOffset(row: Int): Long {
+        val rowIndex = synchronized(this) { if (closed) null else index } ?: return -1L
+        return rowIndex.rowStart(row)
+    }
 
     fun request(row: Int) {
         val page = row / ROWS_PER_PAGE

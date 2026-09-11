@@ -184,6 +184,30 @@ class TextRowIndex(
     }
 
     /**
+     * Absolute byte offset of the first byte of [row], or -1 if that row has not been indexed.
+     * Blocking IO: call from an IO dispatcher.
+     */
+    @Throws(IOException::class)
+    fun rowStart(row: Int): Long {
+        val available = rows
+        if (row < 0 || row >= available) return -1L
+        val anchor = synchronized(lock) {
+            if (checkpointCount == 0) return -1L
+            val checkpoint = minOf(row / stride, checkpointCount - 1)
+            Anchor(checkpoint * stride, starts[checkpoint])
+        }
+        if (anchor.row == row) return anchor.offset
+        val splitter = RowSplitter(source, anchor.offset, maxRowBytes, READ_BUFFER)
+        var at = anchor.row
+        while (at <= row) {
+            if (!splitter.advance()) return -1L
+            if (at == row) return splitter.rowStart
+            at++
+        }
+        return -1L
+    }
+
+    /**
      * Records the start of the row about to be counted. Only [scan] calls this, so the table is
      * read here without the lock and only written under it — where [rows] reads it.
      */

@@ -14,6 +14,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Local disk filesystem for `file://` ids, backed by [java.io.File].
@@ -190,32 +191,242 @@ class LocalFileSystem(
      * Only its failed API 26-29 secondary-volume case falls through to SAF.
      */
     fun replaceContents(entry: XEntry, bytes: ByteArray) {
+        replaceRange(entry, 0L, File(entry.localPath ?: entry.path).length(), bytes)
+    }
+
+    /**
+     * Replaces bytes `[from, to)` with [replacement], streaming the unchanged prefix and suffix
+     * so a small edit in a large file does not have to sit in memory as a whole snapshot.
+     *
+     * @return true if [replacement] was written; false if a previous complete tmp was restored
+     *   instead, so the caller must reload from disk rather than treat the in-memory buffer as saved.
+     */
+    fun replaceRange(entry: XEntry, from: Long, to: Long, replacement: ByteArray): Boolean {
         val target = File(entry.localPath ?: entry.path)
-        val tmp = File(target.parentFile, ".${entry.name}.xfiles-tmp")
+        val parent = target.parentFile ?: throw IOException("Cannot save ${entry.name}")
+        if (from < 0L || to < from) {
+            throw IOException("Cannot save ${entry.name}")
+        }
+        val leftovers = listXfilesTmps(parent, entry.name)
+        val recovered = leftovers
+            .filter { isReadyTmpName(it.name, entry.name) && it.length() > target.length() }
+            .maxByOrNull { it.length() }
+        if (recovered != null) {
+            commitStaged(recovered, target, entry)
+            leftovers.forEach { if (it != recovered) it.delete() }
+            return false
+        }
+        if (to > target.length()) {
+            throw IOException("Cannot save ${entry.name}")
+        }
+        leftovers.forEach { if (it.length() <= target.length()) it.delete() }
+        val created = newXfilesTmp(parent, entry.name)
         try {
-            tmp.outputStream().use { it.write(bytes) }
+            writeSpliced(created, target, from, to, replacement)
+        } catch (e: Throwable) {
+            created.delete()
+            rethrowIfCancelled(e)
+            val spliceError = e as? IOException ?: IOException("Cannot save ${entry.name}", e)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) throw spliceError
+            // Sibling staging failed, so [target] is still the original. SAF must splice
+            // from that intact file, never from a half-written tmp.
+            return writeRangeViaSaf(target, entry, from, to, replacement, staged = null, spliceError)
+        }
+        val tmp = markReady(created, parent, entry.name)
+        commitStaged(tmp, target, entry)
+        listXfilesTmps(parent, entry.name).forEach { it.delete() }
+        return true
+    }
+
+    /**
+     * SAF `openOutput` truncates the real document first, so the payload has to already
+     * exist somewhere else. A complete sibling tmp is that payload; otherwise the original
+     * file is still intact and is spliced onto a SAF document of a different name first.
+     *
+     * @return false if a previous complete tmp was restored instead of [replacement].
+     */
+    private fun writeRangeViaSaf(
+        target: File,
+        entry: XEntry,
+        from: Long,
+        to: Long,
+        replacement: ByteArray,
+        staged: File?,
+        directError: IOException,
+    ): Boolean {
+        var wroteReplacement = true
+        withSafWrite(target, directError) { saf, volume, tree ->
+            val parent = target.parentFile?.let { saf.resolve(volume, tree, it) }
+                ?: throw directError
+            val mime = entry.mime ?: FileTypes.mimeOf(entry.name) ?: "application/octet-stream"
+            if (staged != null) {
+                saf.openOutput(tree, parent, entry.name, mime)
+                    .use { out -> staged.inputStream().use { it.copyTo(out) } }
+                return@withSafWrite
+            }
+            val leftoverSaf = saf.children(tree, parent)
+                .filter {
+                    isReadyTmpName(it.name, entry.name) &&
+                        !it.isDirectory &&
+                        it.size > target.length()
+                }
+                .maxByOrNull { it.size }
+            if (leftoverSaf != null) {
+                try {
+                    copySafDocument(saf, tree, parent, entry.name, mime, leftoverSaf)
+                } catch (e: Throwable) {
+                    rethrowIfCancelled(e)
+                    try {
+                        copySafDocument(saf, tree, parent, entry.name, mime, leftoverSaf)
+                    } catch (retry: Throwable) {
+                        rethrowIfCancelled(retry)
+                        throw e
+                    }
+                }
+                runCatching { saf.delete(leftoverSaf) }
+                wroteReplacement = false
+                return@withSafWrite
+            }
+            val tempName = ".${entry.name}.xfiles-tmp.${System.nanoTime()}"
+            val stale = saf.child(tree, parent, tempName)
+            if (stale?.isDirectory == true) throw directError
+            try {
+                saf.openOutput(tree, parent, tempName, mime).use { out ->
+                    spliceTo(out, target, from, to, replacement)
+                }
+            } catch (e: Throwable) {
+                rethrowIfCancelled(e)
+                saf.child(tree, parent, tempName)?.let { runCatching { saf.delete(it) } }
+                throw e
+            }
+            val spliced = saf.child(tree, parent, tempName) ?: throw directError
+            val readyName = ".${entry.name}.xfiles-ready"
+            saf.child(tree, parent, readyName)?.let { runCatching { saf.delete(it) } }
+            val payload = saf.rename(tree, parent, spliced, readyName)
+            try {
+                copySafDocument(saf, tree, parent, entry.name, mime, payload)
+            } catch (e: Throwable) {
+                rethrowIfCancelled(e)
+                // openOutput already truncated the document; copy [payload] onto it once more.
+                try {
+                    copySafDocument(saf, tree, parent, entry.name, mime, payload)
+                } catch (retry: Throwable) {
+                    rethrowIfCancelled(retry)
+                    throw e
+                }
+            }
+            runCatching { saf.delete(payload) }
+        }
+        return wroteReplacement
+    }
+
+    private fun copySafDocument(
+        saf: LegacySafAccess,
+        tree: android.net.Uri,
+        parent: SafDocument,
+        name: String,
+        mime: String,
+        payload: SafDocument,
+    ) {
+        saf.openOutput(tree, parent, name, mime).use { out ->
+            saf.openInput(payload).use { it.copyTo(out) }
+        }
+    }
+
+    /**
+     * Commits a complete sibling tmp onto [target]. After SAF `openOutput` truncates the real
+     * document, [tmp] is the only complete copy and is left in place if the copy fails.
+     * API 30+ has no SAF fallback; the tmp is still kept so a later save can recover it.
+     */
+    private fun commitStaged(tmp: File, target: File, entry: XEntry) {
+        try {
             Files.move(
                 tmp.toPath(),
                 target.toPath(),
                 StandardCopyOption.REPLACE_EXISTING,
                 StandardCopyOption.ATOMIC_MOVE,
             )
-            return
         } catch (e: Throwable) {
-            tmp.delete()
-            // Preserve the old File-only behavior and exception on API 30+ verbatim.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) throw e
-            val directError = e as? IOException ?: IOException("Cannot save ${entry.name}", e)
-            withSafWrite(target, directError) { saf, volume, tree ->
-                val parent = target.parentFile?.let { saf.resolve(volume, tree, it) }
-                    ?: throw directError
-                saf.openOutput(
-                    tree,
-                    parent,
-                    entry.name,
-                    entry.mime ?: FileTypes.mimeOf(entry.name) ?: "application/octet-stream",
-                ).use { it.write(bytes) }
+            rethrowIfCancelled(e)
+            val moveError = e as? IOException ?: IOException("Cannot save ${entry.name}", e)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) throw moveError
+            try {
+                writeRangeViaSaf(target, entry, 0L, 0L, ByteArray(0), staged = tmp, moveError)
+            } catch (safError: Throwable) {
+                rethrowIfCancelled(safError)
+                try {
+                    writeRangeViaSaf(target, entry, 0L, 0L, ByteArray(0), staged = tmp, moveError)
+                } catch (retry: Throwable) {
+                    rethrowIfCancelled(retry)
+                    throw safError
+                }
             }
+            tmp.delete()
+        }
+    }
+
+    private fun newXfilesTmp(parent: File, name: String): File =
+        Files.createTempFile(parent.toPath(), ".${name}.xfiles-tmp.", "").toFile()
+
+    private fun markReady(tmp: File, parent: File, name: String): File {
+        val ready = File(parent, ".${name}.xfiles-ready")
+        try {
+            Files.move(
+                tmp.toPath(),
+                ready.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE,
+            )
+        } catch (e: Throwable) {
+            rethrowIfCancelled(e)
+            Files.move(tmp.toPath(), ready.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+        return ready
+    }
+
+    private fun listXfilesTmps(parent: File, name: String): List<File> =
+        parent.listFiles { file -> file.isFile && isXfilesTmpName(file.name, name) }
+            ?.asList()
+            .orEmpty()
+
+    private fun isReadyTmpName(fileName: String, entryName: String): Boolean =
+        fileName == ".${entryName}.xfiles-ready"
+
+    private fun isXfilesTmpName(fileName: String, entryName: String): Boolean {
+        if (isReadyTmpName(fileName, entryName)) return true
+        val prefix = ".${entryName}.xfiles-tmp"
+        return fileName == prefix || fileName.startsWith("$prefix.")
+    }
+
+    private fun rethrowIfCancelled(e: Throwable) {
+        if (e is CancellationException || e is InterruptedException) throw e
+    }
+
+    private fun writeSpliced(tmp: File, source: File, from: Long, to: Long, replacement: ByteArray) {
+        tmp.outputStream().use { spliceTo(it, source, from, to, replacement) }
+    }
+
+    private fun spliceTo(out: OutputStream, source: File, from: Long, to: Long, replacement: ByteArray) {
+        if (from == 0L && to == source.length()) {
+            out.write(replacement)
+            return
+        }
+        FileInputStream(source).use { input ->
+            copyExactly(input, out, from)
+            out.write(replacement)
+            skipExactly(input, to - from)
+            input.copyTo(out)
+        }
+    }
+
+    private fun copyExactly(input: InputStream, out: OutputStream, count: Long) {
+        val buf = ByteArray(1 shl 16)
+        var left = count
+        while (left > 0) {
+            val n = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+            if (n < 0) throw IOException("Unexpected end of file")
+            out.write(buf, 0, n)
+            left -= n
         }
     }
 
@@ -322,4 +533,27 @@ internal fun createEmptyFileExclusive(file: File) {
         StandardOpenOption.CREATE_NEW,
         StandardOpenOption.WRITE,
     ).use { }
+}
+
+/**
+ * Advances [input] by exactly [count] bytes or throws. [FileInputStream.skip] is an lseek
+ * that can move past EOF and still report success, so a later copy would silently drop the
+ * suffix; this checks the channel size for files and otherwise reads and discards.
+ */
+internal fun skipExactly(input: InputStream, count: Long) {
+    if (count <= 0L) return
+    if (input is FileInputStream) {
+        val channel = input.channel
+        val remaining = channel.size() - channel.position()
+        if (remaining < count) throw IOException("Unexpected end of file")
+        channel.position(channel.position() + count)
+        return
+    }
+    val buf = ByteArray(1 shl 16)
+    var left = count
+    while (left > 0) {
+        val n = input.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+        if (n < 0) throw IOException("Unexpected end of file")
+        left -= n
+    }
 }

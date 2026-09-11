@@ -198,6 +198,7 @@ Hängen Sie den Ort zuerst in einer anderen App als Ordner ein — RCX (rclone),
     <string name="lines">%1$d-Zeilen</string>
     <string name="edit">Bearbeiten</string>
     <string name="stop_editing">Hören Sie auf zu bearbeiten</string>
+    <string name="editing_portion">%1$s von %2$s werden bearbeitet</string>
     <string name="wrap_lines">Zeilen umbrechen</string>
     <string name="stop_wrapping">Umbruch beenden</string>
     <string name="decoded_binary_xml">Aus Android-Binär-XML dekodiert (schreibgeschützt)</string>

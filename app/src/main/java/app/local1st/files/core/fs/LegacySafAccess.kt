@@ -13,6 +13,7 @@ import android.provider.DocumentsContract
 import app.local1st.files.core.prefs.SettingsRepo
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.io.OutputStream
 import java.nio.file.FileAlreadyExistsException
 import java.util.concurrent.atomic.AtomicLong
@@ -199,6 +200,9 @@ class LegacySafAccess(
         queryChildren(treeUri, parent.documentId)
             .firstOrNull { it.name.equals(name, ignoreCase = true) }
 
+    internal fun children(treeUri: Uri, parent: SafDocument): List<SafDocument> =
+        queryChildren(treeUri, parent.documentId)
+
     internal fun createDirectory(treeUri: Uri, parent: SafDocument, name: String): SafDocument {
         val uri = DocumentsContract.createDocument(
             resolver,
@@ -254,6 +258,10 @@ class LegacySafAccess(
         // DocumentsContract.copyDocument(): ExternalStorageProvider does not support it.
         return ParcelFileDescriptor.AutoCloseOutputStream(descriptor)
     }
+
+    internal fun openInput(document: SafDocument): InputStream =
+        resolver.openInputStream(document.uri)
+            ?: throw IOException("Provider did not open ${document.name}")
 
     internal fun delete(document: SafDocument) {
         if (!DocumentsContract.deleteDocument(resolver, document.uri)) {

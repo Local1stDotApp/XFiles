@@ -202,6 +202,7 @@
     <string name="lines">%1$d سطر</string>
     <string name="edit">تحرير</string>
     <string name="stop_editing">توقف عن التحرير</string>
+    <string name="editing_portion">جارٍ تحرير %1$s من %2$s</string>
     <string name="wrap_lines">التفاف الأسطر</string>
     <string name="stop_wrapping">إيقاف الالتفاف</string>
     <string name="decoded_binary_xml">تم فك ترميز ملف Android XML الثنائي (للقراءة فقط)</string>

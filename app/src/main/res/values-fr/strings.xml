@@ -198,6 +198,7 @@ Montez d’abord cet emplacement comme dossier dans une autre appli — RCX (rcl
     <string name="lines">%1$d lignes</string>
     <string name="edit">Modifier</string>
     <string name="stop_editing">Arrêter de modifier</string>
+    <string name="editing_portion">Modification de %1$s sur %2$s</string>
     <string name="wrap_lines">Retour à la ligne</string>
     <string name="stop_wrapping">Arrêter le retour à la ligne</string>
     <string name="decoded_binary_xml">Décodé à partir du XML binaire Android (lecture seule)</string>

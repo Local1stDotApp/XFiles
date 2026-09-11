@@ -198,6 +198,7 @@ Koppel die locatie eerst in een andere app als map — RCX (rclone), Nextcloud, 
     <string name="lines">%1$d regels</string>
     <string name="edit">Bewerking</string>
     <string name="stop_editing">Stop met bewerken</string>
+    <string name="editing_portion">%1$s van %2$s bewerken</string>
     <string name="wrap_lines">Regels afbreken</string>
     <string name="stop_wrapping">Afbreken stoppen</string>
     <string name="decoded_binary_xml">Gedecodeerd uit Android binaire XML (alleen-lezen)</string>

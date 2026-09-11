@@ -198,6 +198,7 @@
     <string name="lines">%1$d satır</string>
     <string name="edit">Düzenle</string>
     <string name="stop_editing">Düzenlemeyi durdur</string>
+    <string name="editing_portion">%2$s dosyasının %1$s bölümü düzenleniyor</string>
     <string name="wrap_lines">Satırları kaydır</string>
     <string name="stop_wrapping">Kaydırmayı durdur</string>
     <string name="decoded_binary_xml">Android ikili XML\'den kodu çözüldü (salt okunur)</string>
