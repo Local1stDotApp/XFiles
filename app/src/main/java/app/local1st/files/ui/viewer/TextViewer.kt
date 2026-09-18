@@ -1,6 +1,16 @@
 package app.local1st.files.ui.viewer
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputConnectionWrapper
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -9,6 +19,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -17,8 +28,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.WrapText
 import androidx.compose.material.icons.outlined.Close
@@ -33,31 +44,65 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.isShiftPressed as isPointerShiftPressed
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.InterceptPlatformTextInput
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.TextToolbar
+import androidx.compose.ui.platform.PlatformTextInputInterceptor
+import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -70,6 +115,9 @@ import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.text.ArrayByteWindow
 import app.local1st.files.core.text.ByteWindow
+import app.local1st.files.core.text.EditBuffer
+import app.local1st.files.core.text.EditCaret
+import app.local1st.files.core.text.EditWindow
 import app.local1st.files.core.text.FileByteWindow
 import app.local1st.files.core.text.TextRowIndex
 import app.local1st.files.core.text.loadEditWindowAround
@@ -82,12 +130,17 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -95,29 +148,18 @@ import kotlinx.coroutines.withContext
 private const val STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 
 /**
- * Editing holds its text in one Compose field that is laid out whole, so the field itself is
- * capped — not the file. Measured on a OnePlus 7 Pro, release build: 200 KB opens in about a
- * second, 512 KB in ten, 1 MB in half a minute, 2 MB never finishes, and 20 MB exhausts the heap.
- * A larger file is still editable: the field loads this much around the row on screen, and save
- * splices that slice back. Scroll to another place and edit again to change a different part.
+ * Editing holds a slice, not the file: Compose still cannot page a single field, so the window
+ * is this wide and Save splices it back. The rows themselves are a list, like the viewer, so
+ * scrolling the slice does not lay 512 KB out as one field. Scroll to another place and edit
+ * again to change a different part.
  */
 private const val EDIT_LIMIT_BYTES = 512L * 1024
 
-private fun utf8ByteCount(s: String): Int {
-    var bytes = 0
-    var i = 0
-    while (i < s.length) {
-        val cp = s.codePointAt(i)
-        bytes += when {
-            cp < 0x80 -> 1
-            cp < 0x800 -> 2
-            cp < 0x10000 -> 3
-            else -> 4
-        }
-        i += Character.charCount(cp)
-    }
-    return bytes
-}
+/** One delayed IME deleteSurroundingText after a line join; must outlive recomposition. */
+private const val JOIN_SWALLOW_MS = 400L
+
+private const val EDITOR_FOCUS_RETRY_MS = 16L
+private const val EDITOR_FOCUS_GIVE_UP_MS = 500L
 
 private const val AXML_PROBE_BYTES = 64
 private const val AXML_LIMIT_BYTES = 8L * 1024 * 1024
@@ -137,7 +179,8 @@ private const val MAX_CACHED_ROW_PAGES = 32
  * the list decodes only the rows on screen, so a multi-gigabyte log opens at once, scrolls at a
  * constant few megabytes of memory, and reports its line count as it goes. Entries that can only be
  * streamed (archive members, su paths) still show their leading 8 MiB. Editing a large file uses
- * the same bound as a small one: one [EDIT_LIMIT_BYTES] slice, spliced back on save.
+ * the same bound as a small one: one [EDIT_LIMIT_BYTES] slice as a list of rows, spliced back on
+ * save.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -148,7 +191,10 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
     val saved = stringResource(R.string.saved, entry.name)
     var reloads by remember { mutableStateOf(0) }
     var editing by remember { mutableStateOf(false) }
-    var editText by remember { mutableStateOf("") }
+    var editBuffer by remember { mutableStateOf<EditBuffer?>(null) }
+    var editGen by remember { mutableIntStateOf(0) }
+    var editFocusLine by remember { mutableIntStateOf(0) }
+    var editFocusColumn by remember { mutableIntStateOf(0) }
     var editFrom by remember { mutableLongStateOf(0L) }
     var editTo by remember { mutableLongStateOf(0L) }
     var editFileSize by remember { mutableLongStateOf(0L) }
@@ -159,7 +205,6 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
     var initialEditPending by remember(entry.id, startEditing) { mutableStateOf(startEditing) }
     val scope = rememberCoroutineScope()
     val editorFocus = remember { FocusRequester() }
-    val keyboard = LocalSoftwareKeyboardController.current
     val wrap by Graph.settings.textWrap.collectAsState(initial = false)
 
     val file = remember(entry.id, startEditing) { pageableFile(entry, allowEmpty = startEditing) }
@@ -184,6 +229,19 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
     val canEdit = file != null && entry.scheme == XId.SCHEME_FILE && entry.canWrite &&
         opened && !document.axml.value
 
+    fun openEditWindow(window: EditWindow, centerOffset: Long) {
+        val buffer = EditBuffer(window.text)
+        val rel = (centerOffset - window.from).coerceAtLeast(0L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        val caret = buffer.caretAtUtf8Offset(rel)
+        editBuffer = buffer
+        editFocusLine = caret.line.coerceIn(0, (buffer.size - 1).coerceAtLeast(0))
+        editFocusColumn = caret.column
+        editGen++
+        editFrom = window.from
+        editTo = window.to
+        editFileSize = window.fileSize
+    }
+
     fun reloadEditorFromDisk(centerOffset: Long) {
         val target = file ?: return
         if (preparingEdit) return
@@ -199,14 +257,10 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
             }
             preparingEdit = false
             loaded.fold(
-                onSuccess = {
-                    editText = it.text
-                    editFrom = it.from
-                    editTo = it.to
-                    editFileSize = it.fileSize
-                },
+                onSuccess = { openEditWindow(it, centerOffset) },
                 onFailure = {
                     editing = false
+                    editBuffer = null
                     feedback = it.message ?: cannotRead
                 },
             )
@@ -215,11 +269,11 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
 
     fun save() {
         if (saving) return
+        val pending = editBuffer?.toText() ?: return
         saving = true
         // Snapshotted here, not read on the IO thread when the write finally starts: what gets
         // written is what was on screen when Save was pressed. The field is read-only meanwhile, so
         // nothing can be typed into the gap and then thrown away by the re-index below.
-        val pending = editText
         val from = editFrom
         val to = editTo
         scope.launch {
@@ -236,6 +290,7 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
                 onSuccess = { wroteReplacement ->
                     if (wroteReplacement) {
                         editing = false
+                        editBuffer = null
                         feedback = saved
                         reloads++
                     } else {
@@ -255,6 +310,7 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
     fun toggleEditing() {
         if (editing) {
             editing = false
+            editBuffer = null
             return
         }
         // Guarded: without it a second tap starts a second read whose result lands on top of
@@ -269,17 +325,14 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
                     FileByteWindow(target).use { window ->
                         val center = document.rowOffset(fromRow)
                             .takeIf { it in 0L until window.size } ?: 0L
-                        loadEditWindowAround(window, center, EDIT_LIMIT_BYTES)
+                        center to loadEditWindowAround(window, center, EDIT_LIMIT_BYTES)
                     }
                 }
             }
             preparingEdit = false
             loaded.fold(
-                onSuccess = {
-                    editText = it.text
-                    editFrom = it.from
-                    editTo = it.to
-                    editFileSize = it.fileSize
+                onSuccess = { (center, window) ->
+                    openEditWindow(window, center)
                     editing = true
                 },
                 onFailure = {
@@ -297,13 +350,6 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
             toggleEditing()
         }
     }
-    LaunchedEffect(editing) {
-        if (editing) {
-            editorFocus.requestFocus()
-            keyboard?.show()
-        }
-    }
-
     ViewerChrome(
         modifier = Modifier.imePadding(),
         // Pinned while editing: the editor scrolls itself to follow the cursor, and Save must not
@@ -323,8 +369,10 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
                                         Format.bytes(editFileSize),
                                     )
                                 } else {
-                                    val lines = remember(editText) { countLines(editText) }
-                                    stringResource(R.string.lines, lines)
+                                    stringResource(
+                                        R.string.lines,
+                                        editGen.let { editBuffer?.lineCount() ?: 0 },
+                                    )
                                 }
                             } else {
                                 documentSubtitle(document)
@@ -373,32 +421,23 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
     ) { chrome ->
         Box(Modifier.fillMaxSize()) {
             when {
-                editing -> BasicTextField(
-                    value = editText,
-                    onValueChange = { next ->
-                        if (utf8ByteCount(next) <= EDIT_LIMIT_BYTES) editText = next
-                    },
-                    // Frozen while the write is in flight: a keystroke that lands after the bytes
-                    // were snapshotted would be discarded by the re-index, silently.
-                    readOnly = saving,
-                    textStyle = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    ),
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .focusRequester(editorFocus)
-                        .verticalScroll(rememberScrollState())
-                        // Inside the scroll, so the text travels under both system bars while its
-                        // first and last lines still settle clear of them.
-                        .padding(
-                            start = 12.dp,
-                            top = chrome.calculateTopPadding() + 12.dp,
-                            end = 12.dp,
-                            bottom = chrome.calculateBottomPadding() + 12.dp,
-                        ),
-                )
+                editing -> {
+                    val buffer = editBuffer
+                    if (buffer != null) {
+                        key(buffer) {
+                            EditRows(
+                                buffer = buffer,
+                                generation = editGen,
+                                initialLine = editFocusLine,
+                                initialColumn = editFocusColumn,
+                                chrome = chrome,
+                                readOnly = saving,
+                                focusRequester = editorFocus,
+                                onChanged = { editGen++ },
+                            )
+                        }
+                    }
+                }
                 // An error with nothing indexed is the whole story; one that arrives later is a
                 // banner over the rows that did make it.
                 loadError != null && rowCount == 0 -> ViewerNotice(chrome) {
@@ -408,11 +447,14 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
                         modifier = Modifier.padding(24.dp),
                     )
                 }
-                !opened || (rowCount == 0 && !complete) -> ViewerNotice(chrome) { LoadingIndicator() }
+                !opened || !textRowsRestoreReady(rowCount, firstVisibleRow, complete) ->
+                    ViewerNotice(chrome) { LoadingIndicator() }
                 rowCount == 0 -> ViewerNotice(chrome) {
                     Text(stringResource(R.string.empty_file), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                else -> TextRows(entry, document, rowCount, chrome, wrap) { firstVisibleRow = it }
+                else -> TextRows(entry, document, rowCount, chrome, wrap, firstVisibleRow) {
+                    firstVisibleRow = it
+                }
             }
 
             feedback?.let { message ->
@@ -433,6 +475,864 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
                 }
             }
         }
+    }
+}
+
+/**
+ * One row per list item of the edit window. Only the focused row is a field; the rest are
+ * the same [Text] the viewer uses, so scrolling a 512 KB slice does not lay the slice out whole.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun EditRows(
+    buffer: EditBuffer,
+    generation: Int,
+    initialLine: Int,
+    initialColumn: Int,
+    chrome: PaddingValues,
+    readOnly: Boolean,
+    focusRequester: FocusRequester,
+    onChanged: () -> Unit,
+) {
+    val startLine = initialLine.coerceIn(0, (buffer.size - 1).coerceAtLeast(0))
+    val startColumn = initialColumn.coerceIn(0, buffer[startLine].length)
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = startLine)
+    var focused by remember { mutableIntStateOf(startLine) }
+    var field by remember {
+        mutableStateOf(TextFieldValue(buffer[startLine], TextRange(startColumn)))
+    }
+    var anchorLine by remember { mutableIntStateOf(startLine) }
+    var anchorCol by remember { mutableIntStateOf(startColumn) }
+    var desiredColumn by remember { mutableIntStateOf(startColumn) }
+    var fieldLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var fieldCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val textStyle = MaterialTheme.typography.bodySmall.copy(
+        fontFamily = FontFamily.Monospace,
+        color = MaterialTheme.colorScheme.onSurface,
+    )
+    val cursor = SolidColor(MaterialTheme.colorScheme.primary)
+    val selectionColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+    val keyboard = LocalSoftwareKeyboardController.current
+    val clipboard = LocalClipboardManager.current
+    val minLine = 20.dp
+    val rowCount = generation.let { buffer.size }
+    val joinSwallow = remember {
+        ImeJoinSwallow(JOIN_SWALLOW_MS) { SystemClock.uptimeMillis() }
+    }
+    val imeHasRange = remember { AtomicBoolean(false) }
+    val imeSelectedText = remember { AtomicReference("") }
+    val extendHeld = remember { AtomicBoolean(false) }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+
+    fun caretNow() = EditCaret(focused, field.selection.end)
+    fun anchorNow() = EditCaret(anchorLine, anchorCol)
+    fun crossLine() = anchorLine != focused
+    fun documentRangeCollapsed() =
+        editDocumentRangeCollapsed(focused, anchorLine, field.selection.collapsed)
+
+    fun fieldRange(text: String, caretCol: Int): TextRange =
+        editFieldRange(text, focused, caretCol, anchorLine, anchorCol)
+
+    fun runIme(block: () -> Boolean): Boolean {
+        if (Looper.myLooper() == Looper.getMainLooper()) return block()
+        mainHandler.post { block() }
+        return true
+    }
+
+    fun moveTo(line: Int, column: Int, keepDesired: Boolean = false, extend: Boolean = false) {
+        val target = line.coerceIn(0, (buffer.size - 1).coerceAtLeast(0))
+        val text = buffer[target]
+        val col = column.coerceIn(0, text.length)
+        focused = target
+        if (!extend) {
+            anchorLine = target
+            anchorCol = col
+            field = TextFieldValue(text, TextRange(col))
+        } else {
+            field = TextFieldValue(text, fieldRange(text, col))
+        }
+        if (!keepDesired) desiredColumn = col
+        fieldLayout = null
+    }
+
+    fun markJoin(previous: Boolean) = joinSwallow.mark(previous)
+
+    fun applyJoin(caret: EditCaret?, previous: Boolean): Boolean {
+        if (caret == null) return false
+        markJoin(previous)
+        onChanged()
+        moveTo(caret.line, caret.column)
+        return true
+    }
+
+    fun tryJoin(beforeLength: Int, afterLength: Int): Boolean {
+        if (readOnly || !editTryJoinAtEdge(
+                field.selection.collapsed,
+                crossLine(),
+                field.selection.start,
+                field.text.length,
+                beforeLength,
+                afterLength,
+            )
+        ) {
+            return false
+        }
+        return if (beforeLength > 0 && field.selection.start == 0) {
+            applyJoin(buffer.mergeWithPrevious(focused), previous = true)
+        } else {
+            applyJoin(buffer.mergeWithNext(focused), previous = false)
+        }
+    }
+
+    fun selectedText(): String = buffer.textInRange(anchorNow(), caretNow())
+
+    fun copySelection(): Boolean {
+        val text = selectedText()
+        if (text.isEmpty()) return false
+        clipboard.setText(AnnotatedString(text))
+        return true
+    }
+
+    fun deleteSelection(): Boolean {
+        if (readOnly) return false
+        val caret = buffer.replaceRange(anchorNow(), caretNow(), "", EDIT_LIMIT_BYTES.toInt())
+            ?: return false
+        onChanged()
+        moveTo(caret.line, caret.column)
+        return true
+    }
+
+    fun cutSelection(): Boolean {
+        if (readOnly) return false
+        if (!copySelection()) return false
+        return deleteSelection()
+    }
+
+    fun selectAll(): Boolean {
+        if (buffer.size == 0) return false
+        anchorLine = 0
+        anchorCol = 0
+        val last = buffer.size - 1
+        moveTo(last, buffer[last].length, extend = true)
+        return true
+    }
+
+    fun pasteClipboard(): Boolean {
+        if (readOnly) return false
+        val text = clipboard.getText()?.text ?: return false
+        val caret = buffer.replaceRange(anchorNow(), caretNow(), text, EDIT_LIMIT_BYTES.toInt())
+            ?: return false
+        onChanged()
+        moveTo(caret.line, caret.column)
+        return true
+    }
+
+    val performMenu = rememberUpdatedState<(Int) -> Boolean> { id ->
+        when (id) {
+            android.R.id.copy -> copySelection()
+            android.R.id.cut -> cutSelection()
+            android.R.id.paste -> pasteClipboard()
+            android.R.id.selectAll -> selectAll()
+            else -> false
+        }
+    }
+    fun deleteSelectionOrJoin(before: Int, after: Int): Boolean {
+        if (!documentRangeCollapsed()) {
+            val ok = deleteSelection()
+            if (ok) markJoin(previous = before > 0)
+            return ok
+        }
+        return tryJoin(before, after)
+    }
+    val handleImeDelete = rememberUpdatedState<(Int, Int) -> Boolean> { before, after ->
+        if (readOnly) return@rememberUpdatedState false
+        if (editSwallowImeJoinDuplicate(before, after, joinSwallow)) {
+            return@rememberUpdatedState true
+        }
+        deleteSelectionOrJoin(before, after)
+    }
+    val handleKeyDelete = rememberUpdatedState<(Int, Int) -> Boolean> { before, after ->
+        if (readOnly) return@rememberUpdatedState false
+        deleteSelectionOrJoin(before, after)
+    }
+    val systemToolbar = LocalTextToolbar.current
+    val copyLatest = rememberUpdatedState { copySelection() }
+    val cutLatest = rememberUpdatedState { cutSelection() }
+    val pasteLatest = rememberUpdatedState { pasteClipboard() }
+    val selectAllLatest = rememberUpdatedState { selectAll() }
+    val editToolbar = remember(systemToolbar) {
+        object : TextToolbar {
+            override val status get() = systemToolbar.status
+            override fun hide() = systemToolbar.hide()
+            override fun showMenu(
+                rect: androidx.compose.ui.geometry.Rect,
+                onCopyRequested: (() -> Unit)?,
+                onPasteRequested: (() -> Unit)?,
+                onCutRequested: (() -> Unit)?,
+                onSelectAllRequested: (() -> Unit)?,
+            ) {
+                systemToolbar.showMenu(
+                    rect,
+                    onCopyRequested = onCopyRequested?.let { { copyLatest.value() } },
+                    onPasteRequested = onPasteRequested?.let { { pasteLatest.value() } },
+                    onCutRequested = onCutRequested?.let { { cutLatest.value() } },
+                    onSelectAllRequested = { selectAllLatest.value() },
+                )
+            }
+        }
+    }
+    SideEffect {
+        val range = !documentRangeCollapsed()
+        imeHasRange.set(range)
+        imeSelectedText.set(if (range) selectedText() else "")
+    }
+    val imeInterceptor = remember {
+        PlatformTextInputInterceptor { request, next ->
+            next.startInputMethod(
+                object : PlatformTextInputMethodRequest {
+                    override fun createInputConnection(outAttributes: EditorInfo): InputConnection {
+                        val base = request.createInputConnection(outAttributes)
+                        return object : InputConnectionWrapper(base, true) {
+                            override fun deleteSurroundingText(
+                                beforeLength: Int,
+                                afterLength: Int,
+                            ): Boolean = runIme {
+                                if (handleImeDelete.value(beforeLength, afterLength)) {
+                                    true
+                                } else {
+                                    base.deleteSurroundingText(beforeLength, afterLength)
+                                }
+                            }
+
+                            override fun deleteSurroundingTextInCodePoints(
+                                beforeLength: Int,
+                                afterLength: Int,
+                            ): Boolean = runIme {
+                                if (handleImeDelete.value(beforeLength, afterLength)) {
+                                    true
+                                } else {
+                                    base.deleteSurroundingTextInCodePoints(
+                                        beforeLength,
+                                        afterLength,
+                                    )
+                                }
+                            }
+
+                            override fun performContextMenuAction(id: Int): Boolean = runIme {
+                                if (performMenu.value(id)) {
+                                    true
+                                } else {
+                                    base.performContextMenuAction(id)
+                                }
+                            }
+
+                            override fun getSelectedText(flags: Int): CharSequence? {
+                                if (imeHasRange.get()) {
+                                    val text = imeSelectedText.get()
+                                    if (text.isNotEmpty()) return text
+                                }
+                                return base.getSelectedText(flags)
+                            }
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    val documentHasRange = !documentRangeCollapsed()
+    val crossCollapsed = crossLine() && field.selection.collapsed
+    LaunchedEffect(
+        documentHasRange,
+        crossCollapsed,
+        fieldCoords,
+        fieldLayout,
+        field.selection.end,
+        readOnly,
+    ) {
+        if (!documentHasRange) {
+            editToolbar.hide()
+            return@LaunchedEffect
+        }
+        if (!crossCollapsed) return@LaunchedEffect
+        val layout = fieldLayout
+        val coords = fieldCoords
+        if (layout == null || coords == null || !coords.isAttached) return@LaunchedEffect
+        val off = field.selection.end.coerceIn(0, layout.layoutInput.text.length)
+        val local = layout.getCursorRect(off)
+        val rect = Rect(coords.localToRoot(local.topLeft), coords.localToRoot(local.bottomRight))
+        if (rect.isEmpty) return@LaunchedEffect
+        editToolbar.showMenu(
+            rect,
+            onCopyRequested = { copyLatest.value() },
+            onPasteRequested = if (readOnly) null else ({ pasteLatest.value() }),
+            onCutRequested = if (readOnly) null else ({ cutLatest.value() }),
+            onSelectAllRequested = { selectAllLatest.value() },
+        )
+    }
+    DisposableEffect(editToolbar) {
+        onDispose { editToolbar.hide() }
+    }
+    LaunchedEffect(focused, listState) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val viewport = info.viewportEndOffset - info.viewportStartOffset
+            val layout = fieldLayout
+            val caret = field.selection.end
+            val cursor = layout?.let { tl ->
+                if (tl.layoutInput.text.text != field.text) {
+                    null
+                } else {
+                    val off = caret.coerceIn(0, tl.layoutInput.text.length)
+                    tl.getCursorRect(off)
+                }
+            }
+            viewport to cursor
+        }.collect { (viewport, cursor) ->
+            if (viewport <= 0) return@collect
+            val vis = listState.layoutInfo.visibleItemsInfo
+            if (vis.none { it.index == focused }) {
+                val first = vis.minByOrNull { it.index }
+                val last = vis.maxByOrNull { it.index }
+                val px = if (first != null && last != null) {
+                    editOffscreenRevealPx(
+                        focused,
+                        first.index,
+                        first.size,
+                        last.index,
+                        last.size,
+                    )
+                } else {
+                    null
+                }
+                if (px != null) listState.scrollBy(px.toFloat())
+                else listState.scrollToItem(focused)
+                if (listState.layoutInfo.visibleItemsInfo.none { it.index == focused }) {
+                    listState.scrollToItem(focused)
+                }
+            }
+            val item = snapshotFlow {
+                listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == focused && it.size > 0 }
+            }.first { it != null } ?: return@collect
+            val layout = listState.layoutInfo
+            val usableTop = layout.viewportStartOffset + layout.beforeContentPadding
+            val usableBottom = layout.viewportEndOffset - layout.afterContentPadding
+            val usable = (usableBottom - usableTop).coerceAtLeast(1)
+            val top: Int
+            val bottom: Int
+            if (item.size < usable) {
+                top = item.offset
+                bottom = item.offset + item.size
+            } else if (cursor != null) {
+                top = item.offset + cursor.top.roundToInt()
+                bottom = item.offset + cursor.bottom.roundToInt()
+            } else {
+                return@collect
+            }
+            val delta = editKeepInViewDelta(top, bottom, usableTop, usableBottom)
+            if (abs(delta) > 1) listState.scrollBy(delta.toFloat())
+        }
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            state = listState,
+            contentPadding = PaddingValues(
+                top = chrome.calculateTopPadding() + 8.dp,
+                bottom = chrome.calculateBottomPadding() + 8.dp,
+            ),
+        ) {
+            items(rowCount) { i ->
+                val rowMod = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = minLine)
+                    .padding(horizontal = 12.dp)
+                if (i == focused) {
+                    CompositionLocalProvider(LocalTextToolbar provides editToolbar) {
+                    InterceptPlatformTextInput(imeInterceptor) {
+                        BasicTextField(
+                            value = field,
+                            onValueChange = { next ->
+                                if (i != focused) return@BasicTextField
+                                if (next.text == field.text) {
+                                    if (editCollapseCrossLineOnCaretMove(
+                                            next.selection.collapsed,
+                                            crossLine(),
+                                            extendHeld.get(),
+                                        )
+                                    ) {
+                                        moveTo(focused, next.selection.end)
+                                        return@BasicTextField
+                                    }
+                                    field = next
+                                    desiredColumn = next.selection.end
+                                    if (!crossLine()) {
+                                        anchorCol = next.selection.start
+                                    }
+                                    return@BasicTextField
+                                }
+                                if (readOnly) return@BasicTextField
+                                if (crossLine()) {
+                                    val insert = textFieldReplacement(
+                                        field.text,
+                                        field.selection,
+                                        next.text,
+                                    ) ?: return@BasicTextField
+                                    val caret = buffer.replaceRange(
+                                        anchorNow(),
+                                        caretNow(),
+                                        insert,
+                                        EDIT_LIMIT_BYTES.toInt(),
+                                    ) ?: return@BasicTextField
+                                    onChanged()
+                                    moveTo(caret.line, caret.column)
+                                    return@BasicTextField
+                                }
+                                val linesBefore = buffer.lineCount()
+                                val caret = buffer.replace(
+                                    i,
+                                    next.text,
+                                    next.selection.start,
+                                    EDIT_LIMIT_BYTES.toInt(),
+                                ) ?: return@BasicTextField
+                                if (caret.line != i || next.text.contains('\n')) {
+                                    onChanged()
+                                    moveTo(caret.line, caret.column)
+                                } else {
+                                    field = next
+                                    anchorLine = i
+                                    anchorCol = next.selection.start
+                                    desiredColumn = next.selection.start
+                                    if (buffer.lineCount() != linesBefore) onChanged()
+                                }
+                            },
+                            readOnly = readOnly,
+                            textStyle = textStyle,
+                            cursorBrush = cursor,
+                            onTextLayout = { fieldLayout = it },
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.None,
+                                imeAction = ImeAction.None,
+                            ),
+                            modifier = rowMod
+                                .focusRequester(focusRequester)
+                                .onGloballyPositioned { fieldCoords = it }
+                                .pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                                            extendHeld.set(event.keyboardModifiers.isPointerShiftPressed)
+                                        }
+                                    }
+                                }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.key == Key.ShiftLeft || event.key == Key.ShiftRight) {
+                                        extendHeld.set(event.type != KeyEventType.KeyUp)
+                                        return@onPreviewKeyEvent false
+                                    }
+                                    if (event.type != KeyEventType.KeyDown) {
+                                        return@onPreviewKeyEvent false
+                                    }
+                                    extendHeld.set(event.isShiftPressed)
+                                    val shortcut = event.isCtrlPressed || event.isMetaPressed
+                                    if (shortcut) {
+                                        return@onPreviewKeyEvent when (event.key) {
+                                            Key.C -> copySelection()
+                                            Key.X -> cutSelection()
+                                            Key.V -> pasteClipboard()
+                                            Key.A -> selectAll()
+                                            else -> false
+                                        }
+                                    }
+                                    if (readOnly) return@onPreviewKeyEvent false
+                                    when (event.key) {
+                                        Key.Backspace -> handleKeyDelete.value(1, 0)
+                                        Key.Delete -> handleKeyDelete.value(0, 1)
+                                        Key.DirectionLeft -> {
+                                            val extend = event.isShiftPressed
+                                            if (!extend && !field.selection.collapsed && !crossLine()) {
+                                                false
+                                            } else if (field.selection.end == 0) {
+                                                if (focused == 0) {
+                                                    true
+                                                } else {
+                                                    moveTo(
+                                                        focused - 1,
+                                                        buffer[focused - 1].length,
+                                                        extend = extend,
+                                                    )
+                                                    true
+                                                }
+                                            } else {
+                                                false
+                                            }
+                                        }
+                                        Key.DirectionRight -> {
+                                            val extend = event.isShiftPressed
+                                            if (!extend && !field.selection.collapsed && !crossLine()) {
+                                                false
+                                            } else if (field.selection.end == field.text.length) {
+                                                if (focused >= buffer.size - 1) {
+                                                    true
+                                                } else {
+                                                    moveTo(focused + 1, 0, extend = extend)
+                                                    true
+                                                }
+                                            } else {
+                                                false
+                                            }
+                                        }
+                                        Key.DirectionUp -> {
+                                            val extend = event.isShiftPressed
+                                            if (!extend && !field.selection.collapsed && !crossLine()) {
+                                                false
+                                            } else {
+                                                val layout = fieldLayout
+                                                val onFirstVisual = layout != null &&
+                                                    layout.getLineForOffset(
+                                                        field.selection.end.coerceIn(
+                                                            0,
+                                                            layout.layoutInput.text.length,
+                                                        ),
+                                                    ) == 0
+                                                if (!editMoveToAdjacentLine(
+                                                        layout?.layoutInput?.text?.text,
+                                                        field.text,
+                                                        onFirstVisual,
+                                                    )
+                                                ) {
+                                                    false
+                                                } else if (focused == 0) {
+                                                    if (extend) {
+                                                        moveTo(0, 0, keepDesired = true, extend = true)
+                                                    }
+                                                    true
+                                                } else {
+                                                    moveTo(
+                                                        focused - 1,
+                                                        desiredColumn,
+                                                        keepDesired = true,
+                                                        extend = extend,
+                                                    )
+                                                    true
+                                                }
+                                            }
+                                        }
+                                        Key.DirectionDown -> {
+                                            val extend = event.isShiftPressed
+                                            if (!extend && !field.selection.collapsed && !crossLine()) {
+                                                false
+                                            } else {
+                                                val layout = fieldLayout
+                                                val onLastVisual = layout != null &&
+                                                    layout.getLineForOffset(
+                                                        field.selection.end.coerceIn(
+                                                            0,
+                                                            layout.layoutInput.text.length,
+                                                        ),
+                                                    ) == layout.lineCount - 1
+                                                if (!editMoveToAdjacentLine(
+                                                        layout?.layoutInput?.text?.text,
+                                                        field.text,
+                                                        onLastVisual,
+                                                    )
+                                                ) {
+                                                    false
+                                                } else if (focused >= buffer.size - 1) {
+                                                    if (extend) {
+                                                        moveTo(
+                                                            focused,
+                                                            buffer[focused].length,
+                                                            keepDesired = true,
+                                                            extend = true,
+                                                        )
+                                                    }
+                                                    true
+                                                } else {
+                                                    moveTo(
+                                                        focused + 1,
+                                                        desiredColumn,
+                                                        keepDesired = true,
+                                                        extend = extend,
+                                                    )
+                                                    true
+                                                }
+                                            }
+                                        }
+                                        else -> false
+                                    }
+                                },
+                        )
+                        LaunchedEffect(Unit) {
+                            val started = SystemClock.uptimeMillis()
+                            while (SystemClock.uptimeMillis() - started < EDITOR_FOCUS_GIVE_UP_MS) {
+                                val focusedNow = runCatching {
+                                    focusRequester.requestFocus()
+                                }.getOrDefault(false)
+                                if (focusedNow) {
+                                    keyboard?.show()
+                                    break
+                                }
+                                delay(EDITOR_FOCUS_RETRY_MS)
+                            }
+                        }
+                    }
+                    }
+                } else {
+                    var layout by remember(i) { mutableStateOf<TextLayoutResult?>(null) }
+                    Text(
+                        editSelectionOnLine(
+                            buffer[i],
+                            i,
+                            anchorNow(),
+                            caretNow(),
+                            selectionColor,
+                        ),
+                        style = textStyle,
+                        modifier = rowMod.pointerInput(i, readOnly) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown()
+                                val slop = viewConfiguration.touchSlop
+                                val start = down.position
+                                val shift = currentEvent.keyboardModifiers.isPointerShiftPressed
+                                var pastSlop = false
+                                val up: PointerInputChange? = withTimeoutOrNull(
+                                    viewConfiguration.longPressTimeoutMillis,
+                                ) {
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val change = event.changes.firstOrNull() ?: continue
+                                        if ((change.position - start).getDistance() > slop) {
+                                            pastSlop = true
+                                            return@withTimeoutOrNull null
+                                        }
+                                        if (change.changedToUp()) return@withTimeoutOrNull change
+                                    }
+                                    @Suppress("UNREACHABLE_CODE")
+                                    null
+                                }
+                                if (pastSlop || readOnly) return@awaitEachGesture
+                                if (up != null) {
+                                    up.consume()
+                                    val col = layout?.getOffsetForPosition(up.position) ?: 0
+                                    moveTo(i, col, extend = shift)
+                                } else if (currentEvent.changes.any { it.pressed }) {
+                                    currentEvent.changes.forEach { it.consume() }
+                                    val col = layout?.getOffsetForPosition(down.position) ?: 0
+                                    moveTo(i, col, extend = true)
+                                    waitForUpOrCancellation()
+                                }
+                            }
+                        },
+                        onTextLayout = { layout = it },
+                    )
+                }
+            }
+        }
+        ViewerScrollbar(
+            listState,
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = chrome.calculateTopPadding(), bottom = chrome.calculateBottomPadding()),
+        )
+    }
+}
+
+/** List index for [TextRows]: headers stay on screen when opening at row 0. */
+internal fun textRowsInitialListIndex(initialRow: Int, headerCount: Int): Int =
+    if (initialRow <= 0) 0 else initialRow + headerCount.coerceAtLeast(0)
+
+/** Wait to create list state until the restored document row exists, or the scan has finished. */
+internal fun textRowsRestoreReady(rowCount: Int, initialRow: Int, complete: Boolean): Boolean =
+    complete || rowCount > initialRow.coerceAtLeast(0)
+
+/** Pixels to scrollBy when the caret row is just off-screen; null means jump to the item. */
+internal fun editOffscreenRevealPx(
+    focused: Int,
+    firstIndex: Int,
+    firstSize: Int,
+    lastIndex: Int,
+    lastSize: Int,
+): Int? = when (focused) {
+    lastIndex + 1 -> lastSize.coerceAtLeast(1)
+    firstIndex - 1 -> -firstSize.coerceAtLeast(1)
+    else -> null
+}
+
+/** Scroll delta that brings [top, bottom) into [usableTop, usableBottom), or 0 if already in view. */
+internal fun editKeepInViewDelta(
+    top: Int,
+    bottom: Int,
+    usableTop: Int,
+    usableBottom: Int,
+): Int {
+    val usable = (usableBottom - usableTop).coerceAtLeast(1)
+    return when {
+        bottom - top >= usable -> top - usableTop
+        top < usableTop -> top - usableTop
+        bottom > usableBottom -> bottom - usableBottom
+        else -> 0
+    }
+}
+
+/**
+ * Insert implied by a TextField replacing [selection] in [old] with [next].
+ * Null when [next] is not prefix + insert + suffix, so the caller can ignore
+ * the edit instead of deleting the document range.
+ */
+internal fun textFieldReplacement(old: String, selection: TextRange, next: String): String? {
+    val min = selection.min.coerceIn(0, old.length)
+    val max = selection.max.coerceIn(0, old.length)
+    val prefix = old.substring(0, min)
+    val suffix = old.substring(max)
+    return if (next.startsWith(prefix) && next.endsWith(suffix) &&
+        next.length >= prefix.length + suffix.length
+    ) {
+        next.substring(prefix.length, next.length - suffix.length)
+    } else {
+        null
+    }
+}
+
+/**
+ * Selection the focused row reports to the IME. A document range that ends at
+ * column 0 (or starts at the end of an earlier row) is collapsed here — the
+ * newline lives between rows — even though [editDocumentRangeCollapsed] is false.
+ */
+internal fun editFieldRange(
+    text: String,
+    focusedLine: Int,
+    caretCol: Int,
+    anchorLine: Int,
+    anchorCol: Int,
+): TextRange {
+    val col = caretCol.coerceIn(0, text.length)
+    if (anchorLine == focusedLine) {
+        return TextRange(anchorCol.coerceIn(0, text.length), col)
+    }
+    val other = if (focusedLine > anchorLine) 0 else text.length
+    return TextRange(other, col)
+}
+
+internal fun editDocumentRangeCollapsed(
+    focusedLine: Int,
+    anchorLine: Int,
+    fieldSelectionCollapsed: Boolean,
+): Boolean = anchorLine == focusedLine && fieldSelectionCollapsed
+
+/** A tap or non-shift caret move in the focused row must not keep a sticky multi-line range. */
+internal fun editCollapseCrossLineOnCaretMove(
+    fieldSelectionCollapsed: Boolean,
+    crossLine: Boolean,
+    extend: Boolean,
+): Boolean = fieldSelectionCollapsed && crossLine && !extend
+
+/**
+ * Up/Down leave this field only when layout matches the current text and the caret
+ * is already on the first/last visual line. Null/stale layout is not an edge.
+ */
+internal fun editMoveToAdjacentLine(
+    layoutText: String?,
+    fieldText: String,
+    onVisualEdge: Boolean,
+): Boolean = layoutText != null && layoutText == fieldText && onVisualEdge
+
+/** Join only at the start (Backspace) or end (Delete) of a collapsed single-line caret. */
+internal fun editTryJoinAtEdge(
+    selectionCollapsed: Boolean,
+    crossLine: Boolean,
+    column: Int,
+    lineLength: Int,
+    beforeLength: Int,
+    afterLength: Int,
+): Boolean {
+    if (!selectionCollapsed || crossLine) return false
+    if (beforeLength > 0 && column == 0) return true
+    if (afterLength > 0 && column == lineLength) return true
+    return false
+}
+
+/** IME-only join duplicate. Hardware keys must not consult this. */
+internal fun editSwallowImeJoinDuplicate(
+    beforeLength: Int,
+    afterLength: Int,
+    swallow: ImeJoinSwallow,
+): Boolean = (beforeLength > 0 && swallow.swallow(previous = true)) ||
+    (afterLength > 0 && swallow.swallow(previous = false))
+
+/** One-shot join duplicate. Survives composition; expires after [windowMs]. */
+internal class ImeJoinSwallow(
+    private val windowMs: Long,
+    private val now: () -> Long,
+) {
+    private val backspace = AtomicBoolean(false)
+    private val delete = AtomicBoolean(false)
+    private val lastBackspaceAt = AtomicLong(0)
+    private val lastDeleteAt = AtomicLong(0)
+
+    fun mark(previous: Boolean) {
+        if (previous) {
+            backspace.set(true)
+            lastBackspaceAt.set(now())
+        } else {
+            delete.set(true)
+            lastDeleteAt.set(now())
+        }
+    }
+
+    fun swallow(previous: Boolean): Boolean {
+        val flag = if (previous) backspace else delete
+        val stamp = if (previous) lastBackspaceAt else lastDeleteAt
+        if (!flag.compareAndSet(true, false)) return false
+        return now() - stamp.get() < windowMs
+    }
+}
+
+internal data class EditLineHighlight(val start: Int, val end: Int, val extraSpace: Boolean)
+
+/**
+ * Highlight on [line] for a possibly multi-line range, as `[start, end)` in a
+ * string that is the row plus a trailing space when the newline after it is
+ * selected. Null if this row has nothing to paint.
+ */
+internal fun editLineHighlight(
+    textLength: Int,
+    line: Int,
+    anchor: EditCaret,
+    caret: EditCaret,
+): EditLineHighlight? {
+    val from: EditCaret
+    val to: EditCaret
+    if (anchor.line < caret.line || (anchor.line == caret.line && anchor.column <= caret.column)) {
+        from = anchor
+        to = caret
+    } else {
+        from = caret
+        to = anchor
+    }
+    if (from.line == to.line || line !in from.line..to.line) return null
+    val start = (if (line == from.line) from.column else 0).coerceIn(0, textLength)
+    val end = (if (line == to.line) to.column else textLength).coerceIn(0, textLength)
+    val extraSpace = line < to.line
+    val paintEnd = if (extraSpace) textLength + 1 else end
+    val paintStart = start.coerceAtMost(paintEnd)
+    if (paintStart >= paintEnd) return null
+    return EditLineHighlight(paintStart, paintEnd, extraSpace)
+}
+
+private fun editSelectionOnLine(
+    text: String,
+    line: Int,
+    anchor: EditCaret,
+    caret: EditCaret,
+    color: Color,
+): AnnotatedString {
+    val highlight = editLineHighlight(text.length, line, anchor, caret) ?: return AnnotatedString(text)
+    return buildAnnotatedString {
+        append(text)
+        if (highlight.extraSpace) append(' ')
+        addStyle(SpanStyle(background = color), highlight.start, highlight.end)
     }
 }
 
@@ -464,9 +1364,16 @@ private fun TextRows(
     rowCount: Int,
     chrome: PaddingValues,
     wrap: Boolean,
+    initialRow: Int,
     onFirstVisibleRow: (Int) -> Unit,
 ) {
-    val listState = rememberLazyListState()
+    val headerCount =
+        (if (document.error.value != null) 1 else 0) +
+            (if (document.axml.value) 1 else 0) +
+            (if (document.truncated.value) 1 else 0)
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = textRowsInitialListIndex(initialRow, headerCount),
+    )
     val horizontal = rememberScrollState()
     LaunchedEffect(listState) {
         snapshotFlow {
@@ -790,15 +1697,6 @@ private fun openSource(context: Context, entry: XEntry): InputStream {
             ?: throw IOException("Cannot read ${entry.name}")
     }
     return Graph.fsRegistry.forId(entry.id).openIn(entry)
-}
-
-/** Counts lines the way [TextRowIndex] does, so the header does not jump when editing starts. */
-private fun countLines(s: String): Int {
-    if (s.isEmpty()) return 0
-    var lines = 0
-    for (c in s) if (c == '\n') lines++
-    // A file ending in a newline does not end in an empty line; one that does not still ends in a line.
-    return if (s.endsWith('\n')) lines else lines + 1
 }
 
 private fun InputStream.readUpTo(limit: Int): ByteArray {
