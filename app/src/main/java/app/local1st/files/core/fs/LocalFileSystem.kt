@@ -30,7 +30,7 @@ class LocalFileSystem(
     override fun list(dir: XEntry): List<XEntry> {
         val file = File(dir.path)
         val children = file.listFiles() ?: return privilegedListing(file, dir)
-        return children.map { toEntry(it, readAttrs(it)) }
+        return children.map { toEntry(it, readAttrs(it), countChildren = true) }
     }
 
     /**
@@ -457,10 +457,15 @@ class LocalFileSystem(
         null // vanished mid-listing or broken symlink
     }
 
-    private fun toEntry(file: File, attrs: BasicFileAttributes?): XEntry {
+    private fun toEntry(
+        file: File,
+        attrs: BasicFileAttributes?,
+        countChildren: Boolean = false,
+    ): XEntry {
         val abs = file.absolutePath
         val name = file.name
         val isDir = attrs?.isDirectory == true
+        val counts = if (isDir && countChildren) directoryChildCount(file) else -1 to 0
         return XEntry(
             id = XId.file(abs),
             name = name,
@@ -474,7 +479,8 @@ class LocalFileSystem(
                 FileTypes.isBrowsableArchive(name) -> EntryKind.ARCHIVE
                 else -> EntryKind.FILE
             },
-            childCountHint = -1,
+            childCountHint = counts.first,
+            hiddenChildCountHint = counts.second,
             localPath = abs,
         )
     }
@@ -495,9 +501,17 @@ class LocalFileSystem(
                 FileTypes.isBrowsableArchive(name) -> EntryKind.ARCHIVE
                 else -> EntryKind.FILE
             },
-            childCountHint = -1,
             localPath = file.absolutePath,
         )
+    }
+
+    /**
+     * Extra readdir during parent [list] so unexpanded folder rows can show a count.
+     * Returns (total, hidden); hidden names start with `.`, matching [XEntry.hidden].
+     */
+    private fun directoryChildCount(file: File): Pair<Int, Int> {
+        val names = file.list() ?: return -1 to 0
+        return names.size to names.count { it.startsWith(".") }
     }
 
     /**

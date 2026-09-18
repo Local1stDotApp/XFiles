@@ -520,14 +520,18 @@ private fun entryDetails(node: TreeNode): String {
     val entry = node.entry
     return when {
         entry.badge != null -> entry.badge
-        !entry.isDir && entry.size >= 0 -> {
-            val date = Format.dateTime(entry.mtime)
-            if (date.isEmpty()) Format.bytes(entry.size) else "${Format.bytes(entry.size)} · $date"
-        }
-        entry.isDir && entry.childCountHint >= 0 -> pluralStringResource(
-            R.plurals.item_count_plural, entry.childCountHint, entry.childCountHint,
+        !entry.isDir && entry.size >= 0 -> Format.details(
+            Format.bytes(entry.size),
+            Format.dateTime(entry.mtime),
         )
-        // Folders otherwise show just their name — dropping the bare timestamp declutters the tree.
+        entry.isDir -> Format.details(
+            if (entry.childCountHint >= 0) {
+                pluralStringResource(
+                    R.plurals.item_count_plural, entry.childCountHint, entry.childCountHint,
+                )
+            } else "",
+            Format.dateTime(entry.mtime),
+        )
         else -> ""
     }
 }

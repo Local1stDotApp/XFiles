@@ -1372,7 +1372,7 @@ class PaneController(
                 val isExpanded = e.isContainer && e.id in expanded
                 val nodeKey = "$parentKey|${e.id}"
                 out += TreeNode(
-                    entry = e,
+                    entry = e.withListedChildCount(children[e.id], sort.showHidden),
                     key = nodeKey,
                     depth = depth,
                     expanded = isExpanded,

@@ -249,6 +249,11 @@ class ArchiveFileSystem : XFileSystem {
         canWrite = false,
         kind = if (node.isDir) EntryKind.DIR else EntryKind.FILE,
         childCountHint = if (node.isDir) node.children.size else -1,
+        hiddenChildCountHint = if (node.isDir) {
+            node.children.keys.count { it.startsWith(".") }
+        } else {
+            0
+        },
         localPath = null,
     )
 

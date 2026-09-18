@@ -30,4 +30,8 @@ object Format {
             DateFormat.SHORT,
             Locale.getDefault(),
         ).format(Date(epochMillis))
+
+    /** Browser row subtitle: size or item count plus date. */
+    fun details(vararg parts: String): String =
+        parts.filter { it.isNotEmpty() }.joinToString(" · ")
 }

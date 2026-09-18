@@ -26,7 +26,7 @@ data class XEntry(
     val canRead: Boolean = true,
     val canWrite: Boolean = true,
     val kind: EntryKind = if (isDir) EntryKind.DIR else EntryKind.FILE,
-    /** For dirs: number of children when cheaply known, else -1. */
+    /** For dirs: number of children when cheaply known, else -1. Includes hidden names. */
     val childCountHint: Int = -1,
     /** Secondary label (volume free space, app version, ...). */
     val badge: String? = null,
@@ -36,6 +36,8 @@ data class XEntry(
     val progress: Float = -1f,
     /** True for a favorite shown as a top-level shortcut root. */
     val pinned: Boolean = false,
+    /** Dot-name subset of [childCountHint], when the hint is known. */
+    val hiddenChildCountHint: Int = 0,
 ) {
     val scheme: String get() = id.substringBefore("://")
     val path: String get() = id.substringAfter("://")

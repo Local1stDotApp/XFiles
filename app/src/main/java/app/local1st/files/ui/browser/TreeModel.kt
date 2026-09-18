@@ -3,6 +3,21 @@ package app.local1st.files.ui.browser
 import androidx.compose.runtime.Immutable
 import app.local1st.files.core.fs.XEntry
 
+/** Prefer a live listing's visible size over a stale hint once this directory has been listed. */
+internal fun XEntry.withListedChildCount(listed: List<XEntry>?, showHidden: Boolean): XEntry {
+    if (!isDir || badge != null) return this
+    val n = if (listed != null) {
+        listed.count { showHidden || !it.hidden }
+    } else if (childCountHint < 0) {
+        return this
+    } else if (showHidden) {
+        childCountHint
+    } else {
+        (childCountHint - hiddenChildCountHint).coerceAtLeast(0)
+    }
+    return if (childCountHint == n) this else copy(childCountHint = n)
+}
+
 /** One visible row of a pane's flattened tree. */
 @Immutable
 data class TreeNode(
