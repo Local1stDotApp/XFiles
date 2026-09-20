@@ -3,7 +3,10 @@ package app.local1st.files.core.text
 import java.io.Closeable
 import java.io.File
 import java.io.IOException
-import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.charset.Charset
+import java.nio.file.StandardOpenOption
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -38,31 +41,32 @@ interface ByteWindow : Closeable {
     fun read(offset: Long, dest: ByteArray, destOffset: Int, count: Int): Int
 }
 
-/** A local file, paged through a single shared handle. */
+/**
+ * A local file, read through one shared channel. Reads are positional (`pread`), so the index
+ * scan and the page reads the viewer makes while it runs do not queue behind one another on a
+ * seek-then-read lock. Closing while a read is in flight ends that read with an
+ * [java.nio.channels.AsynchronousCloseException], which its caller reports like any read error.
+ */
 class FileByteWindow(file: File) : ByteWindow {
-    private val handle = RandomAccessFile(file, "r")
+    private val channel = FileChannel.open(file.toPath(), StandardOpenOption.READ)
 
     // Fixed at open: a row already on screen must keep meaning what it meant even if the file grows.
-    override val size: Long = handle.length()
+    override val size: Long = channel.size()
 
     override fun read(offset: Long, dest: ByteArray, destOffset: Int, count: Int): Int {
         if (offset >= size) return 0
         val want = minOf(count.toLong(), size - offset).toInt()
-        synchronized(handle) {
-            handle.seek(offset)
-            var read = 0
-            while (read < want) {
-                val n = handle.read(dest, destOffset + read, want - read)
-                if (n < 0) break
-                read += n
-            }
-            return read
+        val buf = ByteBuffer.wrap(dest, destOffset, want)
+        var read = 0
+        while (buf.hasRemaining()) {
+            val n = channel.read(buf, offset + read)
+            if (n < 0) break
+            read += n
         }
+        return read
     }
 
-    // Holds the same monitor as [read]: cancelling a coroutine cannot interrupt a blocking read, so
-    // closing without it would pull the descriptor out from under a reader still inside one.
-    override fun close() = synchronized(handle) { handle.close() }
+    override fun close() = channel.close()
 }
 
 /**
@@ -94,12 +98,17 @@ class ArrayByteWindow(private val bytes: ByteArray, length: Int = bytes.size) : 
  *
  * [scan] runs once on an IO dispatcher and is cancellable; [rows] may be called concurrently from
  * others while it runs and sees every row [rowCount] has already reached.
+ *
+ * A finished table is small — a few hundred kilobytes for any file — and depends only on the
+ * bytes, so [snapshot] can be kept and handed back to [restore] the next time the same file is
+ * opened, which skips the scan altogether.
  */
 class TextRowIndex(
     private val source: ByteWindow,
-    private val maxRowBytes: Int = MAX_ROW_BYTES,
+    val maxRowBytes: Int = MAX_ROW_BYTES,
     initialCheckpoints: Int = 1 shl 12,
     private val maxCheckpoints: Int = 1 shl 16,
+    val charset: Charset = Charsets.UTF_8,
 ) {
     private val lock = Any()
     private var starts = LongArray(initialCheckpoints.coerceAtLeast(2))
@@ -124,13 +133,55 @@ class TextRowIndex(
     val isComplete: Boolean get() = done
     val size: Long get() = source.size
 
+    /** The finished table, or null while [scan] is still running. */
+    fun snapshot(): TextRowIndexSnapshot? {
+        if (!done) return null
+        synchronized(lock) {
+            return TextRowIndexSnapshot(
+                maxRowBytes = maxRowBytes,
+                charsetName = charset.name(),
+                size = source.size,
+                stride = stride,
+                rowCount = rows,
+                lineCount = lines,
+                starts = starts.copyOf(checkpointCount),
+            )
+        }
+    }
+
+    /**
+     * Adopts a table a previous [scan] of these same bytes produced, so no scan is needed. Refuses
+     * a snapshot taken with other settings or of a source of another size — the caller is expected
+     * to have matched the file already; this only guards against handing the wrong one over.
+     */
+    fun restore(snapshot: TextRowIndexSnapshot): Boolean {
+        if (done || rows > 0) return false
+        if (snapshot.size != source.size || snapshot.maxRowBytes != maxRowBytes) return false
+        if (snapshot.charsetName != charset.name() || snapshot.stride < 1) return false
+        if (snapshot.starts.isEmpty() != (snapshot.rowCount == 0)) return false
+        synchronized(lock) {
+            starts = snapshot.starts.copyOf(maxOf(snapshot.starts.size, 2))
+            checkpointCount = snapshot.starts.size
+            stride = snapshot.stride
+        }
+        lines = snapshot.lineCount
+        rows = snapshot.rowCount
+        scanned = source.size
+        done = true
+        return true
+    }
+
     /**
      * Walks the whole source once, publishing progress through [onProgress] a few times a second.
      * Runs on the caller's (IO) thread and stops promptly when its coroutine is cancelled.
      */
     @Throws(IOException::class)
     suspend fun scan(onProgress: () -> Unit) {
-        val splitter = RowSplitter(source, skipByteOrderMark(), maxRowBytes, SCAN_BUFFER)
+        if (done) {
+            onProgress()
+            return
+        }
+        val splitter = RowSplitter(source, skipByteOrderMark(), maxRowBytes, SCAN_BUFFER, charset)
         var untilCheck = CHECK_EVERY_ROWS
         var lastPublish = 0L
         var unterminated = false
@@ -171,7 +222,7 @@ class TextRowIndex(
             val checkpoint = minOf(first / stride, checkpointCount - 1)
             Anchor(checkpoint * stride, starts[checkpoint])
         }
-        val splitter = RowSplitter(source, anchor.offset, maxRowBytes, READ_BUFFER)
+        val splitter = RowSplitter(source, anchor.offset, maxRowBytes, READ_BUFFER, charset)
         val out = ArrayList<String>(take)
         var row = anchor.row
         while (out.size < take) {
@@ -197,7 +248,7 @@ class TextRowIndex(
             Anchor(checkpoint * stride, starts[checkpoint])
         }
         if (anchor.row == row) return anchor.offset
-        val splitter = RowSplitter(source, anchor.offset, maxRowBytes, READ_BUFFER)
+        val splitter = RowSplitter(source, anchor.offset, maxRowBytes, READ_BUFFER, charset)
         var at = anchor.row
         while (at <= row) {
             if (!splitter.advance()) return -1L
@@ -205,6 +256,31 @@ class TextRowIndex(
             at++
         }
         return -1L
+    }
+
+    /**
+     * Hands the byte span of each indexed row from [first] on to [visit] — `[start, end)`, the
+     * end being just past the row's terminator, so consecutive rows abut — until it returns
+     * false or the indexed rows run out. One forward walk, so taking a stretch of rows costs
+     * what reading it costs rather than a checkpoint lookup per row.
+     * Blocking IO: call from an IO dispatcher.
+     */
+    @Throws(IOException::class)
+    fun walkRows(first: Int, visit: (row: Int, start: Long, end: Long) -> Boolean) {
+        val available = rows
+        if (first < 0 || first >= available) return
+        val anchor = synchronized(lock) {
+            if (checkpointCount == 0) return
+            val checkpoint = minOf(first / stride, checkpointCount - 1)
+            Anchor(checkpoint * stride, starts[checkpoint])
+        }
+        val splitter = RowSplitter(source, anchor.offset, maxRowBytes, READ_BUFFER, charset)
+        var row = anchor.row
+        while (row < available) {
+            if (!splitter.advance()) return
+            if (row >= first && !visit(row, splitter.rowStart, splitter.rowEnd)) return
+            row++
+        }
     }
 
     /**
@@ -240,6 +316,7 @@ class TextRowIndex(
 
     /** A UTF-8 BOM belongs to the encoding, not to the first line. */
     private fun skipByteOrderMark(): Long {
+        if (charset != Charsets.UTF_8) return 0L
         if (source.size < 3) return 0L
         val head = ByteArray(3)
         if (source.read(0, head, 0, 3) < 3) return 0L
@@ -249,6 +326,20 @@ class TextRowIndex(
 
     private class Anchor(val row: Int, val offset: Long)
 }
+
+/**
+ * A finished [TextRowIndex] table: every stride-th row start plus the totals the scan produced.
+ * Valid only for the exact bytes it was scanned from, which is the caller's to check.
+ */
+class TextRowIndexSnapshot(
+    val maxRowBytes: Int,
+    val charsetName: String,
+    val size: Long,
+    val stride: Int,
+    val rowCount: Int,
+    val lineCount: Int,
+    val starts: LongArray,
+)
 
 /**
  * Walks a [ByteWindow] forward one row at a time. The row just produced sits in [buffer] between
@@ -263,6 +354,7 @@ private class RowSplitter(
     startOffset: Long,
     private val maxRowBytes: Int,
     bufferSize: Int,
+    private val charset: Charset,
 ) {
     // Two rows' worth at minimum: a whole row must fit after a top-up, or it could never complete.
     private val buffer = ByteArray(maxOf(bufferSize, maxRowBytes * 2))
@@ -305,7 +397,14 @@ private class RowSplitter(
             // would invent a blank row after it; otherwise break it, but never mid-character.
             val crlf = buffer[i] == CARRIAGE_RETURN && i + 1 < fill && buffer[i + 1] == NEWLINE
             newlineTerminated = crlf || buffer[i] == NEWLINE
-            to = if (newlineTerminated) i else characterBoundary(start, i)
+            to = when {
+                crlf -> i
+                // The budget ran out on the newline itself, so the carriage return of a CRLF is
+                // the last byte of the content rather than the first of the terminator.
+                buffer[i] == NEWLINE ->
+                    if (i > start && buffer[i - 1] == CARRIAGE_RETURN) i - 1 else i
+                else -> characterBoundary(start, i)
+            }
             pos = when {
                 crlf -> i + 2
                 newlineTerminated -> i + 1
@@ -323,20 +422,24 @@ private class RowSplitter(
         return true
     }
 
-    fun text(): String = String(buffer, from, to - from, Charsets.UTF_8)
+    fun text(): String = String(buffer, from, to - from, charset)
 
     /**
-     * Pulls a forced break back to the start of the UTF-8 character it lands inside, so splitting a
+     * Pulls a forced break back to the start of the character it lands inside, so splitting a
      * long line does not leave a replacement glyph on either side of the seam.
      */
     private fun characterBoundary(start: Int, breakAt: Int): Int {
-        var i = breakAt
-        var back = 0
-        while (i > start && back < 4 && (buffer[i].toInt() and 0xC0) == 0x80) {
-            i--
-            back++
+        if (charset == Charsets.UTF_8) {
+            var i = breakAt
+            var back = 0
+            while (i > start && back < 4 && (buffer[i].toInt() and 0xC0) == 0x80) {
+                i--
+                back++
+            }
+            return if (i > start && back in 1..3) i else breakAt
         }
-        return if (i > start && back in 1..3) i else breakAt
+        val pos = charsetConsumedEnd(buffer, start, breakAt, charset)
+        return if (pos > start) pos else breakAt
     }
 
     /** Slides the unread bytes to the front and refills, so the next row is contiguous. */

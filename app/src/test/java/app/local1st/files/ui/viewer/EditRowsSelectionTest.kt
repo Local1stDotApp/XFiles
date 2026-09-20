@@ -85,6 +85,16 @@ class EditRowsSelectionTest {
     }
 
     @Test
+    fun columnAfterLoad_offsetsByWhereTheFileRowNowBegins_andKeepsEndOfRow() {
+        // A tap at column 7 of a file row that, once loaded, starts at column 1365 of its editor row.
+        assertEquals(1372, editColumnAfterLoad(loadedColumn = 1365, column = 7))
+        // A row loaded on its own begins its editor row.
+        assertEquals(7, editColumnAfterLoad(loadedColumn = 0, column = 7))
+        // "End of row" does not wrap around into a negative column.
+        assertEquals(Int.MAX_VALUE, editColumnAfterLoad(loadedColumn = 1365, column = Int.MAX_VALUE))
+    }
+
+    @Test
     fun highlight_forANewlineOnlyRange_paintsTheEndOfTheStartRow() {
         val highlight = editLineHighlight(
             textLength = 5,
@@ -173,6 +183,22 @@ class EditRowsSelectionTest {
                 extend = false,
             ),
         )
+    }
+
+    @Test
+    fun extend_staysInsideTheAnchorsStretch() {
+        // Rows 10..19 are one loaded stretch, 50..59 another, disk rows between them.
+        val stretch = 10..19
+        assertTrue(editExtendStaysInStretch(extend = true, target = 19, anchorStretch = stretch))
+        assertTrue(editExtendStaysInStretch(extend = true, target = 10, anchorStretch = stretch))
+        // A shift-tap or long-press on the other loaded stretch does not grow the range.
+        assertFalse(editExtendStaysInStretch(extend = true, target = 50, anchorStretch = stretch))
+        assertFalse(editExtendStaysInStretch(extend = true, target = 9, anchorStretch = stretch))
+        // An anchor that is not on a loaded row cannot start a range at all.
+        assertFalse(editExtendStaysInStretch(extend = true, target = 12, anchorStretch = null))
+        // A plain caret move goes wherever it likes; it loads its own way there.
+        assertTrue(editExtendStaysInStretch(extend = false, target = 50, anchorStretch = stretch))
+        assertTrue(editExtendStaysInStretch(extend = false, target = 50, anchorStretch = null))
     }
 
     @Test

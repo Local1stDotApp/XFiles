@@ -69,6 +69,27 @@ class TextRowIndexTest {
         assertEquals(2, index.lineCount)
     }
 
+    /** The carriage return itself is the byte that fills the budget, so the newline is one past it. */
+    @Test
+    fun crlfStraddlingTheRowBudget_leavesNoCarriageReturn() {
+        val long = "x".repeat(63)
+
+        val index = index("$long\r\nnext\r\n", maxRowBytes = 64)
+
+        assertEquals(listOf(long, "next"), index.allRows())
+        assertEquals(2, index.lineCount)
+    }
+
+    @Test
+    fun crlfEndingExactlyOnTheRowBudget_doesNotAddABlankRow() {
+        val long = "x".repeat(64)
+
+        val index = index("$long\r\nnext\r\n", maxRowBytes = 64)
+
+        assertEquals(listOf(long, "next"), index.allRows())
+        assertEquals(2, index.lineCount)
+    }
+
     @Test
     fun crlfLineEndingExactlyOnTheRowBudget_keepsNoCarriageReturn() {
         val long = "x".repeat(64)
@@ -96,6 +117,27 @@ class TextRowIndexTest {
         val text = "中".repeat(60)
 
         val index = index(text, maxRowBytes = 64)
+
+        assertEquals(text, index.allRows().joinToString(""))
+        assertTrue(index.allRows().none { it.contains('�') })
+    }
+
+    @Test
+    fun gbkRows_decodeAsChinese() {
+        val charset = java.nio.charset.Charset.forName("GBK")
+        val text = "你好\n世界"
+        val index = indexBytes(text.toByteArray(charset), charset)
+
+        assertEquals(listOf("你好", "世界"), index.allRows())
+        assertEquals(2, index.lineCount)
+    }
+
+    @Test
+    fun gbkForcedBreak_neverSplitsACharacter() {
+        val charset = java.nio.charset.Charset.forName("GBK")
+        val text = "中".repeat(60)
+        val bytes = text.toByteArray(charset)
+        val index = indexBytes(bytes, charset, maxRowBytes = 7)
 
         assertEquals(text, index.allRows().joinToString(""))
         assertTrue(index.allRows().none { it.contains('�') })
@@ -157,6 +199,32 @@ class TextRowIndexTest {
             if (row < lines.lastIndex) offset++ // the newline between lines
         }
         assertEquals(bytes.size.toLong(), offset)
+    }
+
+    @Test
+    fun walkRows_handsOutAbuttingSpansFromAnyRow() {
+        val index = index("aa\nbbb\n\nc", initialCheckpoints = 2, maxCheckpoints = 2)
+
+        val spans = ArrayList<Triple<Int, Long, Long>>()
+        index.walkRows(1) { row, start, end ->
+            spans.add(Triple(row, start, end))
+            true
+        }
+
+        assertEquals(listOf(Triple(1, 3L, 7L), Triple(2, 7L, 8L), Triple(3, 8L, 9L)), spans)
+    }
+
+    @Test
+    fun walkRows_stopsWhenTheVisitorSaysSo() {
+        val index = index("a\nb\nc\nd\n")
+
+        var visited = 0
+        index.walkRows(0) { row, _, _ ->
+            visited++
+            row < 1
+        }
+
+        assertEquals(2, visited)
     }
 
     @Test
@@ -230,6 +298,17 @@ class TextRowIndexTest {
     ): TextRowIndex {
         val window = ArrayByteWindow(text.toByteArray(Charsets.UTF_8))
         val index = TextRowIndex(window, maxRowBytes, initialCheckpoints, maxCheckpoints)
+        runBlocking { index.scan {} }
+        assertTrue(index.isComplete)
+        return index
+    }
+
+    private fun indexBytes(
+        bytes: ByteArray,
+        charset: java.nio.charset.Charset,
+        maxRowBytes: Int = MAX_ROW_BYTES,
+    ): TextRowIndex {
+        val index = TextRowIndex(ArrayByteWindow(bytes), maxRowBytes, charset = charset)
         runBlocking { index.scan {} }
         assertTrue(index.isComplete)
         return index

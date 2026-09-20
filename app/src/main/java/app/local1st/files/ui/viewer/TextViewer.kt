@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
@@ -31,17 +32,22 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Redo
+import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.automirrored.outlined.WrapText
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EditOff
 import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -52,7 +58,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -110,17 +115,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import app.local1st.files.R
+import app.local1st.files.core.fs.FileChangedException
+import app.local1st.files.core.fs.FileStamp
 import app.local1st.files.core.fs.LocalFileSystem
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.text.ArrayByteWindow
 import app.local1st.files.core.text.ByteWindow
-import app.local1st.files.core.text.EditBuffer
 import app.local1st.files.core.text.EditCaret
-import app.local1st.files.core.text.EditWindow
+import app.local1st.files.core.text.EditDocument
 import app.local1st.files.core.text.FileByteWindow
+import app.local1st.files.core.text.TextEncoding
 import app.local1st.files.core.text.TextRowIndex
-import app.local1st.files.core.text.loadEditWindowAround
+import app.local1st.files.core.text.TextRowIndexStore
+import app.local1st.files.core.text.detectTextEncoding
+import app.local1st.files.core.text.isTextCodingFailure
 import app.local1st.files.core.util.AxmlDecoder
 import app.local1st.files.core.util.Format
 import app.local1st.files.di.Graph
@@ -132,7 +141,6 @@ import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
@@ -147,14 +155,6 @@ import kotlinx.coroutines.withContext
 /** Schemes that can only be streamed get this much of their head; a real file gets all of it. */
 private const val STREAM_LIMIT_BYTES = 8 * 1024 * 1024
 
-/**
- * Editing holds a slice, not the file: Compose still cannot page a single field, so the window
- * is this wide and Save splices it back. The rows themselves are a list, like the viewer, so
- * scrolling the slice does not lay 512 KB out as one field. Scroll to another place and edit
- * again to change a different part.
- */
-private const val EDIT_LIMIT_BYTES = 512L * 1024
-
 /** One delayed IME deleteSurroundingText after a line join; must outlive recomposition. */
 private const val JOIN_SWALLOW_MS = 400L
 
@@ -166,11 +166,29 @@ private const val AXML_LIMIT_BYTES = 8L * 1024 * 1024
 private const val ROWS_PER_PAGE = 128
 
 /**
- * Pages held at once. Deliberately modest: a page is 128 rows, and a file of maximum-length rows
- * makes each of those half a megabyte of text, so a generous cache would cost tens of megabytes on
- * exactly the files this viewer exists for. Four screenfuls' worth is plenty to scroll on.
+ * Pages held at once, and the characters they may hold between them. A page is 128 rows; on a
+ * file of maximum-length rows that is half a megabyte of text per page, so the page count alone
+ * would let the cache grow to tens of megabytes on exactly the files this viewer exists for. The
+ * character bound is what actually holds it, and still leaves eight of those worst-case pages —
+ * many screenfuls — and far more of ordinary ones.
  */
 private const val MAX_CACHED_ROW_PAGES = 32
+private const val MAX_CACHED_ROW_CHARS = 4 * 1024 * 1024
+
+/** Where finished row tables are kept between openings of the same large file. */
+private const val ROW_INDEX_CACHE_DIR = "text-row-index"
+
+/** What leaving would do once unsaved edits are discarded. */
+private enum class UnsavedPrompt { StopEditing, Close }
+
+/** What the editor could not do, for the viewer to put into words. */
+private enum class EditorNotice { LimitReached, CannotRead, CannotDecode }
+
+/** Undo and redo live in the top bar, outside the editor that knows the caret; it fills these in. */
+private class EditorHandle {
+    var undo: () -> Boolean = { false }
+    var redo: () -> Boolean = { false }
+}
 
 /**
  * Plain-text viewer with optional in-place editing for writable local files.
@@ -178,9 +196,12 @@ private const val MAX_CACHED_ROW_PAGES = 32
  * A real file is never read whole: [TextRowIndex] walks it once to learn where its rows start and
  * the list decodes only the rows on screen, so a multi-gigabyte log opens at once, scrolls at a
  * constant few megabytes of memory, and reports its line count as it goes. Entries that can only be
- * streamed (archive members, su paths) still show their leading 8 MiB. Editing a large file uses
- * the same bound as a small one: one [EDIT_LIMIT_BYTES] slice as a list of rows, spliced back on
- * save.
+ * streamed (archive members, su paths) still show their leading 8 MiB.
+ *
+ * Editing is the same list over the same index, through an [EditDocument]: the rows the user
+ * touches are loaded into memory a few hundred kilobytes at a time, everything else stays on
+ * disk and is shown from the viewer's page cache, and Save splices only the stretches that
+ * changed. So a gigabyte edits like a kilobyte, anywhere in the file, in one sitting.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -188,23 +209,30 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
     val context = LocalContext.current
     val cannotRead = stringResource(R.string.cannot_read, entry.name)
     val saveFailed = stringResource(R.string.save_failed)
+    val cannotEncodeText = stringResource(R.string.cannot_encode_text)
+    val cannotDecodeText = stringResource(R.string.cannot_decode_text)
+    val editLimitReached = stringResource(R.string.edit_limit_reached)
+    val fileChangedOnDisk = stringResource(R.string.file_changed_on_disk, entry.name)
     val saved = stringResource(R.string.saved, entry.name)
     var reloads by remember { mutableStateOf(0) }
     var editing by remember { mutableStateOf(false) }
-    var editBuffer by remember { mutableStateOf<EditBuffer?>(null) }
+    var editDocument by remember { mutableStateOf<EditDocument?>(null) }
     var editGen by remember { mutableIntStateOf(0) }
     var editFocusLine by remember { mutableIntStateOf(0) }
     var editFocusColumn by remember { mutableIntStateOf(0) }
-    var editFrom by remember { mutableLongStateOf(0L) }
-    var editTo by remember { mutableLongStateOf(0L) }
-    var editFileSize by remember { mutableLongStateOf(0L) }
     var firstVisibleRow by remember { mutableIntStateOf(0) }
     var saving by remember { mutableStateOf(false) }
     var preparingEdit by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf<String?>(null) }
+    var unsavedPrompt by remember { mutableStateOf<UnsavedPrompt?>(null) }
+    // Compose mirror of [EditDocument.isDirty]: the document flag is not snapshot state, so a
+    // same-line keystroke would not recompose and BackHandler would stay off.
+    var editDirty by remember { mutableStateOf(false) }
     var initialEditPending by remember(entry.id, startEditing) { mutableStateOf(startEditing) }
     val scope = rememberCoroutineScope()
     val editorFocus = remember { FocusRequester() }
+    val editorHandle = remember { EditorHandle() }
+    val closeViewer by rememberUpdatedState(onClose)
     val wrap by Graph.settings.textWrap.collectAsState(initial = false)
 
     val file = remember(entry.id, startEditing) { pageableFile(entry, allowEmpty = startEditing) }
@@ -226,122 +254,129 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
     val opened by document.opened
     val complete by document.complete
     // A pageable file is never the truncated kind, so only the decoded-XML case has to be ruled out.
+    // And there has to be a row to open on — or a finished scan that says there are none.
     val canEdit = file != null && entry.scheme == XId.SCHEME_FILE && entry.canWrite &&
-        opened && !document.axml.value
+        opened && !document.axml.value && (rowCount > 0 || complete)
 
-    fun openEditWindow(window: EditWindow, centerOffset: Long) {
-        val buffer = EditBuffer(window.text)
-        val rel = (centerOffset - window.from).coerceAtLeast(0L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
-        val caret = buffer.caretAtUtf8Offset(rel)
-        editBuffer = buffer
-        editFocusLine = caret.line.coerceIn(0, (buffer.size - 1).coerceAtLeast(0))
-        editFocusColumn = caret.column
-        editGen++
-        editFrom = window.from
-        editTo = window.to
-        editFileSize = window.fileSize
+    fun notice(what: EditorNotice, cause: Throwable? = null) {
+        feedback = when (what) {
+            EditorNotice.LimitReached -> editLimitReached
+            EditorNotice.CannotDecode -> cannotDecodeText
+            EditorNotice.CannotRead -> cause?.message ?: cannotRead
+        }
     }
 
-    fun reloadEditorFromDisk(centerOffset: Long) {
-        val target = file ?: return
-        if (preparingEdit) return
-        preparingEdit = true
-        scope.launch {
-            val loaded = withContext(Dispatchers.IO) {
-                runCatching {
-                    FileByteWindow(target).use { window ->
-                        val center = centerOffset.takeIf { it in 0L until window.size } ?: 0L
-                        loadEditWindowAround(window, center, EDIT_LIMIT_BYTES)
-                    }
-                }
-            }
-            preparingEdit = false
-            loaded.fold(
-                onSuccess = { openEditWindow(it, centerOffset) },
-                onFailure = {
-                    editing = false
-                    editBuffer = null
-                    feedback = it.message ?: cannotRead
-                },
-            )
-        }
+    fun syncEditState() {
+        editDirty = editDocument?.isDirty == true
+        editGen++
+    }
+
+    fun leaveEditMode() {
+        editing = false
+        editDocument = null
+        unsavedPrompt = null
+        editDirty = false
     }
 
     fun save() {
         if (saving) return
-        val pending = editBuffer?.toText() ?: return
+        val doc = editDocument ?: return
+        val stamp = document.stamp
         saving = true
-        // Snapshotted here, not read on the IO thread when the write finally starts: what gets
-        // written is what was on screen when Save was pressed. The field is read-only meanwhile, so
-        // nothing can be typed into the gap and then thrown away by the re-index below.
-        val from = editFrom
-        val to = editTo
         scope.launch {
             val result = withContext(Dispatchers.IO) {
                 runCatching {
+                    // The field is read-only while this runs, so the document cannot change
+                    // between the edits being taken here and their being written.
+                    val edits = doc.edits()
                     // LocalFileSystem preserves this editor's atomic File replacement where
                     // permitted and owns the narrow API 26-29 secondary-volume SAF fallback.
                     val fs = Graph.fsRegistry.forId(entry.id) as LocalFileSystem
-                    fs.replaceRange(entry, from, to, pending.toByteArray(Charsets.UTF_8))
+                    fs.replaceRanges(entry, edits, stamp)
                 }
             }
             saving = false
             result.fold(
                 onSuccess = { wroteReplacement ->
                     if (wroteReplacement) {
-                        editing = false
-                        editBuffer = null
+                        leaveEditMode()
                         feedback = saved
-                        reloads++
                     } else {
-                        // Leftover restored instead of this buffer — keep editing and reload
-                        // the recovered file so the next Save uses matching offsets.
+                        // A leftover from an earlier save was restored instead of these edits;
+                        // their offsets no longer mean anything against it. Reload and start over.
+                        leaveEditMode()
                         feedback = saveFailed
-                        val center = editFrom
-                        reloadEditorFromDisk(center)
-                        reloads++
+                    }
+                    reloads++
+                },
+                onFailure = {
+                    feedback = when {
+                        it is FileChangedException -> fileChangedOnDisk
+                        isTextCodingFailure(it) -> cannotEncodeText
+                        else -> it.message ?: saveFailed
                     }
                 },
-                onFailure = { feedback = it.message ?: saveFailed },
+            )
+        }
+    }
+
+    /**
+     * Opens the editor on file row [fileRow]: the rows around it are read and become the first
+     * loaded stretch; the rest of the file is shown from the viewer's cache until touched.
+     */
+    fun startEditing(fileRow: Int) {
+        // Guarded: without it a second tap starts a second read whose result lands on top of
+        // whatever has been typed in the meantime.
+        if (preparingEdit) return
+        val doc = document.editDocument() ?: return
+        preparingEdit = true
+        scope.launch {
+            val prepared = withContext(Dispatchers.IO) {
+                runCatching { doc.prepareLoad(fileRow.coerceIn(0, (doc.size - 1).coerceAtLeast(0))) }
+            }
+            preparingEdit = false
+            prepared.fold(
+                onSuccess = { pending ->
+                    val loaded = pending?.let { doc.install(it) }
+                    if (loaded == null) {
+                        notice(EditorNotice.CannotRead)
+                        return@fold
+                    }
+                    editDocument = doc
+                    editDirty = false
+                    editFocusLine = loaded.row
+                    editFocusColumn = loaded.column
+                    editGen++
+                    editing = true
+                },
+                onFailure = {
+                    if (isTextCodingFailure(it)) notice(EditorNotice.CannotDecode) else notice(EditorNotice.CannotRead, it)
+                    // Whatever the length says now is what the header and the button should reflect.
+                    reloads++
+                },
             )
         }
     }
 
     fun toggleEditing() {
         if (editing) {
-            editing = false
-            editBuffer = null
+            if (editDocument?.isDirty == true) {
+                unsavedPrompt = UnsavedPrompt.StopEditing
+                return
+            }
+            leaveEditMode()
             return
         }
-        // Guarded: without it a second tap starts a second read whose result lands on top of
-        // whatever has been typed in the meantime.
-        if (preparingEdit) return
-        val target = file ?: return
-        val fromRow = firstVisibleRow
-        preparingEdit = true
-        scope.launch {
-            val loaded = withContext(Dispatchers.IO) {
-                runCatching {
-                    FileByteWindow(target).use { window ->
-                        val center = document.rowOffset(fromRow)
-                            .takeIf { it in 0L until window.size } ?: 0L
-                        center to loadEditWindowAround(window, center, EDIT_LIMIT_BYTES)
-                    }
-                }
-            }
-            preparingEdit = false
-            loaded.fold(
-                onSuccess = { (center, window) ->
-                    openEditWindow(window, center)
-                    editing = true
-                },
-                onFailure = {
-                    feedback = it.message ?: cannotRead
-                    // Whatever the length says now is what the header and the button should reflect.
-                    reloads++
-                },
-            )
+        startEditing(firstVisibleRow)
+    }
+
+    fun requestClose() {
+        if (saving) return
+        if (editing && editDocument?.isDirty == true) {
+            unsavedPrompt = UnsavedPrompt.Close
+            return
         }
+        closeViewer()
     }
 
     LaunchedEffect(initialEditPending, canEdit, opened) {
@@ -350,6 +385,9 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
             toggleEditing()
         }
     }
+    // Dirty buffer: prompt. In-flight save: pop would cancel the write. A clean editor
+    // leaves predictive back to the screen host.
+    BackHandler(enabled = saving || (editing && editDirty)) { requestClose() }
     ViewerChrome(
         modifier = Modifier.imePadding(),
         // Pinned while editing: the editor scrolls itself to follow the cursor, and Save must not
@@ -362,18 +400,7 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
                         Text(entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
                             if (editing) {
-                                if (editFrom > 0L || editTo < editFileSize) {
-                                    stringResource(
-                                        R.string.editing_portion,
-                                        Format.bytes(editTo - editFrom),
-                                        Format.bytes(editFileSize),
-                                    )
-                                } else {
-                                    stringResource(
-                                        R.string.lines,
-                                        editGen.let { editBuffer?.lineCount() ?: 0 },
-                                    )
-                                }
+                                editorSubtitle(document, editGen.let { editDocument?.lineCount() ?: 0 })
                             } else {
                                 documentSubtitle(document)
                             },
@@ -384,7 +411,12 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
                     }
                 },
                 navigationIcon = {
-                    TooltipIconButton(stringResource(R.string.close), Icons.Outlined.Close, onClick = onClose)
+                    TooltipIconButton(
+                        stringResource(R.string.close),
+                        Icons.Outlined.Close,
+                        enabled = !saving,
+                        onClick = { requestClose() },
+                    )
                 },
                 actions = {
                     // Not while editing: the field wraps whatever this says, so offering the choice
@@ -401,6 +433,19 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
                     }
                     if (canEdit) {
                         if (editing) {
+                            val history = editGen.let { (editDocument?.canUndo == true) to (editDocument?.canRedo == true) }
+                            TooltipIconButton(
+                                stringResource(R.string.undo),
+                                Icons.AutoMirrored.Outlined.Undo,
+                                enabled = !saving && history.first,
+                                onClick = { editorHandle.undo() },
+                            )
+                            TooltipIconButton(
+                                stringResource(R.string.redo),
+                                Icons.AutoMirrored.Outlined.Redo,
+                                enabled = !saving && history.second,
+                                onClick = { editorHandle.redo() },
+                            )
                             TooltipIconButton(
                                 stringResource(R.string.save),
                                 Icons.Outlined.Save,
@@ -422,18 +467,22 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
         Box(Modifier.fillMaxSize()) {
             when {
                 editing -> {
-                    val buffer = editBuffer
-                    if (buffer != null) {
-                        key(buffer) {
+                    val doc = editDocument
+                    if (doc != null) {
+                        key(doc) {
                             EditRows(
-                                buffer = buffer,
+                                document = doc,
+                                viewer = document,
                                 generation = editGen,
                                 initialLine = editFocusLine,
                                 initialColumn = editFocusColumn,
                                 chrome = chrome,
                                 readOnly = saving,
                                 focusRequester = editorFocus,
-                                onChanged = { editGen++ },
+                                handle = editorHandle,
+                                onChanged = { syncEditState() },
+                                onNotice = { what, cause -> notice(what, cause) },
+                                onFirstVisibleRow = { firstVisibleRow = it },
                             )
                         }
                     }
@@ -476,51 +525,84 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
             }
         }
     }
+    unsavedPrompt?.let { prompt ->
+        AlertDialog(
+            onDismissRequest = { unsavedPrompt = null },
+            title = { Text(stringResource(R.string.unsaved_changes)) },
+            text = { Text(stringResource(R.string.unsaved_changes_message)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        unsavedPrompt = null
+                        when (prompt) {
+                            UnsavedPrompt.StopEditing -> leaveEditMode()
+                            UnsavedPrompt.Close -> closeViewer()
+                        }
+                    },
+                ) { Text(stringResource(R.string.discard)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { unsavedPrompt = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 }
 
 /**
- * One row per list item of the edit window. Only the focused row is a field; the rest are
- * the same [Text] the viewer uses, so scrolling a 512 KB slice does not lay the slice out whole.
+ * One row per list item of the whole document. Only the focused row is a field; the rest are the
+ * same [Text] the viewer uses. Rows the [document] has loaded come from it; rows still on disk
+ * come from the [viewer]'s page cache, drawn in a quieter colour, and a tap or a caret move onto
+ * one loads the stretch around it first — so the list is the whole file, and only what the user
+ * touches is ever held.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun EditRows(
-    buffer: EditBuffer,
+    document: EditDocument,
+    viewer: TextDocument,
     generation: Int,
     initialLine: Int,
     initialColumn: Int,
     chrome: PaddingValues,
     readOnly: Boolean,
     focusRequester: FocusRequester,
+    handle: EditorHandle,
     onChanged: () -> Unit,
+    onNotice: (EditorNotice, Throwable?) -> Unit,
+    onFirstVisibleRow: (Int) -> Unit,
 ) {
-    val startLine = initialLine.coerceIn(0, (buffer.size - 1).coerceAtLeast(0))
-    val startColumn = initialColumn.coerceIn(0, buffer[startLine].length)
+    val startLine = initialLine.coerceIn(0, (document.size - 1).coerceAtLeast(0))
+    val startText = document.rowText(startLine) ?: ""
+    val startColumn = initialColumn.coerceIn(0, startText.length)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = startLine)
+    val scope = rememberCoroutineScope()
     var focused by remember { mutableIntStateOf(startLine) }
     var field by remember {
-        mutableStateOf(TextFieldValue(buffer[startLine], TextRange(startColumn)))
+        mutableStateOf(TextFieldValue(startText, TextRange(startColumn)))
     }
     var anchorLine by remember { mutableIntStateOf(startLine) }
     var anchorCol by remember { mutableIntStateOf(startColumn) }
     var desiredColumn by remember { mutableIntStateOf(startColumn) }
     var fieldLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var fieldCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    var loading by remember { mutableStateOf(false) }
     val textStyle = MaterialTheme.typography.bodySmall.copy(
         fontFamily = FontFamily.Monospace,
         color = MaterialTheme.colorScheme.onSurface,
     )
+    val diskStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
     val cursor = SolidColor(MaterialTheme.colorScheme.primary)
     val selectionColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
     val keyboard = LocalSoftwareKeyboardController.current
     val clipboard = LocalClipboardManager.current
     val minLine = 20.dp
-    val rowCount = generation.let { buffer.size }
+    val rowCount = generation.let { document.size }
     val joinSwallow = remember {
         ImeJoinSwallow(JOIN_SWALLOW_MS) { SystemClock.uptimeMillis() }
     }
     val imeHasRange = remember { AtomicBoolean(false) }
-    val imeSelectedText = remember { AtomicReference("") }
     val extendHeld = remember { AtomicBoolean(false) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
@@ -539,9 +621,82 @@ private fun EditRows(
         return true
     }
 
+    /**
+     * Loads the stretch around document row [row], which is still on disk, then calls [then]
+     * with where the row's first character now is: its row index — rows above it may have
+     * moved — and its column, which is past zero when the file row was a piece of a long line
+     * and the editor's longer rows put several such pieces together. The caret row is kept
+     * loaded and followed if the load moved it. One load at a time; a second request while one
+     * is in flight is dropped, and the caller's next key or tap asks again.
+     */
+    fun ensureLoaded(row: Int, then: (Int, Int) -> Unit) {
+        if (loading) return
+        val fileRow = document.fileRow(row)
+        if (fileRow < 0) {
+            then(row, 0)
+            return
+        }
+        loading = true
+        scope.launch {
+            val prepared = withContext(Dispatchers.IO) { runCatching { document.prepareLoad(fileRow) } }
+            loading = false
+            prepared.fold(
+                onSuccess = { pending ->
+                    if (pending == null) {
+                        if (document.isLoaded(row)) then(row, 0)
+                        return@fold
+                    }
+                    val sizeBefore = document.size
+                    val firstVisible = listState.firstVisibleItemIndex
+                    val loaded = document.install(pending, keepRow = focused)
+                    if (loaded == null) {
+                        onNotice(EditorNotice.LimitReached, null)
+                        return@fold
+                    }
+                    if (loaded.keptRow >= 0 && loaded.keptRow != focused) {
+                        val shift = loaded.keptRow - focused
+                        focused = loaded.keptRow
+                        anchorLine += shift
+                    }
+                    // Rows that gained or lost neighbours above the viewport would slide the
+                    // text under the reader; keep the same rows in view instead.
+                    val delta = document.size - sizeBefore
+                    if (delta != 0 && loaded.row < firstVisible) {
+                        val offset = listState.firstVisibleItemScrollOffset
+                        scope.launch { listState.scrollToItem((firstVisible + delta).coerceAtLeast(0), offset) }
+                    }
+                    onChanged()
+                    then(loaded.row, loaded.column)
+                },
+                onFailure = {
+                    if (isTextCodingFailure(it)) {
+                        onNotice(EditorNotice.CannotDecode, it)
+                    } else {
+                        onNotice(EditorNotice.CannotRead, it)
+                    }
+                },
+            )
+        }
+    }
+
     fun moveTo(line: Int, column: Int, keepDesired: Boolean = false, extend: Boolean = false) {
-        val target = line.coerceIn(0, (buffer.size - 1).coerceAtLeast(0))
-        val text = buffer[target]
+        val target = line.coerceIn(0, (document.size - 1).coerceAtLeast(0))
+        val text = document.rowText(target)
+        if (text == null) {
+            // A selection reaches as far as what is loaded; a caret can go on and load its way.
+            // [column] was meant against the file row as shown from disk; once loaded that row
+            // may begin part way along a longer editor row.
+            if (!extend) {
+                ensureLoaded(target) { row, start ->
+                    moveTo(row, editColumnAfterLoad(start, column), keepDesired)
+                }
+            }
+            return
+        }
+        // And within one stretch: a shift-tap or long-press on another loaded stretch would put
+        // disk rows inside the range, which copy and replace cannot see and would refuse as if
+        // the size cap had been hit.
+        if (!editExtendStaysInStretch(extend, target, document.loadedRange(anchorLine))) return
         val col = column.coerceIn(0, text.length)
         focused = target
         if (!extend) {
@@ -577,14 +732,22 @@ private fun EditRows(
         ) {
             return false
         }
-        return if (beforeLength > 0 && field.selection.start == 0) {
-            applyJoin(buffer.mergeWithPrevious(focused), previous = true)
-        } else {
-            applyJoin(buffer.mergeWithNext(focused), previous = false)
+        val previous = beforeLength > 0 && field.selection.start == 0
+        val caret = if (previous) document.mergeWithPrevious(focused) else document.mergeWithNext(focused)
+        if (caret == null) {
+            // The character to delete is on the far side of a row still on disk: bring that row
+            // in, and the next press of the same key finds it there.
+            val neighbour = if (previous) focused - 1 else focused + 1
+            if (neighbour in 0 until document.size && !document.isLoaded(neighbour)) {
+                ensureLoaded(neighbour) { _, _ -> }
+                return true
+            }
+            return false
         }
+        return applyJoin(caret, previous)
     }
 
-    fun selectedText(): String = buffer.textInRange(anchorNow(), caretNow())
+    fun selectedText(): String = document.textInRange(anchorNow(), caretNow()) ?: ""
 
     fun copySelection(): Boolean {
         val text = selectedText()
@@ -593,13 +756,20 @@ private fun EditRows(
         return true
     }
 
-    fun deleteSelection(): Boolean {
-        if (readOnly) return false
-        val caret = buffer.replaceRange(anchorNow(), caretNow(), "", EDIT_LIMIT_BYTES.toInt())
-            ?: return false
+    fun replaceSelection(insert: String): Boolean {
+        val caret = document.replaceRange(anchorNow(), caretNow(), insert)
+        if (caret == null) {
+            onNotice(EditorNotice.LimitReached, null)
+            return false
+        }
         onChanged()
         moveTo(caret.line, caret.column)
         return true
+    }
+
+    fun deleteSelection(): Boolean {
+        if (readOnly) return false
+        return replaceSelection("")
     }
 
     fun cutSelection(): Boolean {
@@ -608,23 +778,44 @@ private fun EditRows(
         return deleteSelection()
     }
 
+    /** All of the loaded stretch the caret is in — what "all" can mean without reading the disk. */
     fun selectAll(): Boolean {
-        if (buffer.size == 0) return false
-        anchorLine = 0
+        val range = document.loadedRange(focused) ?: return false
+        anchorLine = range.first
         anchorCol = 0
-        val last = buffer.size - 1
-        moveTo(last, buffer[last].length, extend = true)
+        moveTo(range.last, Int.MAX_VALUE, extend = true)
         return true
     }
 
     fun pasteClipboard(): Boolean {
         if (readOnly) return false
         val text = clipboard.getText()?.text ?: return false
-        val caret = buffer.replaceRange(anchorNow(), caretNow(), text, EDIT_LIMIT_BYTES.toInt())
-            ?: return false
+        return replaceSelection(text)
+    }
+
+    fun undo(): Boolean {
+        if (readOnly) return false
+        val caret = document.undo() ?: return false
         onChanged()
         moveTo(caret.line, caret.column)
         return true
+    }
+
+    fun redo(): Boolean {
+        if (readOnly) return false
+        val caret = document.redo() ?: return false
+        onChanged()
+        moveTo(caret.line, caret.column)
+        return true
+    }
+
+    SideEffect {
+        handle.undo = { undo() }
+        handle.redo = { redo() }
+    }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .collect { onFirstVisibleRow(document.nearestFileRow(it)) }
     }
 
     val performMenu = rememberUpdatedState<(Int) -> Boolean> { id ->
@@ -681,11 +872,10 @@ private fun EditRows(
             }
         }
     }
-    SideEffect {
-        val range = !documentRangeCollapsed()
-        imeHasRange.set(range)
-        imeSelectedText.set(if (range) selectedText() else "")
-    }
+    // Only the flag is kept up to date every frame; the text itself is assembled when the IME
+    // asks, so a selection spanning many rows is not joined on every keystroke for nobody.
+    SideEffect { imeHasRange.set(!documentRangeCollapsed()) }
+    val selectedTextLatest = rememberUpdatedState { selectedText() }
     val imeInterceptor = remember {
         PlatformTextInputInterceptor { request, next ->
             next.startInputMethod(
@@ -728,7 +918,7 @@ private fun EditRows(
 
                             override fun getSelectedText(flags: Int): CharSequence? {
                                 if (imeHasRange.get()) {
-                                    val text = imeSelectedText.get()
+                                    val text = selectedTextLatest.value()
                                     if (text.isNotEmpty()) return text
                                 }
                                 return base.getSelectedText(flags)
@@ -879,23 +1069,15 @@ private fun EditRows(
                                         field.selection,
                                         next.text,
                                     ) ?: return@BasicTextField
-                                    val caret = buffer.replaceRange(
-                                        anchorNow(),
-                                        caretNow(),
-                                        insert,
-                                        EDIT_LIMIT_BYTES.toInt(),
-                                    ) ?: return@BasicTextField
-                                    onChanged()
-                                    moveTo(caret.line, caret.column)
+                                    replaceSelection(insert)
                                     return@BasicTextField
                                 }
-                                val linesBefore = buffer.lineCount()
-                                val caret = buffer.replace(
-                                    i,
-                                    next.text,
-                                    next.selection.start,
-                                    EDIT_LIMIT_BYTES.toInt(),
-                                ) ?: return@BasicTextField
+                                val caret = document.replace(i, next.text, next.selection.start)
+                                if (caret == null) {
+                                    // Over the size cap: the keystroke is dropped, and said so.
+                                    onNotice(EditorNotice.LimitReached, null)
+                                    return@BasicTextField
+                                }
                                 if (caret.line != i || next.text.contains('\n')) {
                                     onChanged()
                                     moveTo(caret.line, caret.column)
@@ -904,7 +1086,7 @@ private fun EditRows(
                                     anchorLine = i
                                     anchorCol = next.selection.start
                                     desiredColumn = next.selection.start
-                                    if (buffer.lineCount() != linesBefore) onChanged()
+                                    onChanged()
                                 }
                             },
                             readOnly = readOnly,
@@ -942,6 +1124,8 @@ private fun EditRows(
                                             Key.X -> cutSelection()
                                             Key.V -> pasteClipboard()
                                             Key.A -> selectAll()
+                                            Key.Z -> if (event.isShiftPressed) redo() else undo()
+                                            Key.Y -> redo()
                                             else -> false
                                         }
                                     }
@@ -957,11 +1141,7 @@ private fun EditRows(
                                                 if (focused == 0) {
                                                     true
                                                 } else {
-                                                    moveTo(
-                                                        focused - 1,
-                                                        buffer[focused - 1].length,
-                                                        extend = extend,
-                                                    )
+                                                    moveTo(focused - 1, Int.MAX_VALUE, extend = extend)
                                                     true
                                                 }
                                             } else {
@@ -973,7 +1153,7 @@ private fun EditRows(
                                             if (!extend && !field.selection.collapsed && !crossLine()) {
                                                 false
                                             } else if (field.selection.end == field.text.length) {
-                                                if (focused >= buffer.size - 1) {
+                                                if (focused >= document.size - 1) {
                                                     true
                                                 } else {
                                                     moveTo(focused + 1, 0, extend = extend)
@@ -1039,11 +1219,11 @@ private fun EditRows(
                                                     )
                                                 ) {
                                                     false
-                                                } else if (focused >= buffer.size - 1) {
+                                                } else if (focused >= document.size - 1) {
                                                     if (extend) {
                                                         moveTo(
                                                             focused,
-                                                            buffer[focused].length,
+                                                            Int.MAX_VALUE,
                                                             keepDesired = true,
                                                             extend = true,
                                                         )
@@ -1081,15 +1261,21 @@ private fun EditRows(
                     }
                 } else {
                     var layout by remember(i) { mutableStateOf<TextLayoutResult?>(null) }
+                    val loadedText = document.rowText(i)
+                    val fileRow = if (loadedText == null) document.fileRow(i) else -1
+                    if (fileRow >= 0) {
+                        SideEffect { viewer.request(fileRow) }
+                    }
+                    val text = loadedText ?: (if (fileRow >= 0) viewer.row(fileRow) else null) ?: ""
                     Text(
                         editSelectionOnLine(
-                            buffer[i],
+                            text,
                             i,
                             anchorNow(),
                             caretNow(),
                             selectionColor,
                         ),
-                        style = textStyle,
+                        style = if (loadedText != null) textStyle else diskStyle,
                         modifier = rowMod.pointerInput(i, readOnly) {
                             awaitEachGesture {
                                 val down = awaitFirstDown()
@@ -1221,12 +1407,30 @@ internal fun editDocumentRangeCollapsed(
     fieldSelectionCollapsed: Boolean,
 ): Boolean = anchorLine == focusedLine && fieldSelectionCollapsed
 
+/**
+ * A selection may only grow within the loaded stretch its anchor is in ([anchorStretch], the
+ * document rows of that stretch): [EditDocument.textInRange] and [EditDocument.replaceRange]
+ * work on one stretch, so a range with disk rows inside it could neither be copied nor typed
+ * over. A plain caret move is never held back.
+ */
+internal fun editExtendStaysInStretch(extend: Boolean, target: Int, anchorStretch: IntRange?): Boolean =
+    !extend || (anchorStretch != null && target in anchorStretch)
+
 /** A tap or non-shift caret move in the focused row must not keep a sticky multi-line range. */
 internal fun editCollapseCrossLineOnCaretMove(
     fieldSelectionCollapsed: Boolean,
     crossLine: Boolean,
     extend: Boolean,
 ): Boolean = fieldSelectionCollapsed && crossLine && !extend
+
+/**
+ * Column to put the caret at once the row it was headed for has been loaded. [column] was
+ * meant against the file row as the viewer showed it; that row's text now begins at
+ * [loadedColumn] of an editor row, which for a long line may hold several file rows. An
+ * end-of-row request ([Int.MAX_VALUE]) stays one.
+ */
+internal fun editColumnAfterLoad(loadedColumn: Int, column: Int): Int =
+    (loadedColumn.toLong() + column).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 
 /**
  * Up/Down leave this field only when layout matches the current text and the caret
@@ -1479,12 +1683,22 @@ private fun TextRows(
 
 /** Size, lines found so far, and — while a big file is still being walked — how far that got. */
 @Composable
-private fun documentSubtitle(document: TextDocument): String {
-    val lines = stringResource(R.string.lines, document.lineCount.value)
+private fun documentSubtitle(document: TextDocument): String =
+    documentSubtitle(document, document.lineCount.value)
+
+/** The same, with the line count as the editor has it: the file's, corrected by the edits. */
+@Composable
+private fun editorSubtitle(document: TextDocument, lines: Int): String = documentSubtitle(document, lines)
+
+@Composable
+private fun documentSubtitle(document: TextDocument, lineCount: Int): String {
+    val lines = stringResource(R.string.lines, lineCount)
     val size = document.sizeBytes.value
+    val encoding = document.encoding.value
     val head = if (size >= 0) Format.bytes(size) + " · " else ""
+    val encodingBit = if (encoding.isUtf8) "" else " · ${encoding.label}"
     val tail = if (document.complete.value) "" else " · ${(document.progress.value * 100).roundToInt()}%"
-    return head + lines + tail
+    return head + lines + encodingBit + tail
 }
 
 /**
@@ -1544,7 +1758,20 @@ private class TextDocument(
     /** Set when the bytes turned out to be compiled Android binary XML, decoded for display. */
     val axml = mutableStateOf(false)
 
+    /** Byte encoding of the document; UTF-8 unless the leading sample is GB2312/GBK/GB18030. */
+    val encoding = mutableStateOf(TextEncoding.Utf8)
+
+    /**
+     * Size and modification time of the file as it was opened. Edits are made against these
+     * bytes; a save hands the stamp on so it is refused if the file has changed underneath.
+     */
+    @Volatile var stamp: FileStamp? = null
+        private set
+
     private val pages = mutableStateMapOf<Int, List<String>>()
+    private val cacheLock = Any()
+    private var cachedChars = 0
+    @Volatile private var lastWantedPage = 0
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val inFlight = ConcurrentHashMap.newKeySet<Int>()
     private var window: ByteWindow? = null
@@ -1553,6 +1780,9 @@ private class TextDocument(
 
     fun start() {
         scope.launch {
+            // Taken before the bytes are opened: a table scanned from a file that then changed
+            // must never be filed under the changed file's stamp.
+            val stampBefore = file?.let { FileStamp.of(it) }
             // Throwable, not Exception: reading a whole stream into memory can exhaust the heap, and
             // that has to reach the reader as "cannot read" rather than as a dead process. Nothing
             // here suspends, so this cannot swallow cancellation.
@@ -1562,7 +1792,11 @@ private class TextDocument(
                 error.value = e.message ?: message(R.string.cannot_read)
                 return@launch
             }
-            val rowIndex = TextRowIndex(source)
+            val detected = if (axml.value) TextEncoding.Utf8 else detectTextEncoding(source)
+            val rowIndex = TextRowIndex(source, charset = detected.charset)
+            // A file large enough to take seconds to walk keeps its finished table on disk.
+            val store = if (file != null && !axml.value) rowIndexStore() else null
+            val restored = store?.load(file!!, detected.charset)?.let { rowIndex.restore(it) } == true
             synchronized(this@TextDocument) {
                 if (closed) {
                     source.close()
@@ -1570,7 +1804,9 @@ private class TextDocument(
                 }
                 window = source
                 index = rowIndex
+                stamp = stampBefore
             }
+            encoding.value = detected
             // A file is measured here and now, so the header follows an edit; a stream's window is
             // only its head, so there the entry's size is the honest one.
             sizeBytes.value = when {
@@ -1581,6 +1817,9 @@ private class TextDocument(
             opened.value = true
             try {
                 rowIndex.scan { publish(rowIndex) }
+                if (!restored && store != null && stampBefore != null) {
+                    rowIndex.snapshot()?.let { store.save(file!!, stampBefore, it) }
+                }
             } catch (e: IOException) {
                 error.value = e.message ?: message(R.string.read_error)
             }
@@ -1588,19 +1827,22 @@ private class TextDocument(
         }
     }
 
-    fun row(row: Int): String? = pages[row / ROWS_PER_PAGE]?.getOrNull(row % ROWS_PER_PAGE)
-
     /**
-     * Byte offset of [row], or -1 if the index is gone or has not reached it.
-     * Blocking IO: call from an IO dispatcher.
+     * A document to edit these same bytes through, or null before they are open. Its stretches
+     * read from this document's file handle and rows from its index.
      */
-    fun rowOffset(row: Int): Long {
-        val rowIndex = synchronized(this) { if (closed) null else index } ?: return -1L
-        return rowIndex.rowStart(row)
+    fun editDocument(): EditDocument? = synchronized(this) {
+        if (closed) return null
+        val source = window ?: return null
+        val rowIndex = index ?: return null
+        EditDocument(source, rowIndex, encoding.value.charset)
     }
+
+    fun row(row: Int): String? = pages[row / ROWS_PER_PAGE]?.getOrNull(row % ROWS_PER_PAGE)
 
     fun request(row: Int) {
         val page = row / ROWS_PER_PAGE
+        lastWantedPage = page
         if (pages.containsKey(page) || !inFlight.add(page)) return
         scope.launch {
             try {
@@ -1612,8 +1854,11 @@ private class TextDocument(
                 // A page cut short because the scan has not reached its end yet is not cached: the
                 // next progress update recomposes those rows and they ask again.
                 if (rows.size == ROWS_PER_PAGE || indexed) {
-                    trimIfNeeded()
-                    pages[page] = rows
+                    val chars = rows.sumOf { it.length }
+                    synchronized(cacheLock) {
+                        trimIfNeeded(page, chars)
+                        if (pages.put(page, rows) == null) cachedChars += chars
+                    }
                 }
             } catch (e: Exception) {
                 // Nothing is cached for a page that failed, so the rows retry rather than staying
@@ -1681,11 +1926,23 @@ private class TextDocument(
             if (index.size <= 0) 1f else (index.indexedBytes.toFloat() / index.size).coerceIn(0f, 1f)
     }
 
-    private fun trimIfNeeded() {
-        if (pages.size < MAX_CACHED_ROW_PAGES) return
-        // Arbitrary eviction; evicted rows on screen simply re-request their page.
-        pages.keys.toList().take(MAX_CACHED_ROW_PAGES / 4).forEach { pages.remove(it) }
+    /**
+     * Makes room for a page of [incomingChars] under both bounds, dropping the pages farthest
+     * from the one most recently asked for — the viewport — first. Evicted rows still on screen
+     * simply re-request their page. Called under [cacheLock].
+     */
+    private fun trimIfNeeded(incoming: Int, incomingChars: Int) {
+        if (pages.size < MAX_CACHED_ROW_PAGES && cachedChars + incomingChars <= MAX_CACHED_ROW_CHARS) return
+        val wanted = lastWantedPage
+        val farthestFirst = pages.keys.filter { it != incoming }.sortedByDescending { abs(it - wanted) }
+        for (page in farthestFirst) {
+            if (pages.size < MAX_CACHED_ROW_PAGES && cachedChars + incomingChars <= MAX_CACHED_ROW_CHARS) break
+            pages.remove(page)?.let { cachedChars -= it.sumOf { row -> row.length } }
+        }
     }
+
+    private fun rowIndexStore(): TextRowIndexStore =
+        TextRowIndexStore(File(context.cacheDir, ROW_INDEX_CACHE_DIR))
 
     private fun message(resId: Int): String = Graph.appContext.getString(resId, entry.name)
 }
