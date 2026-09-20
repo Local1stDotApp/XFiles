@@ -8,7 +8,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -17,22 +16,45 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation3.runtime.NavEntry
-import androidx.navigation3.ui.NavDisplay
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.NavigationEventTransitionState
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 import app.local1st.files.di.Graph
-import app.local1st.files.ui.navigationBarsStable
 import app.local1st.files.ui.appinfo.AppInfoScreen
 import app.local1st.files.ui.dialogs.DestinationPickerScreen
 import app.local1st.files.ui.dialogs.MainDialogs
 import app.local1st.files.ui.dialogs.OpsHost
+import app.local1st.files.ui.motion.AppScreenSurface
+import app.local1st.files.ui.motion.AppScreenSwitcher
+import app.local1st.files.ui.motion.DisplayBoundsMargin
+import app.local1st.files.ui.motion.EnteringStartOffset
+import app.local1st.files.ui.motion.frontPose
+import app.local1st.files.ui.motion.rearPose
+import app.local1st.files.ui.motion.rememberDisplayCornerRadius
+import app.local1st.files.ui.motion.scrimAlpha
+import app.local1st.files.ui.motion.towardEndSign
+import app.local1st.files.ui.navigationBarsStable
 import app.local1st.files.ui.search.SearchScreen
 import app.local1st.files.ui.settings.SettingsScreen
 import app.local1st.files.ui.viewer.ViewerScreen
@@ -40,13 +62,29 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Top-level screen host. Exactly one full-screen destination is composed at a time. */
-@OptIn(ExperimentalLayoutApi::class)
+/** Top-level screen host. At most two destinations are composed: the front page and, during
+ * a transition, the page behind it. */
 @Composable
 fun AppHost(vm: MainViewModel) {
     val backStack = vm.screenBackStack
     val snackbarHostState = remember { SnackbarHostState() }
     val sessionReady by vm.sessionReady.collectAsStateWithLifecycle()
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val displayCornerRadius = rememberDisplayCornerRadius()
+    val scope = rememberCoroutineScope()
+    val switcher = remember {
+        AppScreenSwitcher(stack = backStack.toList(), scope = scope)
+    }
+    val holder = rememberSaveableStateHolder()
+    val seenIds = remember { mutableSetOf<Long>() }
+    val enteringOffsetPx = with(density) { EnteringStartOffset.toPx() }
+    val marginPx = with(density) { DisplayBoundsMargin.toPx() }
+    val towardEnd = towardEndSign(layoutDirection)
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    LaunchedEffect(switcher) {
+        snapshotFlow { backStack.toList() }.collect(switcher::onStackChanged)
+    }
 
     LaunchedEffect(vm) {
         vm.snackbar.collect { snackbarHostState.showSnackbar(it) }
@@ -55,68 +93,135 @@ fun AppHost(vm: MainViewModel) {
     if (sessionReady) LegacySafGrantHost(vm)
     if (sessionReady) SafLocationPickerHost(vm)
 
+    val canGoBack = backStack.size > 1
+    val gestureState = rememberNavigationEventState(
+        currentInfo = NavigationEventInfo.None,
+        backInfo = if (canGoBack) listOf(NavigationEventInfo.None) else emptyList(),
+    )
+    val backPreview = remember { object { var ignore = false } }
+    LaunchedEffect(gestureState, switcher) {
+        snapshotFlow { gestureState.transitionState }.collect { transition ->
+            if (transition is NavigationEventTransitionState.InProgress) {
+                if (backPreview.ignore) return@collect
+                val current = backStack.lastOrNull() ?: return@collect
+                val previous = backStack.getOrNull(backStack.lastIndex - 1) ?: return@collect
+                switcher.onPreview(transition.latestEvent, current, previous)
+            } else {
+                backPreview.ignore = false
+            }
+        }
+    }
+    NavigationBackHandler(
+        state = gestureState,
+        isBackEnabled = canGoBack,
+        onBackCancelled = {
+            backPreview.ignore = false
+            switcher.cancelPreview()
+        },
+        onBackCompleted = {
+            backPreview.ignore = true
+            switcher.completeBack { vm.navigateBack() }
+        },
+    )
+
+    val front = switcher.front
+    val rear = switcher.rear
+    val renderedIds = listOfNotNull(front.id, rear?.id)
+    SideEffect {
+        seenIds += renderedIds
+        val live = backStack.map { it.id }.toSet() + renderedIds
+        seenIds.filter { it !in live }.forEach { id ->
+            holder.removeState(id)
+            seenIds.remove(id)
+        }
+    }
+
+    val container = LocalWindowInfo.current.containerSize
+    var measuredWidth by remember { mutableFloatStateOf(0f) }
+    var measuredHeight by remember { mutableFloatStateOf(0f) }
+    val widthPx = measuredWidth.takeIf { it > 1f } ?: container.width.toFloat().coerceAtLeast(1f)
+    val heightPx = measuredHeight.takeIf { it > 1f } ?: container.height.toFloat().coerceAtLeast(1f)
+    val rearPose = switcher.rearPose(heightPx, marginPx, enteringOffsetPx, towardEnd)
+    val frontPose = switcher.frontPose(widthPx, heightPx, marginPx, enteringOffsetPx, towardEnd)
+    val scrim = switcher.scrimAlpha(isDark)
+
+    val layers = buildList {
+        if (rear != null) add(rear to rearPose)
+        add(front to frontPose)
+    }
+
     Box(
         Modifier
             .fillMaxSize()
+            .onSizeChanged {
+                measuredWidth = it.width.toFloat()
+                measuredHeight = it.height.toFloat()
+            }
             .background(MaterialTheme.colorScheme.background),
     ) {
-        NavDisplay(
-            backStack = backStack,
-            onBack = { vm.navigateBack() },
-            entryProvider = { destination ->
-                NavEntry(destination) {
-                    val screenEntry = destination
-                    val screen = screenEntry.screen
-                    when (screen) {
-                        AppScreen.Browser -> Box(Modifier.fillMaxSize()) {
-                            PermissionGate(
-                                onGranted = vm::onStorageAccessGranted,
-                            ) {
-                                MainScreen(vm)
-                            }
-                            // Browser dialogs and file-operation cards remain transient UI. They
-                            // are not composed while another full-screen destination is active.
-                            OpsHost()
-                            MainDialogs(vm)
-                        }
-
-                        is AppScreen.Search -> SearchScreen(
-                            vm = vm,
-                            root = screen.root,
-                            onBack = { vm.navigateBack(screenEntry.id) },
-                        )
-
-                        AppScreen.Settings -> SettingsScreen(
-                            onBack = { vm.navigateBack(screenEntry.id) },
-                        )
-
-                        is AppScreen.AppInfo -> AppInfoScreen(
-                            packageName = screen.packageName,
-                            onBack = { vm.navigateBack(screenEntry.id) },
-                        )
-
-                        is AppScreen.Viewer -> ViewerScreen(
-                            vm = vm,
-                            request = screen.request,
-                            onBack = { vm.navigateBack(screenEntry.id) },
-                        )
-
-                        is AppScreen.DestinationPicker -> DestinationPickerScreen(
-                            vm = vm,
-                            transfer = screen.transfer,
-                            onBack = { vm.navigateBack(screenEntry.id) },
-                        )
+        layers.forEachIndexed { index, (entry, pose) ->
+            key(entry.id) {
+                holder.SaveableStateProvider(entry.id) {
+                    AppScreenSurface(
+                        pose = pose,
+                        displayCornerRadius = displayCornerRadius,
+                    ) {
+                        AppScreenBody(vm, entry)
                     }
                 }
-            },
-            modifier = Modifier.fillMaxSize(),
-        )
+            }
+            if (index == 0 && rear != null && scrim > 0.01f) {
+                Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = scrim)))
+            }
+        }
 
         SnackbarHost(
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.navigationBarsStable),
+        )
+    }
+}
+
+@Composable
+private fun AppScreenBody(vm: MainViewModel, entry: AppScreenEntry) {
+    when (val screen = entry.screen) {
+        AppScreen.Browser -> Box(Modifier.fillMaxSize()) {
+            PermissionGate(
+                onGranted = vm::onStorageAccessGranted,
+            ) {
+                MainScreen(vm)
+            }
+            OpsHost()
+            MainDialogs(vm)
+        }
+
+        is AppScreen.Search -> SearchScreen(
+            vm = vm,
+            root = screen.root,
+            onBack = { vm.navigateBack(entry.id) },
+        )
+
+        AppScreen.Settings -> SettingsScreen(
+            onBack = { vm.navigateBack(entry.id) },
+        )
+
+        is AppScreen.AppInfo -> AppInfoScreen(
+            packageName = screen.packageName,
+            onBack = { vm.navigateBack(entry.id) },
+        )
+
+        is AppScreen.Viewer -> ViewerScreen(
+            vm = vm,
+            request = screen.request,
+            onBack = { vm.navigateBack(entry.id) },
+        )
+
+        is AppScreen.DestinationPicker -> DestinationPickerScreen(
+            vm = vm,
+            transfer = screen.transfer,
+            onBack = { vm.navigateBack(entry.id) },
         )
     }
 }

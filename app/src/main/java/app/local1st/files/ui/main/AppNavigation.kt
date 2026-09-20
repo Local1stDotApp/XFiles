@@ -21,7 +21,7 @@ class AppScreenEntry internal constructor(
     val screen: AppScreen,
 ) {
     // Viewer and picker payloads may contain long entry lists. Navigation identity is the cheap,
-    // stable id rather than recursively hashing those payloads whenever NavDisplay resolves state.
+    // stable id rather than recursively hashing those payloads whenever the host resolves state.
     override fun equals(other: Any?): Boolean = other is AppScreenEntry && id == other.id
     override fun hashCode(): Int = id.hashCode()
     override fun toString(): String = "AppScreenEntry(id=$id)"

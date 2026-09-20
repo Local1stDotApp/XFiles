@@ -114,7 +114,7 @@ fun PaneView(
     // followed by a corrective scroll (animated or otherwise).
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialScrollIndex)
     val currentOnInitialLayoutReady by rememberUpdatedState(onInitialLayoutReady)
-    // NavDisplay removes covered destinations from composition. Save these booleans with the
+    // Covered destinations leave composition after the transition. Save these booleans with the
     // browser entry so returning from Settings/Search does not replay the lightweight-row phase.
     var richRowsEnabled by rememberSaveable(controller) { mutableStateOf(false) }
     var itemAnimationsEnabled by rememberSaveable(controller) { mutableStateOf(false) }

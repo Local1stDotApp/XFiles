@@ -97,7 +97,7 @@ fun DestinationPickerScreen(
         scope.launch { current = withContext(Dispatchers.IO) { parentOf(from) } }
     }
 
-    // Nested folder navigation consumes Back locally. At the picker root NavDisplay handles it,
+    // Nested folder navigation consumes Back locally. At the picker root the host handles it,
     // including the system predictive-back animation to the browser destination.
     BackHandler(enabled = current != null) {
         current?.let(::goUp)
