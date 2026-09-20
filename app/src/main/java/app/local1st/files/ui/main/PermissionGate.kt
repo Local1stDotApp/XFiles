@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -85,6 +86,7 @@ fun PermissionGate(onGranted: () -> Unit, content: @Composable () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterVertically),
             modifier = Modifier
                 .fillMaxSize()
+                .safeDrawingPadding()
                 .padding(32.dp),
         ) {
             Icon(

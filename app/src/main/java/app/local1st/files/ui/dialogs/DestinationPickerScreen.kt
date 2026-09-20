@@ -5,13 +5,19 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -62,7 +68,11 @@ import kotlinx.coroutines.withContext
  * Optional full-screen folder chooser reached from an entry's long-press menu. The primary
  * copy/move actions use the other pane directly; this screen is the explicit-location escape hatch.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(
+    ExperimentalMaterial3Api::class,
+    ExperimentalMaterial3ExpressiveApi::class,
+    ExperimentalLayoutApi::class,
+)
 @Composable
 fun DestinationPickerScreen(
     vm: MainViewModel,
@@ -171,82 +181,93 @@ fun DestinationPickerScreen(
                 },
             )
 
-            Text(
-                current?.let { pathLabel(it) } ?: stringResource(R.string.this_device),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
-            )
-            HorizontalDivider()
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .windowInsetsPadding(
+                        WindowInsets.safeDrawing.only(
+                            WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom,
+                        ),
+                    ),
+            ) {
+                Text(
+                    current?.let { pathLabel(it) } ?: stringResource(R.string.this_device),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+                )
+                HorizontalDivider()
 
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                when {
-                    loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { LoadingIndicator() }
-                    else -> LazyColumn(Modifier.fillMaxSize()) {
-                        if (current != null) {
-                            item("__up__") {
-                                PickerRow(
-                                    label = "..",
-                                    onClick = { current?.let { goUp(it) } },
-                                ) {
-                                    Icon(
-                                        Icons.Outlined.ArrowUpward,
-                                        null,
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    when {
+                        loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { LoadingIndicator() }
+                        else -> LazyColumn(Modifier.fillMaxSize()) {
+                            if (current != null) {
+                                item("__up__") {
+                                    PickerRow(
+                                        label = "..",
+                                        onClick = { current?.let { goUp(it) } },
+                                    ) {
+                                        Icon(
+                                            Icons.Outlined.ArrowUpward,
+                                            null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(24.dp),
+                                        )
+                                    }
+                                }
+                            }
+                            items(folders, key = { it.id }) { folder ->
+                                PickerRow(label = folder.name, onClick = { current = folder }) {
+                                    EntryIcon(
+                                        folder,
                                         tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(24.dp),
                                     )
                                 }
                             }
-                        }
-                        items(folders, key = { it.id }) { folder ->
-                            PickerRow(label = folder.name, onClick = { current = folder }) {
-                                EntryIcon(
-                                    folder,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp),
-                                )
-                            }
-                        }
-                        if (folders.isEmpty() && current != null) {
-                            item("__empty__") {
-                                Text(
-                                    error ?: stringResource(R.string.no_subfolders),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(24.dp),
-                                )
+                            if (folders.isEmpty() && current != null) {
+                                item("__empty__") {
+                                    Text(
+                                        error ?: stringResource(R.string.no_subfolders),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(24.dp),
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
 
-            HorizontalDivider()
-            Row(
-                Modifier.fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedButton(
-                    onClick = { nameDialog = true },
-                    // canConfirm already implies a non-null, writable directory.
-                    enabled = canConfirm,
+                HorizontalDivider()
+                Row(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Outlined.CreateNewFolder, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.new_folder))
-                }
-                Spacer(Modifier.weight(1f))
-                Button(
-                    onClick = { current?.let { vm.confirmTransfer(it) } },
-                    enabled = canConfirm,
-                ) {
-                    Text(
-                        if (t.move) stringResource(R.string.move_here)
-                        else stringResource(R.string.copy_here),
-                    )
+                    OutlinedButton(
+                        onClick = { nameDialog = true },
+                        // canConfirm already implies a non-null, writable directory.
+                        enabled = canConfirm,
+                    ) {
+                        Icon(Icons.Outlined.CreateNewFolder, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.new_folder))
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Button(
+                        onClick = { current?.let { vm.confirmTransfer(it) } },
+                        enabled = canConfirm,
+                    ) {
+                        Text(
+                            if (t.move) stringResource(R.string.move_here)
+                            else stringResource(R.string.copy_here),
+                        )
+                    }
                 }
             }
         }

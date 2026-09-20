@@ -15,9 +15,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -132,7 +136,13 @@ fun ImageViewer(items: List<XEntry>, startIndex: Int, onClose: () -> Unit) {
                     )
                     // IgnoringVisibility: the status bar is gone while the bar is hidden, and the
                     // row would otherwise fade back in at the wrong height and then jump.
-                    .windowInsetsPadding(WindowInsets.statusBarsStable)
+                    .windowInsetsPadding(
+                        WindowInsets.statusBarsStable.union(
+                            WindowInsets.displayCutout.only(
+                                WindowInsetsSides.Top + WindowInsetsSides.Horizontal,
+                            ),
+                        ),
+                    )
                     .padding(horizontal = 4.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

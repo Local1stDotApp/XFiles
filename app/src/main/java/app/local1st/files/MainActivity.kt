@@ -2,7 +2,9 @@ package app.local1st.files
 
 import android.content.Intent
 import android.content.res.Configuration
+import android.content.res.Resources
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -34,10 +36,8 @@ class MainActivity : ComponentActivity() {
     private val incomingIntentFlow = incomingIntents.receiveAsFlow()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // SystemBarStyle.auto() turns on navigation-bar contrast enforcement on API 29,
-        // and Android 10 then paints an opaque light scrim over the bar. dark()/light()
-        // keep the bar transparent so the window background shows through. First chrome
-        // follows process night mode; the in-app theme is applied after the first tree frame.
+        // auto() with LaunchTheme so bar icons follow in-app night. Contrast is forced
+        // off because auto() re-enables the API 29 nav-bar scrim inside enableEdgeToEdge.
         applyEdgeToEdge()
         super.onCreate(savedInstanceState)
         if (savedInstanceState == null) incomingIntents.trySend(intent)
@@ -58,20 +58,31 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun applyEdgeToEdge() {
-        val dark = LaunchTheme.isDark(this)
         val transparent = Color.TRANSPARENT
+        val detectDarkMode: (Resources) -> Boolean = { resources ->
+            when (LaunchTheme.mode()) {
+                ThemeMode.DARK -> true
+                ThemeMode.LIGHT -> false
+                ThemeMode.SYSTEM -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+            }
+        }
         enableEdgeToEdge(
-            statusBarStyle = if (dark) {
-                SystemBarStyle.dark(transparent)
-            } else {
-                SystemBarStyle.light(transparent, transparent)
-            },
-            navigationBarStyle = if (dark) {
-                SystemBarStyle.dark(transparent)
-            } else {
-                SystemBarStyle.light(transparent, transparent)
-            },
+            statusBarStyle = SystemBarStyle.auto(
+                lightScrim = transparent,
+                darkScrim = transparent,
+                detectDarkMode = detectDarkMode,
+            ),
+            navigationBarStyle = SystemBarStyle.auto(
+                lightScrim = transparent,
+                darkScrim = transparent,
+                detectDarkMode = detectDarkMode,
+            ),
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            @Suppress("DEPRECATION")
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
     }
 }
 

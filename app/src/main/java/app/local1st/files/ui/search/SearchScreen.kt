@@ -3,13 +3,20 @@ package app.local1st.files.ui.search
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -54,6 +61,8 @@ import app.local1st.files.di.Graph
 import app.local1st.files.ui.browser.EntryIcon
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.main.MainViewModel
+import app.local1st.files.ui.navigationBarsStable
+import app.local1st.files.ui.statusBarsStable
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -67,7 +76,11 @@ private const val MIN_QUERY_LENGTH = 2
 private enum class SearchPhase { IDLE, SEARCHING, DONE }
 
 /** Full-screen recursive filename search destination. */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, FlowPreview::class)
+@OptIn(
+    ExperimentalMaterial3ExpressiveApi::class,
+    ExperimentalLayoutApi::class,
+    FlowPreview::class,
+)
 @Composable
 fun SearchScreen(
     vm: MainViewModel,
@@ -111,80 +124,90 @@ fun SearchScreen(
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
     val keyboard = LocalSoftwareKeyboardController.current
 
+    val bottomSafe = WindowInsets.ime.union(WindowInsets.navigationBarsStable)
+
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(
             Modifier
                 .fillMaxSize()
-                .windowInsetsPadding(WindowInsets.safeDrawing),
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)),
         ) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .focusRequester(focusRequester),
-                placeholder = { Text(stringResource(R.string.search_files_hint)) },
-                leadingIcon = {
-                    TooltipIconButton(
-                        stringResource(R.string.close_search),
-                        Icons.AutoMirrored.Outlined.ArrowBack,
-                        onClick = close,
-                    )
-                },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
+            Column(Modifier.windowInsetsPadding(WindowInsets.statusBarsStable)) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .focusRequester(focusRequester),
+                    placeholder = { Text(stringResource(R.string.search_files_hint)) },
+                    leadingIcon = {
                         TooltipIconButton(
-                            stringResource(R.string.clear_query),
-                            Icons.Outlined.Close,
-                            onClick = { query = "" },
+                            stringResource(R.string.close_search),
+                            Icons.AutoMirrored.Outlined.ArrowBack,
+                            onClick = close,
+                        )
+                    },
+                    trailingIcon = {
+                        if (query.isNotEmpty()) {
+                            TooltipIconButton(
+                                stringResource(R.string.clear_query),
+                                Icons.Outlined.Close,
+                                onClick = { query = "" },
+                            )
+                        }
+                    },
+                    singleLine = true,
+                    shape = CircleShape,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
+                )
+
+                Text(
+                    stringResource(R.string.searching_in, r.name),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+
+                when (phase) {
+                    SearchPhase.SEARCHING -> Row(
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        LoadingIndicator(Modifier.size(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            if (results.isEmpty()) stringResource(R.string.searching)
+                            else stringResource(R.string.found_so_far, results.size),
+                            style = MaterialTheme.typography.labelMedium,
                         )
                     }
-                },
-                singleLine = true,
-                shape = CircleShape,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
-            )
-
-            Text(
-                stringResource(R.string.searching_in, r.name),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 24.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            when (phase) {
-                SearchPhase.SEARCHING -> Row(
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    LoadingIndicator(Modifier.size(24.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        if (results.isEmpty()) stringResource(R.string.searching)
-                        else stringResource(R.string.found_so_far, results.size),
+                    SearchPhase.DONE -> Text(
+                        when {
+                            error != null -> error.orEmpty()
+                            results.size == 1 -> stringResource(R.string.one_result)
+                            else -> stringResource(R.string.results, results.size)
+                        },
                         style = MaterialTheme.typography.labelMedium,
+                        color = if (error != null) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                     )
+                    SearchPhase.IDLE -> {}
                 }
-                SearchPhase.DONE -> Text(
-                    when {
-                        error != null -> error.orEmpty()
-                        results.size == 1 -> stringResource(R.string.one_result)
-                        else -> stringResource(R.string.results, results.size)
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (error != null) MaterialTheme.colorScheme.error
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                )
-                SearchPhase.IDLE -> {}
             }
 
             if (results.isEmpty()) {
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .windowInsetsPadding(bottomSafe),
+                    contentAlignment = Alignment.Center,
+                ) {
                     when (phase) {
                         SearchPhase.IDLE -> Text(
                             stringResource(R.string.search_minimum_length, MIN_QUERY_LENGTH),
@@ -202,7 +225,12 @@ fun SearchScreen(
                     }
                 }
             } else {
-                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    Modifier.weight(1f).fillMaxWidth(),
+                    contentPadding = PaddingValues(
+                        bottom = bottomSafe.asPaddingValues().calculateBottomPadding(),
+                    ),
+                ) {
                     items(results, key = { it.entry.id }) { hit ->
                         SearchHitRow(hit, onClick = { vm.revealSearchHit(hit.entry.id) })
                     }

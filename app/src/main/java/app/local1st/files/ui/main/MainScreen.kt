@@ -9,14 +9,18 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -142,12 +146,24 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     // The explicit background paints the pane gutters and rounded-corner gaps that
     // Scaffold used to cover.
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        val listPadding = PaddingValues(bottom = 120.dp)
+        // 120.dp clears the floating toolbar and its 24.dp lift; nav inset is extra
+        // because the toolbar itself sits above the system bar.
+        val navPad = WindowInsets.navigationBarsStable
+            .asPaddingValues().calculateBottomPadding()
+        val listPadding = PaddingValues(bottom = 120.dp + navPad)
+        val horizontalSafe = WindowInsets.displayCutout
+            .only(WindowInsetsSides.Horizontal)
+            .union(WindowInsets.navigationBarsStable.only(WindowInsetsSides.Horizontal))
 
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val wide = maxWidth >= 700.dp
             if (wide) {
-                Row(Modifier.fillMaxSize().padding(horizontal = 4.dp)) {
+                Row(
+                    Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(horizontalSafe)
+                        .padding(horizontal = 4.dp),
+                ) {
                     vm.panes.forEachIndexed { index, pane ->
                         PaneView(
                             controller = pane,
@@ -187,7 +203,9 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                     // full tree here would still charge that work to phone startup. Pager will
                     // compose it naturally when the user begins to swipe toward it.
                     beyondViewportPageCount = 0,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(horizontalSafe),
                 ) { page ->
                     val pane = vm.panes[page]
                     PaneView(
