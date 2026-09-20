@@ -117,7 +117,7 @@ val shadowJar = tasks.named<ShadowJar>("shadowJar") {
     }
 }
 
-val shadedRuntimeElements by configurations.creating {
+val shadedRuntimeElements = configurations.create("shadedRuntimeElements") {
     isCanBeConsumed = true
     isCanBeResolved = false
     attributes {

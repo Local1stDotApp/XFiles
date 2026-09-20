@@ -209,8 +209,8 @@ That last row is enforced by the OS, not by policy — verify it yourself in
 
 | Layer | Choice |
 |---|---|
-| Language / UI | Kotlin, Jetpack Compose (BOM 2026.06.01), material3 **1.5.0-alpha23** (Expressive APIs) |
-| Build | AGP 9.2.1 (built-in Kotlin, no KGP), Gradle 9.4.1, compileSdk 37 / target 37 / min 26 |
+| Language / UI | Kotlin, Jetpack Compose (BOM 2026.09.00), material3 **1.5.0-alpha28** (Expressive APIs) |
+| Build | AGP 9.4.1 (built-in Kotlin, no KGP), Gradle 9.7.1, compileSdk 37 / target 37 / min 26 |
 | Architecture | MVVM + StateFlow, manual DI composition root (`di/Graph`); app module + a shaded bundletool vendor module |
 | Persistence | DataStore Preferences |
 | Media/Images | Coil 3 (GIF, custom fetchers: app icons, disk-cached video thumbnails), Media3 ExoPlayer |
@@ -218,8 +218,8 @@ That last row is enforced by the OS, not by policy — verify it yourself in
 | Privileged access | Shizuku 13.1.5 (user service, real fds) · `su` shell |
 | Package install | PackageInstaller sessions · vendored bundletool 1.18.3 · ARSCLib (in-process aapt2) · minimal self-signed signer |
 
-Note: material3 is pinned to `1.5.0-alpha23` because the Expressive APIs are
-`internal` in the 1.4.0 stable release.
+Note: material3 is pinned to the 1.5 alpha line (`1.5.0-alpha28`) because the
+Expressive APIs are `internal` in the 1.4.0 stable release.
 
 ## Project layout
 

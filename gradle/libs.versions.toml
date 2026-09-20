@@ -1,22 +1,22 @@
 [versions]
-agp = "9.2.1"
-kotlinComposePlugin = "2.3.10"
-composeBom = "2026.06.01"
+agp = "9.4.1"
+kotlinComposePlugin = "2.4.20"
+composeBom = "2026.09.00"
 # Expressive APIs (MaterialExpressiveTheme, LoadingIndicator, FloatingToolbar, ...) are
 # internal in material3 1.4.0 stable; they are public in the 1.5 alpha line.
-material3 = "1.5.0-alpha23"
+material3 = "1.5.0-alpha28"
 activityCompose = "1.13.0"
 lifecycle = "2.11.0"
-navigation3 = "1.1.5"
+navigation3 = "1.1.7"
 coreKtx = "1.19.0"
 datastore = "1.2.1"
 documentfile = "1.1.0"
 coroutines = "1.11.0"
-coil = "3.5.0"
+coil = "3.6.3"
 commonsCompress = "1.28.0"
 xz = "1.12"
-junrar = "7.6.0"
-media3 = "1.10.1"
+junrar = "8.1.1"
+media3 = "1.11.1"
 iconsExtended = "1.7.8"
 shizuku = "13.1.5"
 # These are bundletool 1.18.3's ABI-pinned runtime deps, shaded into
@@ -33,8 +33,8 @@ javaxInject = "1"
 jose4j = "0.9.5"
 slf4j = "2.0.17"
 failureAccess = "1.0.2"
-# Build-time-only tool, never shipped in the app; no stable Shadow release supports Gradle 9.
-shadow = "9.0.0-beta12"
+# Build-time-only tool, never shipped in the app.
+shadow = "9.6.1"
 
 # Direct app dependencies; unlike the shaded bundletool internals, keep these current.
 # pinned to 1.3.5 — 1.3.8's table writer drops the string type in our proto→arsc
