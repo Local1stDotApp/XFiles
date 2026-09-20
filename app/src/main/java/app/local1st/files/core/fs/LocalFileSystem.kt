@@ -9,6 +9,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.RandomAccessFile
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -23,6 +24,9 @@ import kotlin.coroutines.cancellation.CancellationException
 class LocalFileSystem(
     private val legacySaf: LegacySafAccess? = null,
     private val privilegedFallback: XFileSystem? = null,
+    private val inPlaceMinBytes: Long = IN_PLACE_MIN_BYTES,
+    /** How an in-place write opens its file; tests hand in one that fails part way through. */
+    private val openInPlace: (File) -> RandomAccessFile = { RandomAccessFile(it, "rw") },
 ) : XFileSystem {
 
     override val scheme: String = XId.SCHEME_FILE
@@ -201,28 +205,64 @@ class LocalFileSystem(
      * @return true if [replacement] was written; false if a previous complete tmp was restored
      *   instead, so the caller must reload from disk rather than treat the in-memory buffer as saved.
      */
-    fun replaceRange(entry: XEntry, from: Long, to: Long, replacement: ByteArray): Boolean {
+    fun replaceRange(entry: XEntry, from: Long, to: Long, replacement: ByteArray): Boolean =
+        replaceRanges(entry, listOf(ByteRangeEdit(from, to, replacement)))
+
+    /**
+     * Replaces several byte ranges of a file in one pass. The ranges are of the file as it was
+     * read and must not overlap; unchanged bytes between them are streamed, not held.
+     *
+     * With [expected], the file must still carry that stamp — the one it had when the edits were
+     * read — or nothing is written and [FileChangedException] is thrown: another writer's bytes
+     * would otherwise be spliced at offsets that no longer mean anything. The stamp also settles
+     * what a leftover complete tmp means. A target that still matches is intact, so the leftover
+     * is an earlier save that never landed and is superseded by this one; a target that does not
+     * match, with a longer complete tmp beside it, is the truncated remains of a save that was
+     * cut off, and the tmp is restored instead.
+     *
+     * Edits that keep every range the same length are written in place on a large file: the
+     * alternative is rewriting the whole file to change a few bytes of it, at the cost of a
+     * second copy's worth of free space. In-place writes are not atomic, so small files — where
+     * the rewrite is cheap — keep the rename.
+     *
+     * @return true if the edits were written; false if a previous complete tmp was restored
+     *   instead, so the caller must reload from disk rather than treat its buffers as saved.
+     */
+    fun replaceRanges(entry: XEntry, edits: List<ByteRangeEdit>, expected: FileStamp? = null): Boolean {
         val target = File(entry.localPath ?: entry.path)
         val parent = target.parentFile ?: throw IOException("Cannot save ${entry.name}")
-        if (from < 0L || to < from) {
-            throw IOException("Cannot save ${entry.name}")
+        val sorted = edits.sortedBy { it.from }
+        var last = 0L
+        for (edit in sorted) {
+            if (edit.from < 0L || edit.to < edit.from || edit.from < last) {
+                throw IOException("Cannot save ${entry.name}")
+            }
+            last = edit.to
         }
+        val intact = expected != null && expected.matches(target)
         val leftovers = listXfilesTmps(parent, entry.name)
-        val recovered = leftovers
-            .filter { isReadyTmpName(it.name, entry.name) && it.length() > target.length() }
-            .maxByOrNull { it.length() }
+        val recovered = if (intact) {
+            null
+        } else {
+            leftovers
+                .filter { isReadyTmpName(it.name, entry.name) && it.length() > target.length() }
+                .maxByOrNull { it.length() }
+        }
         if (recovered != null) {
             commitStaged(recovered, target, entry)
             leftovers.forEach { if (it != recovered) it.delete() }
             return false
         }
-        if (to > target.length()) {
+        if (expected != null && !intact) throw FileChangedException(entry.name)
+        if (last > target.length()) {
             throw IOException("Cannot save ${entry.name}")
         }
-        leftovers.forEach { if (it.length() <= target.length()) it.delete() }
+        leftovers.forEach { if (intact || it.length() <= target.length()) it.delete() }
+        if (sorted.isEmpty()) return true
+        if (writeInPlaceIfSameLength(target, sorted)) return true
         val created = newXfilesTmp(parent, entry.name)
         try {
-            writeSpliced(created, target, from, to, replacement)
+            writeSpliced(created, target, sorted)
         } catch (e: Throwable) {
             created.delete()
             rethrowIfCancelled(e)
@@ -230,12 +270,88 @@ class LocalFileSystem(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) throw spliceError
             // Sibling staging failed, so [target] is still the original. SAF must splice
             // from that intact file, never from a half-written tmp.
-            return writeRangeViaSaf(target, entry, from, to, replacement, staged = null, spliceError)
+            return writeRangeViaSaf(target, entry, sorted, staged = null, spliceError)
         }
         val tmp = markReady(created, parent, entry.name)
         commitStaged(tmp, target, entry)
         listXfilesTmps(parent, entry.name).forEach { it.delete() }
         return true
+    }
+
+    /**
+     * Writes [edits] over the bytes they replace when every one is the same length as its range
+     * and the file is big enough for a rewrite to hurt. Synced before returning. False when the
+     * edits do not qualify, the file cannot be opened for writing, or a write fails part way,
+     * so the caller splices.
+     *
+     * A write that fails part way has replaced some of the bytes and bumped the modification
+     * time, and the file is then neither what the caller read nor the edit. The bytes it
+     * replaces are read first and put back on failure, stamp included: the splice that follows
+     * then starts from the original, and if it fails too the caller's retry is checked against
+     * the stamp it holds rather than refused as another app's change.
+     */
+    private fun writeInPlaceIfSameLength(target: File, edits: List<ByteRangeEdit>): Boolean {
+        if (target.length() < inPlaceMinBytes) return false
+        if (edits.any { it.bytes.size.toLong() != it.to - it.from }) return false
+        val file = try {
+            openInPlace(target)
+        } catch (e: IOException) {
+            return false
+        }
+        val mtime = target.lastModified()
+        val originals = ArrayList<ByteArray>(edits.size)
+        var started = 0
+        try {
+            file.use {
+                for (edit in edits) {
+                    val original = ByteArray(edit.bytes.size)
+                    it.seek(edit.from)
+                    it.readFully(original)
+                    originals.add(original)
+                }
+                for (edit in edits) {
+                    started++
+                    if (edit.bytes.isEmpty()) continue
+                    it.seek(edit.from)
+                    it.write(edit.bytes)
+                }
+                it.fd.sync()
+            }
+            return true
+        } catch (e: IOException) {
+            restoreInPlace(target, edits, originals, started, mtime)
+            return false
+        }
+    }
+
+    /**
+     * Puts back the bytes of the first [started] of [edits] after an in-place write failed.
+     * Best effort: a device that is failing writes may refuse these too, and the file is then
+     * torn either way — though the splice that follows still rewrites those ranges whole. The
+     * modification time is only put back once every byte is, so the stamp never vouches for
+     * bytes other than the ones it was taken from.
+     */
+    private fun restoreInPlace(
+        target: File,
+        edits: List<ByteRangeEdit>,
+        originals: List<ByteArray>,
+        started: Int,
+        mtime: Long,
+    ) {
+        if (started == 0) return
+        try {
+            openInPlace(target).use { file ->
+                for (i in 0 until started) {
+                    if (originals[i].isEmpty()) continue
+                    file.seek(edits[i].from)
+                    file.write(originals[i])
+                }
+                file.fd.sync()
+            }
+        } catch (e: IOException) {
+            return
+        }
+        target.setLastModified(mtime)
     }
 
     /**
@@ -248,9 +364,7 @@ class LocalFileSystem(
     private fun writeRangeViaSaf(
         target: File,
         entry: XEntry,
-        from: Long,
-        to: Long,
-        replacement: ByteArray,
+        edits: List<ByteRangeEdit>,
         staged: File?,
         directError: IOException,
     ): Boolean {
@@ -292,7 +406,7 @@ class LocalFileSystem(
             if (stale?.isDirectory == true) throw directError
             try {
                 saf.openOutput(tree, parent, tempName, mime).use { out ->
-                    spliceTo(out, target, from, to, replacement)
+                    spliceTo(out, target, edits)
                 }
             } catch (e: Throwable) {
                 rethrowIfCancelled(e)
@@ -351,11 +465,11 @@ class LocalFileSystem(
             val moveError = e as? IOException ?: IOException("Cannot save ${entry.name}", e)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) throw moveError
             try {
-                writeRangeViaSaf(target, entry, 0L, 0L, ByteArray(0), staged = tmp, moveError)
+                writeRangeViaSaf(target, entry, emptyList(), staged = tmp, moveError)
             } catch (safError: Throwable) {
                 rethrowIfCancelled(safError)
                 try {
-                    writeRangeViaSaf(target, entry, 0L, 0L, ByteArray(0), staged = tmp, moveError)
+                    writeRangeViaSaf(target, entry, emptyList(), staged = tmp, moveError)
                 } catch (retry: Throwable) {
                     rethrowIfCancelled(retry)
                     throw safError
@@ -402,19 +516,25 @@ class LocalFileSystem(
         if (e is CancellationException || e is InterruptedException) throw e
     }
 
-    private fun writeSpliced(tmp: File, source: File, from: Long, to: Long, replacement: ByteArray) {
-        tmp.outputStream().use { spliceTo(it, source, from, to, replacement) }
+    private fun writeSpliced(tmp: File, source: File, edits: List<ByteRangeEdit>) {
+        tmp.outputStream().use { spliceTo(it, source, edits) }
     }
 
-    private fun spliceTo(out: OutputStream, source: File, from: Long, to: Long, replacement: ByteArray) {
-        if (from == 0L && to == source.length()) {
-            out.write(replacement)
+    /** [source] with each of [edits] (sorted, non-overlapping) put in place of its range. */
+    private fun spliceTo(out: OutputStream, source: File, edits: List<ByteRangeEdit>) {
+        val only = edits.singleOrNull()
+        if (only != null && only.from == 0L && only.to == source.length()) {
+            out.write(only.bytes)
             return
         }
         FileInputStream(source).use { input ->
-            copyExactly(input, out, from)
-            out.write(replacement)
-            skipExactly(input, to - from)
+            var at = 0L
+            for (edit in edits) {
+                copyExactly(input, out, edit.from - at)
+                out.write(edit.bytes)
+                skipExactly(input, edit.to - edit.from)
+                at = edit.to
+            }
             input.copyTo(out)
         }
     }
@@ -539,6 +659,12 @@ class LocalFileSystem(
         }
     }
 }
+
+/**
+ * Files at least this large take same-length edits in place. Below it a rewrite is a few
+ * milliseconds, and the rename keeps a crash mid-save from leaving a half-written file.
+ */
+const val IN_PLACE_MIN_BYTES = 16L * 1024 * 1024
 
 /** CREATE_NEW is the invariant behind the UI's promise that creating never overwrites. */
 internal fun createEmptyFileExclusive(file: File) {
