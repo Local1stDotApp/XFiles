@@ -1722,16 +1722,18 @@ private fun TextBanner(message: String, color: Color, width: Dp, wrap: Boolean) 
  * else — archive members, su paths, an unreadable path on a legacy secondary volume — has no
  * seekable handle, so it is read as a leading window instead.
  *
- * A length of zero also normally goes the streaming way: /proc and /sys nodes report no length but
- * hand over plenty of bytes when read, and paging trusts the length. [allowEmpty] is reserved for
- * a newly created local file that is opening straight into the editor.
+ * A length of zero usually streams: /proc and /sys report no length but still produce bytes, and
+ * paging trusts the length. A writable empty file is actually empty, so it is paged — the editor
+ * needs a seekable handle to save into it. [allowEmpty] is the create-and-edit path, which must
+ * work even if [File.canWrite] is not yet true.
  */
 private fun pageableFile(entry: XEntry, allowEmpty: Boolean = false): File? {
     val path = entry.localPath ?: entry.path.takeIf { entry.scheme == XId.SCHEME_FILE } ?: return null
-    return File(path).takeIf {
-        it.isFile && it.canRead() && (allowEmpty || it.length() > 0L)
-    }
+    return File(path).takeIf { isPageableLocalFile(it, allowEmpty) }
 }
+
+internal fun isPageableLocalFile(file: File, allowEmpty: Boolean): Boolean =
+    file.isFile && file.canRead() && (allowEmpty || file.length() > 0L || file.canWrite())
 
 /**
  * One open text document: the index over its bytes, how far indexing has come, and a bounded cache
