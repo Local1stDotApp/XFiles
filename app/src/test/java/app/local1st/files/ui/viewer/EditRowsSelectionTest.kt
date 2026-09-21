@@ -276,6 +276,21 @@ class EditRowsSelectionTest {
     }
 
     @Test
+    fun keepCaretScrolled_doesNothingWhenAlreadyVisible() {
+        assertNull(editKeepCaretScrolled(caret = 100, viewStart = 0, viewSize = 500, margin = 32))
+    }
+
+    @Test
+    fun keepCaretScrolled_pullsLeftWhenTheCaretIsBeforeTheViewport() {
+        assertEquals(18, editKeepCaretScrolled(caret = 50, viewStart = 100, viewSize = 500, margin = 32))
+    }
+
+    @Test
+    fun keepCaretScrolled_pullsRightWhenTheCaretIsPastTheViewport() {
+        assertEquals(12, editKeepCaretScrolled(caret = 480, viewStart = 0, viewSize = 500, margin = 32))
+    }
+
+    @Test
     fun replacement_collapsedAtEnd_takesTheInsertedTail() {
         assertEquals("\n", textFieldReplacement("hello", TextRange(5, 5), "hello\n"))
         assertEquals("X", textFieldReplacement("hello", TextRange(5, 5), "helloX"))
@@ -345,5 +360,20 @@ class EditRowsSelectionTest {
         swallow.mark(previous = false)
         now = 500L
         assertTrue(swallow.swallow(previous = false))
+    }
+
+    @Test
+    fun imeNewlineFlags_markATextFieldAsMultiLineWithNoEnterAction() {
+        val text = 1 // InputType.TYPE_CLASS_TEXT
+        val multiLine = 0x20000 // InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        val actionDone = 6 // EditorInfo.IME_ACTION_DONE
+        val actionNone = 1 // EditorInfo.IME_ACTION_NONE
+        val noEnterAction = 0x40000000 // EditorInfo.IME_FLAG_NO_ENTER_ACTION
+        assertEquals(text or multiLine, editImeNewlineInputType(text))
+        assertEquals(text, editImeNewlineInputType(text or multiLine) and text)
+        assertEquals(0, editImeNewlineInputType(2) and multiLine) // TYPE_CLASS_NUMBER
+        val options = editImeNewlineImeOptions(actionDone)
+        assertEquals(actionNone, options and 0xff)
+        assertEquals(noEnterAction, options and noEnterAction)
     }
 }

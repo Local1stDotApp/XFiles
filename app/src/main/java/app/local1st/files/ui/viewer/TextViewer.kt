@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputConnectionWrapper
@@ -16,6 +17,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -419,18 +421,14 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
                     )
                 },
                 actions = {
-                    // Not while editing: the field wraps whatever this says, so offering the choice
-                    // there would be offering one that does not exist.
-                    if (!editing) {
-                        TooltipIconButton(
-                            stringResource(if (wrap) R.string.stop_wrapping else R.string.wrap_lines),
-                            Icons.AutoMirrored.Outlined.WrapText,
-                            selected = wrap,
-                            // The app scope, not the viewer's: closing the viewer on the same tap
-                            // would otherwise cancel the write and lose the choice.
-                            onClick = { Graph.appScope.launch { Graph.settings.setTextWrap(!wrap) } },
-                        )
-                    }
+                    TooltipIconButton(
+                        stringResource(if (wrap) R.string.stop_wrapping else R.string.wrap_lines),
+                        Icons.AutoMirrored.Outlined.WrapText,
+                        selected = wrap,
+                        // The app scope, not the viewer's: closing the viewer on the same tap
+                        // would otherwise cancel the write and lose the choice.
+                        onClick = { Graph.appScope.launch { Graph.settings.setTextWrap(!wrap) } },
+                    )
                     if (canEdit) {
                         if (editing) {
                             val history = editGen.let { (editDocument?.canUndo == true) to (editDocument?.canRedo == true) }
@@ -477,6 +475,7 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
                                 initialLine = editFocusLine,
                                 initialColumn = editFocusColumn,
                                 chrome = chrome,
+                                wrap = wrap,
                                 readOnly = saving,
                                 focusRequester = editorFocus,
                                 handle = editorHandle,
@@ -566,6 +565,7 @@ private fun EditRows(
     initialLine: Int,
     initialColumn: Int,
     chrome: PaddingValues,
+    wrap: Boolean,
     readOnly: Boolean,
     focusRequester: FocusRequester,
     handle: EditorHandle,
@@ -577,6 +577,8 @@ private fun EditRows(
     val startText = document.rowText(startLine) ?: ""
     val startColumn = initialColumn.coerceIn(0, startText.length)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = startLine)
+    val horizontal = rememberScrollState()
+    var widest by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     var focused by remember { mutableIntStateOf(startLine) }
     var field by remember {
@@ -817,6 +819,10 @@ private fun EditRows(
         snapshotFlow { listState.firstVisibleItemIndex }
             .collect { onFirstVisibleRow(document.nearestFileRow(it)) }
     }
+    LaunchedEffect(wrap) {
+        fieldLayout = null
+        if (wrap) widest = 0
+    }
 
     val performMenu = rememberUpdatedState<(Int) -> Boolean> { id ->
         when (id) {
@@ -845,6 +851,10 @@ private fun EditRows(
     val handleKeyDelete = rememberUpdatedState<(Int, Int) -> Boolean> { before, after ->
         if (readOnly) return@rememberUpdatedState false
         deleteSelectionOrJoin(before, after)
+    }
+    val wrapLatest = rememberUpdatedState(wrap)
+    val insertNewline = rememberUpdatedState {
+        if (readOnly) false else replaceSelection("\n")
     }
     val systemToolbar = LocalTextToolbar.current
     val copyLatest = rememberUpdatedState { copySelection() }
@@ -882,7 +892,18 @@ private fun EditRows(
                 object : PlatformTextInputMethodRequest {
                     override fun createInputConnection(outAttributes: EditorInfo): InputConnection {
                         val base = request.createInputConnection(outAttributes)
+                        // Wrap-off uses singleLine so the row does not soft-wrap; that IME
+                        // treats Enter as an action. Advertise a multi-line editor instead.
+                        editImeWantNewline(outAttributes)
                         return object : InputConnectionWrapper(base, true) {
+                            override fun performEditorAction(editorAction: Int): Boolean = runIme {
+                                if (!wrapLatest.value && insertNewline.value()) {
+                                    true
+                                } else {
+                                    base.performEditorAction(editorAction)
+                                }
+                            }
+
                             override fun deleteSurroundingText(
                                 beforeLength: Int,
                                 afterLength: Int,
@@ -1024,9 +1045,35 @@ private fun EditRows(
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val density = LocalDensity.current
+        val contentWidth = with(density) { maxOf(widest, constraints.maxWidth).toDp() }
+        val padPx = with(density) { 12.dp.roundToPx() }
+        LaunchedEffect(wrap, field.selection.end, fieldLayout, constraints.maxWidth) {
+            if (wrap) return@LaunchedEffect
+            val layout = fieldLayout ?: return@LaunchedEffect
+            if (layout.layoutInput.text.text != field.text) return@LaunchedEffect
+            val viewport = constraints.maxWidth
+            if (viewport <= 0) return@LaunchedEffect
+            val off = field.selection.end.coerceIn(0, layout.layoutInput.text.length)
+            val caret = padPx + layout.getCursorRect(off).center.x.roundToInt()
+            val target = editKeepCaretScrolled(caret, horizontal.value, viewport, padPx)
+                ?: return@LaunchedEffect
+            horizontal.scrollTo(target.coerceAtMost(horizontal.maxValue.coerceAtLeast(0)))
+        }
+        Box(
+            if (wrap) Modifier.fillMaxSize()
+            else Modifier.fillMaxSize().horizontalScroll(horizontal),
+        ) {
         LazyColumn(
-            Modifier.fillMaxSize(),
+            if (wrap) {
+                Modifier.fillMaxSize()
+            } else {
+                Modifier
+                    .fillMaxHeight()
+                    .widthIn(min = contentWidth)
+                    .onSizeChanged { if (it.width > widest) widest = it.width }
+            },
             state = listState,
             contentPadding = PaddingValues(
                 top = chrome.calculateTopPadding() + 8.dp,
@@ -1035,9 +1082,9 @@ private fun EditRows(
         ) {
             items(rowCount) { i ->
                 val rowMod = Modifier
-                    .fillMaxWidth()
                     .heightIn(min = minLine)
                     .padding(horizontal = 12.dp)
+                    .then(if (wrap) Modifier.fillMaxWidth() else Modifier.width(IntrinsicSize.Max))
                 if (i == focused) {
                     CompositionLocalProvider(LocalTextToolbar provides editToolbar) {
                     InterceptPlatformTextInput(imeInterceptor) {
@@ -1092,6 +1139,8 @@ private fun EditRows(
                             readOnly = readOnly,
                             textStyle = textStyle,
                             cursorBrush = cursor,
+                            singleLine = !wrap,
+                            maxLines = if (wrap) Int.MAX_VALUE else 1,
                             onTextLayout = { fieldLayout = it },
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.None,
@@ -1131,6 +1180,8 @@ private fun EditRows(
                                     }
                                     if (readOnly) return@onPreviewKeyEvent false
                                     when (event.key) {
+                                        Key.Enter, Key.NumPadEnter ->
+                                            if (wrap) false else replaceSelection("\n")
                                         Key.Backspace -> handleKeyDelete.value(1, 0)
                                         Key.Delete -> handleKeyDelete.value(0, 1)
                                         Key.DirectionLeft -> {
@@ -1276,6 +1327,8 @@ private fun EditRows(
                             selectionColor,
                         ),
                         style = if (loadedText != null) textStyle else diskStyle,
+                        softWrap = wrap,
+                        maxLines = if (wrap) Int.MAX_VALUE else 1,
                         modifier = rowMod.pointerInput(i, readOnly) {
                             awaitEachGesture {
                                 val down = awaitFirstDown()
@@ -1315,6 +1368,7 @@ private fun EditRows(
                     )
                 }
             }
+        }
         }
         ViewerScrollbar(
             listState,
@@ -1359,6 +1413,46 @@ internal fun editKeepInViewDelta(
         top < usableTop -> top - usableTop
         bottom > usableBottom -> bottom - usableBottom
         else -> 0
+    }
+}
+
+/**
+ * IME flags a multi-line EditText uses, so software Enter is a newline even when
+ * the Compose field is [singleLine] (wrap off: one visual row, no soft wrap).
+ */
+internal fun editImeNewlineInputType(inputType: Int): Int =
+    if (inputType and InputType.TYPE_MASK_CLASS == InputType.TYPE_CLASS_TEXT) {
+        inputType or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+    } else {
+        inputType
+    }
+
+internal fun editImeNewlineImeOptions(imeOptions: Int): Int =
+    (imeOptions and EditorInfo.IME_MASK_ACTION.inv()) or
+        EditorInfo.IME_ACTION_NONE or
+        EditorInfo.IME_FLAG_NO_ENTER_ACTION
+
+internal fun editImeWantNewline(info: EditorInfo) {
+    info.inputType = editImeNewlineInputType(info.inputType)
+    info.imeOptions = editImeNewlineImeOptions(info.imeOptions)
+}
+
+/** New scroll offset that keeps [caret] in [viewStart, viewStart + viewSize), or null. */
+internal fun editKeepCaretScrolled(
+    caret: Int,
+    viewStart: Int,
+    viewSize: Int,
+    margin: Int,
+): Int? {
+    if (viewSize <= 0) return null
+    val pad = margin.coerceAtMost(viewSize / 2)
+    val viewEnd = viewStart + viewSize
+    val lo = (caret - pad).coerceAtLeast(0)
+    val hi = caret + pad
+    return when {
+        lo < viewStart -> lo
+        hi > viewEnd -> (hi - viewSize).coerceAtLeast(0)
+        else -> null
     }
 }
 
