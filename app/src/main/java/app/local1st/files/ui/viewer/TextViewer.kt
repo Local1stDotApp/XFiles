@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -101,6 +102,7 @@ import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -607,6 +609,28 @@ private fun EditRows(
     val imeHasRange = remember { AtomicBoolean(false) }
     val extendHeld = remember { AtomicBoolean(false) }
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
+    // Where focus waits while the field moves to another row. Taking the focused field out would
+    // leave nothing focused, so Compose clears the view's focus and the system hides the keyboard,
+    // only for the new row's field to show it again. Focus handed from one text field to another
+    // keeps the keyboard up, so this is a text field too.
+    val parking = remember { FocusRequester() }
+
+    /**
+     * Puts the field on [row]. Focus moves to [parking] while the old field is still there to
+     * hand it over, and the new field takes it back once composed. [focused] changes first, so the
+     * old field's blur edit misses its row check.
+     *
+     * The hand-over runs on the UI dispatcher, which the recomposition that removes the old field
+     * waits behind. Called straight from a tap it would stop the old IME session at once but start
+     * the parking one a dispatch later, and the keyboard's next-frame update would see only the
+     * stop and hide it. Inside the dispatcher both land before that update, which then restarts
+     * input instead.
+     */
+    fun focusRow(row: Int) {
+        if (row == focused) return
+        focused = row
+        scope.launch { parking.requestFocus() }
+    }
 
     fun caretNow() = EditCaret(focused, field.selection.end)
     fun anchorNow() = EditCaret(anchorLine, anchorCol)
@@ -657,7 +681,7 @@ private fun EditRows(
                     }
                     if (loaded.keptRow >= 0 && loaded.keptRow != focused) {
                         val shift = loaded.keptRow - focused
-                        focused = loaded.keptRow
+                        focusRow(loaded.keptRow)
                         anchorLine += shift
                     }
                     // Rows that gained or lost neighbours above the viewport would slide the
@@ -700,7 +724,7 @@ private fun EditRows(
         // the size cap had been hit.
         if (!editExtendStaysInStretch(extend, target, document.loadedRange(anchorLine))) return
         val col = column.coerceIn(0, text.length)
-        focused = target
+        focusRow(target)
         if (!extend) {
             anchorLine = target
             anchorCol = col
@@ -1061,6 +1085,22 @@ private fun EditRows(
                 ?: return@LaunchedEffect
             horizontal.scrollTo(target.coerceAtMost(horizontal.maxValue.coerceAtLeast(0)))
         }
+        // Holds focus for a frame or two while the field changes rows; anything typed into it
+        // meanwhile is dropped. Its keyboard options are the field's, so the keyboard keeps its
+        // layout through the hand-over.
+        BasicTextField(
+            value = "",
+            onValueChange = {},
+            cursorBrush = SolidColor(Color.Transparent),
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.None,
+                imeAction = ImeAction.None,
+            ),
+            modifier = Modifier
+                .size(0.dp)
+                .focusRequester(parking)
+                .clearAndSetSemantics {},
+        )
         Box(
             if (wrap) Modifier.fillMaxSize()
             else Modifier.fillMaxSize().horizontalScroll(horizontal),
