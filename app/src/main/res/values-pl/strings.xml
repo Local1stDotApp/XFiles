@@ -154,6 +154,15 @@ Najpierw zamontuj tę lokalizację w innej aplikacji jako folder — RCX (rclone
     <string name="storage_access_summary">Wymagany do przeglądania plików na tym urządzeniu i zarządzania nimi.</string>
     <string name="grant_access">Przyznaj dostęp</string>
     <string name="delete_confirmation">Usunąć %1$s%2$s? Tej operacji nie można cofnąć.</string>
+    <string name="recycle_bin">Kosz</string>
+    <string name="move_to_recycle_bin_confirmation">Przenieść %1$s%2$s do kosza?</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s zostanie przeniesione do kosza. Elementy, których nie można odzyskać, zostaną trwale usunięte.</string>
+    <string name="delete_permanently">Usuń trwale</string>
+    <string name="restore">Przywróć</string>
+    <string name="empty_recycle_bin">Opróżnij kosz</string>
+    <string name="empty_recycle_bin_confirmation">Trwale usunąć wszystko z kosza? Tej operacji nie można cofnąć.</string>
+    <string name="recycle_bin_empty">Kosz jest pusty</string>
+    <string name="recycle_bin_unknown_location">%1$s · nieznana pierwotna lokalizacja</string>
     <string name="and_more"> i jeszcze %1$d</string>
     <string name="create_zip_in">Utwórz ZIP w: %1$s</string>
     <string name="location">Lokalizacja: %1$s</string>

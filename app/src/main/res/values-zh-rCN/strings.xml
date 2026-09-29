@@ -152,6 +152,15 @@
     <string name="storage_access_summary">用于浏览和管理此设备上的文件。</string>
     <string name="grant_access">授予访问权限</string>
     <string name="delete_confirmation">删除 %1$s%2$s？此操作无法撤销。</string>
+    <string name="recycle_bin">回收站</string>
+    <string name="move_to_recycle_bin_confirmation">将 %1$s%2$s 移到回收站？</string>
+    <string name="mixed_delete_confirmation">将 %1$s%2$s 移到回收站。无法恢复的项目会被永久删除。</string>
+    <string name="delete_permanently">永久删除</string>
+    <string name="restore">还原</string>
+    <string name="empty_recycle_bin">清空回收站</string>
+    <string name="empty_recycle_bin_confirmation">永久删除回收站中的全部内容？此操作无法撤销。</string>
+    <string name="recycle_bin_empty">回收站是空的</string>
+    <string name="recycle_bin_unknown_location">%1$s · 原始位置未知</string>
     <string name="and_more">，以及另外 %1$d 项</string>
     <string name="create_zip_in">在 %1$s 中创建压缩包</string>
     <string name="location">位置：%1$s</string>

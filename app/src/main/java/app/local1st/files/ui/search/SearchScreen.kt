@@ -37,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +61,7 @@ import app.local1st.files.core.util.Format
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.browser.EntryIcon
 import app.local1st.files.ui.components.TooltipIconButton
+import app.local1st.files.ui.dialogs.searchHitLocation
 import app.local1st.files.ui.main.MainViewModel
 import app.local1st.files.ui.navigationBarsStable
 import app.local1st.files.ui.statusBarsStable
@@ -123,6 +125,8 @@ fun SearchScreen(
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { focusRequester.requestFocus() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val binName = stringResource(R.string.recycle_bin)
+    val volumeRoots = Graph.roots.mountedVolumes.collectAsState().value.map { it.path }
 
     val bottomSafe = WindowInsets.ime.union(WindowInsets.navigationBarsStable)
 
@@ -232,7 +236,12 @@ fun SearchScreen(
                     ),
                 ) {
                     items(results, key = { it.entry.id }) { hit ->
-                        SearchHitRow(hit, onClick = { vm.revealSearchHit(hit.entry.id) })
+                        SearchHitRow(
+                            hit,
+                            volumeRoots,
+                            binName,
+                            onClick = { vm.revealSearchHit(hit.entry.id) },
+                        )
                     }
                 }
             }
@@ -241,7 +250,12 @@ fun SearchScreen(
 }
 
 @Composable
-private fun SearchHitRow(hit: SearchHit, onClick: () -> Unit) {
+private fun SearchHitRow(
+    hit: SearchHit,
+    volumeRoots: List<String>,
+    binName: String,
+    onClick: () -> Unit,
+) {
     val entry = hit.entry
     Row(
         modifier = Modifier
@@ -264,7 +278,7 @@ private fun SearchHitRow(hit: SearchHit, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                hit.parentId.substringAfter("://"),
+                searchHitLocation(hit.parentId, volumeRoots, binName),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

@@ -30,7 +30,14 @@ import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
  * LRU keyed by archive path + file mtime + length, so re-listing directories and
  * stat() are cheap. All methods are blocking IO (callers run them on Dispatchers.IO).
  */
-class ArchiveFileSystem : XFileSystem {
+class ArchiveFileSystem(
+    /** Volume roots whose `.xfiles-trash` holds links that must not be followed. */
+    private val volumeRoots: () -> List<String> = { emptyList() },
+    /** Size and mtime of a grant-only archive. Null when the grant has no document. */
+    private val grantStamp: (File) -> Pair<Long, Long>? = { null },
+    /** Bytes of an archive [File] cannot see. Null when there is no grant stream. */
+    private val openGrant: (File) -> InputStream? = { null },
+) : XFileSystem {
 
     override val scheme: String = XId.SCHEME_ZIP
 
@@ -54,8 +61,12 @@ class ArchiveFileSystem : XFileSystem {
     override fun stat(id: String): XEntry? {
         if (XId.schemeOf(id) != XId.SCHEME_ZIP) return null
         val archivePath = XId.zipArchivePath(id)
-        val archiveFile = File(archivePath)
-        if (!archiveFile.isFile) return null
+        if (followsIntoBin(archivePath)) return null
+        val archiveFile = try {
+            requireArchiveFile(archivePath)
+        } catch (_: IOException) {
+            return null
+        }
         val tree = try {
             treeFor(archiveFile)
         } catch (_: Exception) {
@@ -482,10 +493,71 @@ class ArchiveFileSystem : XFileSystem {
         else -> throw IOException("Not an archive: ${dir.name}")
     }
 
+    private fun followsIntoBin(path: String): Boolean {
+        val roots = volumeRoots()
+        return TrashPaths.isVolumeBinSymlink(path, roots) || TrashPaths.crossesVolumeBin(path, roots)
+    }
+
+    private data class StagedGrant(val file: File, val size: Long, val mtime: Long)
+
+    private val stagedGrants = HashMap<String, StagedGrant>()
+    private val stagedGrantLock = Any()
+
     private fun requireArchiveFile(path: String): File {
         val file = File(path)
-        if (!file.isFile) throw IOException("Archive not found: ${file.name}")
-        return file
+        // File.isFile and ZipFile follow links. A bin symlink must not open the live target.
+        if (followsIntoBin(path)) {
+            throw IOException("Cannot open ${file.name}")
+        }
+        if (file.isFile) return file
+        return stageGrantArchive(file) ?: throw IOException("Archive not found: ${file.name}")
+    }
+
+    /** ZipFile needs a real file. Reuse a staged copy only while size and mtime match. */
+    private fun stageGrantArchive(file: File): File? {
+        val path = file.absolutePath
+        val stamp = grantStamp(file)
+        if (stamp != null) {
+            synchronized(stagedGrantLock) {
+                val cached = stagedGrants[path]
+                if (cached != null && cached.file.isFile &&
+                    cached.size == stamp.first && cached.mtime == stamp.second
+                ) {
+                    return cached.file
+                }
+            }
+        }
+        val input = openGrant(file) ?: return null
+        val staged = File.createTempFile("xfiles-arc-", stageSuffix(file.name))
+        staged.deleteOnExit()
+        try {
+            input.use { source -> staged.outputStream().use { dest -> source.copyTo(dest) } }
+        } catch (error: IOException) {
+            staged.delete()
+            throw error
+        }
+        if (stamp == null) return staged
+        synchronized(stagedGrantLock) {
+            val current = stagedGrants[path]
+            if (current != null && current.file.isFile &&
+                current.size == stamp.first && current.mtime == stamp.second
+            ) {
+                staged.delete()
+                return current.file
+            }
+            stagedGrants[path] = StagedGrant(staged, stamp.first, stamp.second)
+            if (current != null) current.file.delete()
+        }
+        return staged
+    }
+
+    /** Compound tar suffixes must survive; format detection reads the staged name. */
+    private fun stageSuffix(name: String): String {
+        val lower = name.lowercase()
+        val compound = listOf(".tar.gz", ".tar.bz2", ".tar.xz").firstOrNull { lower.endsWith(it) }
+        if (compound != null) return compound
+        val suffix = name.substringAfterLast('.', "")
+        return if (suffix.isNotEmpty() && suffix.length <= 8 && '.' !in suffix) ".$suffix" else ".bin"
     }
 
     /** Android's ZipFile rejects duplicate names; Commons Compress safely exposes the first one. */

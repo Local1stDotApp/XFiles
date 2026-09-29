@@ -2,6 +2,7 @@ package app.local1st.files.ui.browser
 
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.XEntry
+import app.local1st.files.core.fs.TrashPaths
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.prefs.SessionDirectory
 import app.local1st.files.core.prefs.SessionPane
@@ -307,6 +308,116 @@ internal fun pathInsidePaneRoots(id: String, topLevelIds: Set<String>): List<Str
     return null
 }
 
+/**
+ * Ancestors to expand for a hit inside a volume bin: the Recycle Bin root, then the
+ * trashed folder chain. Hidden `.xfiles-trash` directories are not in the chain.
+ * Null when [hitId] is not a file in a mounted volume's bin.
+ */
+internal fun binRevealAncestors(hitId: String, volumeRoots: List<String>): List<String>? {
+    val scheme = XId.schemeOf(hitId)
+    val fileHit = when (scheme) {
+        XId.SCHEME_FILE -> hitId
+        XId.SCHEME_ZIP -> {
+            val archive = XId.zipArchivePath(hitId)
+            if (!TrashPaths.isInsideVolumeBin(archive, volumeRoots)) return null
+            XId.file(archive)
+        }
+        else -> return null
+    }
+    val chain = fileBinRevealAncestors(fileHit, volumeRoots) ?: return null
+    if (scheme != XId.SCHEME_ZIP) return chain
+    if (chain.last() != fileHit) chain += fileHit
+    val inner = XId.zipInnerPath(hitId)
+    if (inner.isEmpty()) return chain
+    val archivePath = XId.zipArchivePath(hitId)
+    var built = ""
+    for (segment in inner.split('/').dropLast(1)) {
+        built = if (built.isEmpty()) segment else "$built/$segment"
+        chain += XId.zip(archivePath, built)
+    }
+    return chain
+}
+
+/** File-id ancestors under `trash://`. Null when [hitId] is outside every mounted bin. */
+private fun fileBinRevealAncestors(hitId: String, volumeRoots: List<String>): ArrayList<String>? {
+    val path = hitId.substringAfter("://").trimEnd('/')
+    if (!TrashPaths.isConcealedBinPath(path, volumeRoots)) return null
+    val chain = ArrayList<String>()
+    chain += XId.TRASH_ROOT
+    // topLevel() only matches a single path segment. A file inside a trashed folder
+    // is deeper, and that folder is the first visible row under trash://.
+    val marker = "/${TrashPaths.DIR_NAME}/files/"
+    val idx = path.indexOf(marker)
+    if (idx < 0) return chain
+    val rest = path.substring(idx + marker.length)
+    val slash = rest.indexOf('/')
+    if (slash <= 0) return chain
+    val id = rest.substring(0, slash)
+    if (!TrashPaths.isId(id)) return chain
+    val payload = rest.substring(slash + 1)
+    val stored = path.substring(0, idx + marker.length) + id + "/" + payload.substringBefore('/')
+    if (TrashPaths.samePath(stored, path)) return chain
+    if (!path.startsWith("$stored/")) return chain
+    chain += XId.file(stored)
+    var cursor = stored
+    for (segment in path.removePrefix("$stored/").split('/').dropLast(1)) {
+        cursor = "$cursor/$segment"
+        chain += XId.file(cursor)
+    }
+    return chain
+}
+
+/**
+ * Focus id to persist. A `zip://` hit inside the bin must not be saved as itself:
+ * its file parent is the hidden `.xfiles-trash` path, so the next launch opens the volume.
+ */
+internal fun focusForBinPath(id: String, volumeRoots: List<String>): String {
+    val path = when (XId.schemeOf(id)) {
+        XId.SCHEME_FILE -> id.substringAfter("://")
+        XId.SCHEME_ZIP -> XId.zipArchivePath(id)
+        else -> return id
+    }
+    return if (TrashPaths.isConcealedBinPath(path, volumeRoots)) XId.TRASH_ROOT else id
+}
+
+/** Visual parent when the row is not stored under [XId.parent], else the id parent. */
+internal fun siblingParentId(entryId: String, visualParents: Map<String, String>): String? =
+    visualParents[entryId] ?: XId.parent(entryId)
+
+/** Selection ids that are [gone] or stored under one of them. */
+internal fun selectionWithoutGone(selected: Set<String>, gone: Set<String>): Set<String> {
+    if (selected.isEmpty() || gone.isEmpty()) return selected
+    return selected.filterNotTo(LinkedHashSet()) { id ->
+        gone.any { root -> id == root || id.startsWith("$root/") } ||
+            zipArchiveUnder(id, gone)
+    }
+}
+
+private fun zipArchiveUnder(id: String, gone: Set<String>): Boolean {
+    if (XId.schemeOf(id) != XId.SCHEME_ZIP) return false
+    val archive = XId.file(XId.zipArchivePath(id))
+    return gone.any { root -> archive == root || archive.startsWith("$root/") }
+}
+
+/**
+ * A failed refresh of the bin must not replace rows the user already has.
+ * Other folders still publish the (possibly empty) result of the failed read.
+ */
+internal fun rowsAfterFailedListing(
+    id: String,
+    previous: List<XEntry>?,
+    loaded: List<XEntry>,
+    error: String?,
+): List<XEntry> =
+    if (error != null && id == XId.TRASH_ROOT && !previous.isNullOrEmpty()) previous else loaded
+
+/** Bin rows whose bytes still live on a volume that is mounted right now. */
+internal fun trashRowsOnMountedVolumes(rows: List<XEntry>, mountedRoots: List<String>): List<XEntry> =
+    rows.filter { entry ->
+        val path = entry.localPath ?: entry.path
+        mountedRoots.any { TrashPaths.isInside(it, path) }
+    }
+
 /** Removes stale protocol ancestors and ids from volumes/favorites that are no longer pane roots. */
 internal fun reachableExpandedIds(
     expandedIds: Set<String>,
@@ -608,10 +719,29 @@ class PaneController(
      */
     private fun applyPaneRoots(list: List<XEntry>) {
         val topLevelIds = list.mapTo(HashSet()) { it.id }
+        val mountedRoots = list.mapNotNull { entry ->
+            if (entry.kind != EntryKind.VOLUME_INTERNAL &&
+                entry.kind != EntryKind.VOLUME_SD &&
+                entry.kind != EntryKind.VOLUME_USB
+            ) {
+                null
+            } else {
+                entry.localPath ?: entry.path
+            }
+        }
+        var reloadTrash = false
         tree.update { current ->
             val expanded = reachableExpandedIds(current.expanded, topLevelIds)
             val children = current.children.filterKeys { id ->
                 id in topLevelIds || pathInsidePaneRoots(id, topLevelIds) != null
+            }.toMutableMap()
+            // A cached trash:// listing does not follow plug/unplug on its own.
+            // Drop rows whose volume is gone now, then reload so a newly mounted bin shows up.
+            if (XId.TRASH_ROOT in children || XId.TRASH_ROOT in expanded) {
+                reloadTrash = true
+                children[XId.TRASH_ROOT]?.let { rows ->
+                    children[XId.TRASH_ROOT] = trashRowsOnMountedVolumes(rows, mountedRoots)
+                }
             }
             current.copy(
                 roots = list,
@@ -639,6 +769,9 @@ class PaneController(
                 candidate = XId.parent(candidate)
             }
             focusedDirId.value = candidate ?: list.firstOrNull()?.id
+        }
+        if (reloadTrash) {
+            list.firstOrNull { it.id == XId.TRASH_ROOT }?.let(::load)
         }
     }
 
@@ -1052,8 +1185,9 @@ class PaneController(
                 current.copy(loading = current.loading - id)
             } else {
                 applied = true
+                val shown = rowsAfterFailedListing(id, current.children[id], kids, error)
                 current.copy(
-                    children = current.children + (id to kids),
+                    children = current.children + (id to shown),
                     loading = current.loading - id,
                     errors = if (error == null) current.errors - id
                     else current.errors + (id to error),
@@ -1070,11 +1204,21 @@ class PaneController(
         if (entry.id in tree.value.expanded) collapse(entry) else expand(entry)
     }
 
+    /**
+     * A directory inside a volume bin is not a copy destination. Focus stays on the
+     * Recycle Bin root so the other pane and the breadcrumb do not follow the hidden path.
+     */
+    private fun paneFocus(id: String?): String? {
+        if (id == null) return null
+        // Peek only. A fresh StorageManager scan holds the mount lock and stalls expand.
+        return focusForBinPath(id, Graph.mountedVolumePaths())
+    }
+
     fun expand(entry: XEntry) {
         if (!entry.isContainer) return
         finishStartupRestoreForInteraction()
         markExpanded(entry.id)
-        focusedDirId.value = entry.id
+        focusedDirId.value = paneFocus(entry.id)
         // Reload when uncached or when the last attempt failed (e.g. before permission grant).
         val current = tree.value
         if (current.children[entry.id] == null || entry.id in current.errors) load(entry)
@@ -1105,9 +1249,10 @@ class PaneController(
         tree.update { it.copy(expanded = updated) }
         sessionExpanded.value = updated
         focusedDirId.update { focus ->
-            if (focus != null && (focus == entry.id || focus.startsWith(entry.id + "/") ||
+            val next = if (focus != null && (focus == entry.id || focus.startsWith(entry.id + "/") ||
                         isAncestorOf(entry.id, focus))
             ) entry.id else focus
+            paneFocus(next)
         }
     }
 
@@ -1122,7 +1267,7 @@ class PaneController(
 
     fun focus(entry: XEntry) {
         finishStartupRestoreForInteraction()
-        focusedDirId.value = if (entry.isContainer) entry.id else XId.parent(entry.id)
+        focusedDirId.value = paneFocus(if (entry.isContainer) entry.id else XId.parent(entry.id))
     }
 
     /** Expand the ancestor chain of [id], then scroll to it. See [ScrollRequest] for [animate]. */
@@ -1136,6 +1281,27 @@ class PaneController(
 
     /** Reveals only the visual path below a real pane root; protocol ancestors stay out of state. */
     private suspend fun revealPathNow(id: String) {
+        // The pane scope is main. A mount scan here stalls the search-hit click.
+        val volumeRoots = withContext(Dispatchers.IO) { Graph.freshMountedVolumePaths() }
+        val binAncestors = binRevealAncestors(id, volumeRoots)
+        if (binAncestors != null) {
+            // The stored file:// path sits under a hidden `.xfiles-trash` directory.
+            // Expanding that chain collapses the bin and never shows the row.
+            for (ancestorId in binAncestors) {
+                val entry = if (ancestorId == XId.TRASH_ROOT) {
+                    tree.value.roots.firstOrNull { it.id == XId.TRASH_ROOT }
+                } else {
+                    findEntry(ancestorId) ?: withContext(Dispatchers.IO) {
+                        runCatching { registry.forId(ancestorId).stat(ancestorId) }.getOrNull()
+                    }
+                } ?: continue
+                if (!entry.isContainer) continue
+                markExpanded(entry.id)
+                if (tree.value.children[entry.id] == null) loadNow(entry)
+            }
+            focusedDirId.value = XId.TRASH_ROOT
+            return
+        }
         val topLevelIds = tree.value.roots.mapTo(HashSet()) { it.id }
         val path = pathInsidePaneRoots(id, topLevelIds) ?: return
         for (ancestorId in path.dropLast(1)) {
@@ -1148,8 +1314,9 @@ class PaneController(
             markExpanded(entry.id)
             if (tree.value.children[entry.id] == null) loadNow(entry)
         }
-        focusedDirId.value = findEntry(id)?.takeIf { it.isContainer }?.id
-            ?: path.dropLast(1).lastOrNull()
+        focusedDirId.value = paneFocus(
+            findEntry(id)?.takeIf { it.isContainer }?.id ?: path.dropLast(1).lastOrNull(),
+        )
     }
 
     /**
@@ -1252,7 +1419,7 @@ class PaneController(
     private fun selectable(entry: XEntry): Boolean = when (entry.kind) {
         EntryKind.VOLUME_INTERNAL, EntryKind.VOLUME_SD, EntryKind.VOLUME_USB,
         EntryKind.APPS_ROOT, EntryKind.APP_COMPONENT_GROUP, EntryKind.APP_COMPONENT,
-        EntryKind.ROOT, EntryKind.LOCATION,
+        EntryKind.ROOT, EntryKind.LOCATION, EntryKind.RECYCLE_BIN,
         -> false
         else -> true
     }
@@ -1309,6 +1476,12 @@ class PaneController(
 
     fun clearSelection() = selection.update { emptySet() }
 
+    /** Drops [ids] and anything selected inside them. Other panes can hold the same rows. */
+    fun dropSelection(ids: Set<String>) {
+        if (ids.isEmpty()) return
+        selection.update { selectionWithoutGone(it, ids) }
+    }
+
     fun selectionEntries(): List<XEntry> {
         val sel = selection.value
         if (sel.isEmpty()) return emptyList()
@@ -1344,7 +1517,8 @@ class PaneController(
 
     /** Cached siblings of [entry] with the given category (for viewer paging/playlists). */
     fun siblings(entry: XEntry, category: FileCategory): List<XEntry> {
-        val parentId = XId.parent(entry.id) ?: return listOf(entry)
+        val parentId = siblingParentId(entry.id, visualParentsOf(tree.value.children))
+            ?: return listOf(entry)
         val kids = tree.value.children[parentId] ?: return listOf(entry)
         val sorted = sortEntries(kids, sortSpec.value ?: SortSpec())
         return sorted.filter { !it.isDir && FileTypes.categoryOf(it.name, it.mime) == category }

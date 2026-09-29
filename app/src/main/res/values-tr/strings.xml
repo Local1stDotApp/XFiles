@@ -154,6 +154,15 @@
     <string name="storage_access_summary">Bu cihazdaki dosyalara göz atmak ve dosyaları yönetmek için gerekli.</string>
     <string name="grant_access">Erişim ver</string>
     <string name="delete_confirmation">%1$s%2$s silinsin mi? Bu geri alınamaz.</string>
+    <string name="recycle_bin">Geri Dönüşüm Kutusu</string>
+    <string name="move_to_recycle_bin_confirmation">%1$s%2$s Geri Dönüşüm Kutusu\'na taşınsın mı?</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s Geri Dönüşüm Kutusu\'na taşınır. Kurtarılamayan öğeler kalıcı olarak silinir.</string>
+    <string name="delete_permanently">Kalıcı olarak sil</string>
+    <string name="restore">Geri yükle</string>
+    <string name="empty_recycle_bin">Geri Dönüşüm Kutusu\'nu boşalt</string>
+    <string name="empty_recycle_bin_confirmation">Geri Dönüşüm Kutusu\'ndaki her şey kalıcı olarak silinsin mi? Bu geri alınamaz.</string>
+    <string name="recycle_bin_empty">Geri Dönüşüm Kutusu boş</string>
+    <string name="recycle_bin_unknown_location">%1$s · özgün konum bilinmiyor</string>
     <string name="and_more"> ve %1$d öğe daha</string>
     <string name="create_zip_in">%1$s konumunda ZIP oluştur</string>
     <string name="location">Konum: %1$s</string>

@@ -155,6 +155,15 @@
     <string name="storage_access_summary">Needed to browse and manage files on this device.</string>
     <string name="grant_access">Grant access</string>
     <string name="delete_confirmation">Delete %1$s%2$s? This cannot be undone.</string>
+    <string name="recycle_bin">Recycle Bin</string>
+    <string name="move_to_recycle_bin_confirmation">Move %1$s%2$s to the Recycle Bin?</string>
+    <string name="mixed_delete_confirmation">Move %1$s%2$s to the Recycle Bin. Anything that cannot be recovered is deleted permanently.</string>
+    <string name="delete_permanently">Delete permanently</string>
+    <string name="restore">Restore</string>
+    <string name="empty_recycle_bin">Empty Recycle Bin</string>
+    <string name="empty_recycle_bin_confirmation">Permanently delete everything in the Recycle Bin? This cannot be undone.</string>
+    <string name="recycle_bin_empty">Recycle Bin is empty</string>
+    <string name="recycle_bin_unknown_location">%1$s · original location unknown</string>
     <string name="and_more"> and %1$d more</string>
     <string name="create_zip_in">Create zip in %1$s</string>
     <string name="location">Location: %1$s</string>

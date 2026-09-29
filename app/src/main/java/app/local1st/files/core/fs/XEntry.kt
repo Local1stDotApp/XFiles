@@ -67,6 +67,8 @@ enum class EntryKind {
     ROOT,
     /** A granted Storage Access Framework document tree, shown as a pane root. */
     LOCATION,
+    /** The Recycle Bin pane root. Its children are real files stored on each volume. */
+    RECYCLE_BIN,
 }
 
 object XId {
@@ -75,6 +77,8 @@ object XId {
     const val SCHEME_APPS = "apps"
     const val SCHEME_ROOT = "root"
     const val SCHEME_SAF = "saf"
+    const val SCHEME_TRASH = "trash"
+    const val TRASH_ROOT = "$SCHEME_TRASH://"
     const val ARCHIVE_SEP = "!/"
 
     fun file(absolutePath: String): String = "$SCHEME_FILE://$absolutePath"
@@ -175,6 +179,7 @@ object XId {
                 val docs = safDocumentIds(id)
                 return if (docs.isEmpty()) null else saf(locationId, docs.dropLast(1))
             }
+            SCHEME_TRASH -> return null
             else -> return null
         }
     }

@@ -21,6 +21,7 @@ import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +59,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import app.local1st.files.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.fs.priv.PrivilegedAccess
@@ -78,12 +81,30 @@ import kotlinx.coroutines.isActive
 @Composable
 fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
     val privilegedFdAvailable = PrivilegedAccess.canOpenFd()
-    val playable = remember(entry.id, playlist, privilegedFdAvailable) {
-        playlist.ifEmpty { listOf(entry) }.filter {
-            mediaUri(it) != null || (it.scheme == XId.SCHEME_ROOT && privilegedFdAvailable)
+    var prepared by remember(entry.id, playlist) { mutableStateOf<List<Pair<XEntry, Uri>>?>(null) }
+    LaunchedEffect(entry.id, playlist, privilegedFdAvailable) {
+        val rows = playlist.ifEmpty { listOf(entry) }
+        prepared = withContext(Dispatchers.IO) {
+            rows.mapNotNull { item ->
+                val uri = mediaUri(item)
+                    ?: if (item.scheme == XId.SCHEME_ROOT && privilegedFdAvailable) {
+                        Uri.Builder().scheme(XId.SCHEME_ROOT).path(item.path).build()
+                    } else {
+                        null
+                    }
+                uri?.let { item to it }
+            }
         }
     }
-    if (playable.isEmpty()) {
+    val playable = prepared
+    if (playable == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        return
+    }
+    val startIndex = mediaStartIndex(entry.id, playable.map { it.first.id })
+    if (playable.isEmpty() || startIndex == null) {
         Column(
             Modifier.fillMaxSize().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -104,10 +125,9 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
     }
 
     val context = LocalContext.current
-    val startIndex = remember(playable, entry.id) {
-        playable.indexOfFirst { it.id == entry.id }.coerceAtLeast(0)
-    }
-    val player = remember {
+    // Recreate when the queue changes. Shizuku/root arriving later adds rows the
+    // first player never received, and next/previous would disagree with the UI.
+    val player = remember(playable) {
         val dataSourceFactory = DefaultDataSource.Factory(context, PrivilegedDataSource.Factory())
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(
@@ -117,11 +137,7 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
             .build()
             .apply {
                 setMediaItems(
-                    playable.map {
-                        val uri = mediaUri(it)
-                            ?: Uri.Builder().scheme(XId.SCHEME_ROOT).path(it.path).build()
-                        MediaItem.fromUri(uri)
-                    },
+                    playable.map { (_, uri) -> MediaItem.fromUri(uri) },
                     startIndex,
                     C.TIME_UNSET,
                 )
@@ -130,7 +146,7 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
             }
     }
 
-    var currentIndex by remember { mutableIntStateOf(startIndex) }
+    var currentIndex by remember(playable) { mutableIntStateOf(startIndex) }
     var playing by remember { mutableStateOf(false) }
     var metadata by remember { mutableStateOf(MediaMetadata.EMPTY) }
     var hasPrevious by remember { mutableStateOf(false) }
@@ -155,7 +171,7 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
         }
     }
 
-    val currentEntry = playable[currentIndex.coerceIn(0, playable.lastIndex)]
+    val currentEntry = playable[currentIndex.coerceIn(0, playable.lastIndex)].first
     val isVideo = FileTypes.categoryOf(currentEntry.name, currentEntry.mime) == FileCategory.VIDEO
 
     if (isVideo) {
@@ -185,7 +201,23 @@ fun MediaViewer(entry: XEntry, playlist: List<XEntry>, onClose: () -> Unit) {
 private fun mediaUri(entry: XEntry) = when {
     entry.localPath != null -> File(entry.localPath).toUri()
     entry.scheme == "content" -> entry.id.toUri()
+    entry.scheme == XId.SCHEME_FILE -> grantMediaUri(entry)
     else -> null
+}
+
+/** Content URI for a file the grant can open and [File] cannot. A bin symlink stays unplayable. */
+private fun grantMediaUri(entry: XEntry): Uri? {
+    val path = entry.path
+    if (path.isEmpty()) return null
+    val file = File(path)
+    if (java.nio.file.Files.isSymbolicLink(file.toPath())) return null
+    return runCatching { app.local1st.files.di.Graph.legacySaf?.persistedDocument(file)?.uri }.getOrNull()
+}
+
+/** Null when the tapped item is not playable. Do not start a different sibling. */
+internal fun mediaStartIndex(tappedId: String, playableIds: List<String>): Int? {
+    val index = playableIds.indexOf(tappedId)
+    return if (index < 0) null else index
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)

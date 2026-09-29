@@ -1869,7 +1869,8 @@ private fun TextBanner(message: String, color: Color, width: Dp, wrap: Boolean) 
  * work even if [File.canWrite] is not yet true.
  */
 private fun pageableFile(entry: XEntry, allowEmpty: Boolean = false): File? {
-    val path = entry.localPath ?: entry.path.takeIf { entry.scheme == XId.SCHEME_FILE } ?: return null
+    // A bin symlink clears localPath so paging cannot follow it. openIn still refuses.
+    val path = entry.localPath ?: return null
     return File(path).takeIf { isPageableLocalFile(it, allowEmpty) }
 }
 

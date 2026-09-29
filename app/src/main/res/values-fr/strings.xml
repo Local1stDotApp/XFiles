@@ -154,6 +154,15 @@ Montez d’abord cet emplacement comme dossier dans une autre appli — RCX (rcl
     <string name="storage_access_summary">Nécessaire pour parcourir et gérer les fichiers sur cet appareil.</string>
     <string name="grant_access">Accorder l\'accès</string>
     <string name="delete_confirmation">Supprimer %1$s%2$s ? Cela ne peut pas être annulé.</string>
+    <string name="recycle_bin">Corbeille</string>
+    <string name="move_to_recycle_bin_confirmation">Déplacer %1$s%2$s vers la corbeille ?</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s sera déplacé vers la corbeille. Ce qui ne peut pas être récupéré est supprimé définitivement.</string>
+    <string name="delete_permanently">Supprimer définitivement</string>
+    <string name="restore">Restaurer</string>
+    <string name="empty_recycle_bin">Vider la corbeille</string>
+    <string name="empty_recycle_bin_confirmation">Supprimer définitivement tout le contenu de la corbeille ? Cela ne peut pas être annulé.</string>
+    <string name="recycle_bin_empty">La corbeille est vide</string>
+    <string name="recycle_bin_unknown_location">%1$s · emplacement d\'origine inconnu</string>
     <string name="and_more"> et %1$d autres</string>
     <string name="create_zip_in">Créer un zip dans %1$s</string>
     <string name="location">Emplacement : %1$s</string>

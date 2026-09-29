@@ -50,6 +50,8 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.local1st.files.core.fs.EntryKind
+import app.local1st.files.core.fs.TrashFileSystem
+import app.local1st.files.core.fs.TrashPaths
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.R
 import app.local1st.files.core.fs.XId
@@ -91,7 +93,9 @@ fun DestinationPickerScreen(
     var nameDialog by remember { mutableStateOf(false) }
     var listedId by remember(t) { mutableStateOf<String?>(null) }
     var hasListing by remember(t) { mutableStateOf(false) }
+    val volumeRoots = Graph.roots.mountedVolumes.collectAsStateWithLifecycle().value.map { it.path }
     val volumeEpoch by Graph.roots.volumeEpoch.collectAsStateWithLifecycle()
+    val binTitle = stringResource(R.string.recycle_bin)
 
     fun goUp(from: XEntry) {
         scope.launch { current = withContext(Dispatchers.IO) { parentOf(from) } }
@@ -105,7 +109,9 @@ fun DestinationPickerScreen(
 
     LaunchedEffect(t) {
         current = t.startDirId?.let { id ->
-            withContext(Dispatchers.IO) { resolvePickerDir(id) }
+            withContext(Dispatchers.IO) {
+                pickerStartDir(resolvePickerDir(id), Graph.freshMountedVolumePaths())
+            }
         }
     }
 
@@ -154,7 +160,7 @@ fun DestinationPickerScreen(
         loading = false
     }
 
-    val canConfirm = isFileOperationDestination(current)
+    val canConfirm = isFileOperationDestination(current, volumeRoots)
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.fillMaxSize()) {
@@ -192,7 +198,8 @@ fun DestinationPickerScreen(
                     ),
             ) {
                 Text(
-                    current?.let { pathLabel(it) } ?: stringResource(R.string.this_device),
+                    current?.let { pickerPathLabel(it, volumeRoots, binTitle) }
+                        ?: stringResource(R.string.this_device),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     maxLines = 1,
@@ -297,13 +304,56 @@ fun DestinationPickerScreen(
 }
 
 private fun parentOf(dir: XEntry): XEntry? {
-    // A top-level volume/root has no browsable parent in the picker → back to the roots list.
+    val parentId = pickerParentId(dir, Graph.freshMountedVolumePaths()) ?: return null
+    if (parentId == XId.TRASH_ROOT) {
+        return runCatching { Graph.roots.paneRoots() }.getOrDefault(emptyList())
+            .firstOrNull { it.id == XId.TRASH_ROOT }
+            ?: TrashFileSystem.rootEntry()
+    }
+    return resolvePickerDir(parentId)
+}
+
+/**
+ * Parent shown by Copy to / Move to. A top-level trashed folder's file parent is the
+ * hidden bucket; climbing that path would list `files` and `info` instead of the bin.
+ */
+/** Copy to / Move to cannot confirm a bin directory, so do not open already inside one. */
+internal fun pickerStartDir(resolved: XEntry?, volumeRoots: List<String>): XEntry? {
+    if (resolved == null) return null
+    if (resolved.id == XId.TRASH_ROOT || resolved.kind == EntryKind.RECYCLE_BIN) return null
+    if (resolved.scheme == XId.SCHEME_FILE &&
+        TrashPaths.isInsideVolumeBin(resolved.localPath ?: resolved.path, volumeRoots)
+    ) {
+        return null
+    }
+    return resolved
+}
+
+internal fun pickerParentId(dir: XEntry, volumeRoots: List<String>): String? {
     if (dir.kind == EntryKind.VOLUME_INTERNAL || dir.kind == EntryKind.VOLUME_SD ||
         dir.kind == EntryKind.VOLUME_USB || dir.kind == EntryKind.ROOT ||
-        dir.kind == EntryKind.LOCATION
+        dir.kind == EntryKind.LOCATION || dir.kind == EntryKind.RECYCLE_BIN
     ) return null
-    val parentId = XId.parent(dir.id) ?: return null
-    return resolvePickerDir(parentId)
+    val fileParent = XId.parent(dir.id)
+    if (dir.scheme != XId.SCHEME_FILE) return fileParent
+    val path = dir.localPath ?: dir.path
+    if (!TrashPaths.isInsideVolumeBin(path, volumeRoots)) return fileParent
+    if (TrashPaths.topLevel(path) != null || !underVisibleTrashPayload(path)) return XId.TRASH_ROOT
+    return fileParent
+}
+
+private fun underVisibleTrashPayload(path: String): Boolean {
+    var cursor = path.trimEnd('/')
+    val slash = cursor.lastIndexOf('/')
+    if (slash <= 0) return false
+    cursor = cursor.substring(0, slash)
+    while (cursor.isNotEmpty()) {
+        if (TrashPaths.topLevel(cursor) != null) return true
+        val cut = cursor.lastIndexOf('/')
+        if (cut <= 0) return false
+        cursor = cursor.substring(0, cut)
+    }
+    return false
 }
 
 /**
@@ -312,6 +362,11 @@ private fun parentOf(dir: XEntry): XEntry? {
  * as gone when it is no longer under a mounted pane root.
  */
 private fun resolvePickerDir(id: String): XEntry? {
+    if (id == XId.TRASH_ROOT) {
+        runCatching { Graph.roots.paneRoots() }.getOrDefault(emptyList())
+            .firstOrNull { it.id == XId.TRASH_ROOT }
+            ?.let { return it }
+    }
     runCatching { Graph.fsRegistry.forId(id).stat(id) }.getOrNull()?.let { return it }
     val roots = runCatching { Graph.roots.paneRoots() }.getOrDefault(emptyList())
     return pickerDirFromId(id, roots)
@@ -320,8 +375,8 @@ private fun resolvePickerDir(id: String): XEntry? {
 private fun pickerRootFolders(): List<XEntry> =
     runCatching { Graph.roots.paneRoots() }.getOrDefault(emptyList()).filter(::isPickerRoot)
 
-private fun isPickerRoot(entry: XEntry): Boolean =
-    entry.isDir && entry.kind != EntryKind.APPS_ROOT
+internal fun isPickerRoot(entry: XEntry): Boolean =
+    entry.isDir && entry.kind != EntryKind.APPS_ROOT && entry.kind != EntryKind.RECYCLE_BIN
 
 /** Placeholder used when stat is blind but the id still sits on a mounted volume. */
 internal fun pickerDirFromId(id: String, roots: List<XEntry>): XEntry? {
@@ -351,10 +406,54 @@ internal fun pickerDirFromId(id: String, roots: List<XEntry>): XEntry? {
     )
 }
 
-private fun pathLabel(dir: XEntry): String = when (dir.scheme) {
-    XId.SCHEME_ROOT -> "root:" + dir.path
-    XId.SCHEME_SAF -> dir.name
-    else -> dir.path
+internal fun pickerPathLabel(dir: XEntry, volumeRoots: List<String>, binName: String): String =
+    when (dir.scheme) {
+        XId.SCHEME_ROOT -> "root:" + dir.path
+        XId.SCHEME_SAF, XId.SCHEME_TRASH -> dir.name
+        XId.SCHEME_FILE -> visibleBinLabel(dir.localPath ?: dir.path, volumeRoots, binName) ?: dir.path
+        else -> dir.path
+    }
+
+/**
+ * Subtitle for a search hit. A bin parent shows the recycle-bin name and the
+ * visible folder chain, never `.xfiles-trash/files/<id>`.
+ */
+internal fun searchHitLocation(parentId: String, volumeRoots: List<String>, binName: String): String {
+    if (XId.schemeOf(parentId) == XId.SCHEME_TRASH) return binName
+    val path = parentId.substringAfter("://")
+    return visibleBinLabel(path, volumeRoots, binName) ?: path
+}
+
+/**
+ * Details location. A bin row's badge is the original folder; every other badge
+ * (free space, root mode, "Not available") is not where the entry is.
+ */
+internal fun detailLocationOf(
+    entry: XEntry,
+    path: String,
+    volumeRoots: List<String>,
+    binName: String,
+): String {
+    val binLabel = visibleBinLabel(path, volumeRoots, binName) ?: return entry.id
+    return entry.badge?.takeIf { it.isNotBlank() } ?: binLabel
+}
+
+/** Folder chain under the bin name. Hides `.xfiles-trash/files/<id>`. */
+internal fun visibleBinLabel(path: String, volumeRoots: List<String>, binName: String): String? {
+    val normalized = if (path.length > 1) path.trimEnd('/') else path
+    val inside = TrashPaths.isConcealedBinPath(normalized, volumeRoots)
+    if (!inside) return null
+    val marker = "/${TrashPaths.DIR_NAME}/files/"
+    val idx = normalized.indexOf(marker)
+    if (idx < 0) return binName
+    val rest = normalized.substring(idx + marker.length)
+    val slash = rest.indexOf('/')
+    if (slash <= 0 || slash == rest.lastIndex) return binName
+    val id = rest.substring(0, slash)
+    if (!TrashPaths.isId(id)) return binName
+    val relative = rest.substring(slash + 1)
+    if (relative.isEmpty()) return binName
+    return "$binName/$relative"
 }
 
 @Composable

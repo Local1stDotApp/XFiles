@@ -154,6 +154,15 @@
     <string name="storage_access_summary">用於瀏覽及管理這台裝置上的檔案。</string>
     <string name="grant_access">授予存取權</string>
     <string name="delete_confirmation">要刪除 %1$s%2$s 嗎？此操作無法復原。</string>
+    <string name="recycle_bin">資源回收筒</string>
+    <string name="move_to_recycle_bin_confirmation">要將 %1$s%2$s 移至資源回收筒嗎？</string>
+    <string name="mixed_delete_confirmation">將 %1$s%2$s 移至資源回收筒。無法復原的項目會永久刪除。</string>
+    <string name="delete_permanently">永久刪除</string>
+    <string name="restore">還原</string>
+    <string name="empty_recycle_bin">清空資源回收筒</string>
+    <string name="empty_recycle_bin_confirmation">要永久刪除資源回收筒中的所有項目嗎？此操作無法復原。</string>
+    <string name="recycle_bin_empty">資源回收筒是空的</string>
+    <string name="recycle_bin_unknown_location">%1$s · 原始位置不明</string>
     <string name="and_more">，以及另外 %1$d 個項目</string>
     <string name="create_zip_in">在 %1$s 建立 ZIP</string>
     <string name="location">位置：%1$s</string>

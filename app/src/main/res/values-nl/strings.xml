@@ -154,6 +154,15 @@ Koppel die locatie eerst in een andere app als map — RCX (rclone), Nextcloud, 
     <string name="storage_access_summary">Nodig om door bestanden op dit apparaat te bladeren en deze te beheren.</string>
     <string name="grant_access">Toegang verlenen</string>
     <string name="delete_confirmation">%1$s%2$s verwijderen? Dit kan niet ongedaan worden gemaakt.</string>
+    <string name="recycle_bin">Prullenbak</string>
+    <string name="move_to_recycle_bin_confirmation">%1$s%2$s naar de prullenbak verplaatsen?</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s wordt naar de prullenbak verplaatst. Wat niet hersteld kan worden, wordt permanent verwijderd.</string>
+    <string name="delete_permanently">Permanent verwijderen</string>
+    <string name="restore">Herstellen</string>
+    <string name="empty_recycle_bin">Prullenbak legen</string>
+    <string name="empty_recycle_bin_confirmation">Alles in de prullenbak permanent verwijderen? Dit kan niet ongedaan worden gemaakt.</string>
+    <string name="recycle_bin_empty">De prullenbak is leeg</string>
+    <string name="recycle_bin_unknown_location">%1$s · oorspronkelijke locatie onbekend</string>
     <string name="and_more"> en nog %1$d</string>
     <string name="create_zip_in">Maak een zip aan in %1$s</string>
     <string name="location">Locatie: %1$s</string>

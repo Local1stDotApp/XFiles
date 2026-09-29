@@ -12,9 +12,11 @@ import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
+import java.util.Locale
 import kotlin.coroutines.cancellation.CancellationException
 
 /**
@@ -27,14 +29,115 @@ class LocalFileSystem(
     private val inPlaceMinBytes: Long = IN_PLACE_MIN_BYTES,
     /** How an in-place write opens its file; tests hand in one that fails part way through. */
     private val openInPlace: (File) -> RandomAccessFile = { RandomAccessFile(it, "rw") },
+    /** Volume roots whose `.xfiles-trash` directory is the bin, not a normal folder. */
+    private val volumeRoots: () -> List<String> = { emptyList() },
+    /** Names a stored grant can see. [File.list] may omit them on a secondary volume. */
+    private val grantedNames: (File) -> List<String>? = { dir -> legacySaf?.persistedChildNames(dir) },
+    /**
+     * Deletes a document the grant already names. Must not open the folder picker:
+     * a just-deleted path can still look present, and a new grant can hit another file.
+     */
+    private val deleteUnseenGranted: (File) -> Unit = { file ->
+        legacySaf?.deletePath(file, requestGrant = false)
+    },
+    /**
+     * Name plus whether it is a directory, from a stored grant. An empty
+     * [File.list] is not the whole directory on a secondary volume.
+     */
+    private val grantedChildren: (File) -> List<Pair<String, Boolean>>? = { dir ->
+        legacySaf?.persistedChildren(dir)?.map { it.name to it.isDirectory }
+    },
+    /** Opens a document [File] cannot see. Null when the stored grant has no file there. */
+    private val openGranted: (File) -> InputStream? = { file ->
+        val saf = legacySaf
+        val document = saf?.persistedDocument(file)?.takeIf { !it.isDirectory }
+        if (saf == null || document == null) null else saf.openInput(document)
+    },
+    /** Byte length of a grant document [File] cannot stat. Null when unknown. */
+    private val grantSize: (File) -> Long? = { file ->
+        legacySaf?.persistedDocument(file)?.takeIf { !it.isDirectory }?.size?.takeIf { it >= 0 }
+    },
 ) : XFileSystem {
 
     override val scheme: String = XId.SCHEME_FILE
 
     override fun list(dir: XEntry): List<XEntry> {
         val file = File(dir.path)
-        val children = file.listFiles() ?: return privilegedListing(file, dir)
-        return children.map { toEntry(it, readAttrs(it), countChildren = true) }
+        // A trashed directory symlink must not be walked: its children are the live
+        // target, and those paths still look like the bin so Delete would unlink them.
+        if (isBinSymlink(file) || TrashPaths.crossesVolumeBin(file.absolutePath, volumeRoots())) {
+            return emptyList()
+        }
+        val children = file.listFiles()
+        if (children == null) {
+            safListing(file)?.let { return it }
+            return privilegedListing(file, dir)
+        }
+        val roots = volumeRoots()
+        // Inside the bin the children are the files the user is restoring or moving.
+        // Concealing them makes a slow move copy an empty folder and then delete the source.
+        val insideBin = roots.isNotEmpty() &&
+            TrashPaths.isInsideVolumeBin(file.absolutePath, roots)
+        val fromFile = children
+            .filter { child ->
+                insideBin || roots.isEmpty() ||
+                    !TrashPaths.isConcealedBinPath(child.absolutePath, roots)
+            }
+            .map { child ->
+                val (attrs, symlink) = readChildAttrs(child)
+                toEntry(child, attrs, countChildren = true, listedSymlink = symlink)
+            }
+        // File.list can be a non-null empty array while the grant still has the tree.
+        // A move copies this listing and then deletes the source.
+        val seen = fromFile.mapTo(HashSet()) { it.name.lowercase(Locale.ROOT) }
+        return fromFile + grantOnlyEntries(file, seen)
+    }
+
+    /**
+     * [File.listFiles] is null for a secondary-volume directory parked by moveDocument.
+     * A stored grant can still list it. Null means there is no such grant.
+     */
+    private fun safListing(dirFile: File): List<XEntry>? {
+        val docs = grantedChildren(dirFile) ?: return null
+        return grantOnlyEntries(dirFile, emptySet(), docs)
+    }
+
+    private fun grantOnlyEntries(
+        dirFile: File,
+        seenLower: Set<String>,
+        docs: List<Pair<String, Boolean>> = grantedChildren(dirFile).orEmpty(),
+    ): List<XEntry> {
+        val roots = volumeRoots()
+        val insideBin = roots.isNotEmpty() &&
+            TrashPaths.isInsideVolumeBin(dirFile.absolutePath, roots)
+        return docs.mapNotNull { (name, isDir) ->
+            if (name.lowercase(Locale.ROOT) in seenLower) return@mapNotNull null
+            if (name.isEmpty() || name == "." || name == ".." ||
+                '/' in name || '\\' in name
+            ) {
+                return@mapNotNull null
+            }
+            val child = File(dirFile, name)
+            if (!insideBin && roots.isNotEmpty() &&
+                TrashPaths.isConcealedBinPath(child.absolutePath, roots)
+            ) {
+                return@mapNotNull null
+            }
+            if (nodeSurvivedDelete(child)) {
+                val (attrs, symlink) = readChildAttrs(child)
+                toEntry(child, attrs, countChildren = isDir, listedSymlink = symlink)
+            } else {
+                XEntry(
+                    id = XId.file(child.absolutePath),
+                    name = name,
+                    isDir = isDir,
+                    size = if (isDir) -1L else grantSize(child) ?: -1L,
+                    mime = if (isDir) null else runCatching { FileTypes.mimeOf(name) }.getOrNull(),
+                    kind = entryKind(isDir, binSymlink = false, name),
+                    localPath = null,
+                )
+            }
+        }
     }
 
     /**
@@ -70,13 +173,18 @@ class LocalFileSystem(
 
     override fun openIn(entry: XEntry): InputStream {
         val file = File(entry.path)
-        if (!file.isFile) throw IOException("Cannot open ${entry.name}")
-        return FileInputStream(file)
+        refuseBinSymlink(file, entry.name, open = true)
+        if (file.isFile) return FileInputStream(file)
+        // The listing can name a child only the grant can see. Copy reads it here.
+        openGranted(file)?.let { return it }
+        throw IOException("Cannot open ${entry.name}")
     }
 
     override fun openOut(parentDir: XEntry, name: String): OutputStream {
         requireSafeEntryName(name)
         val parent = File(parentDir.path)
+        refuseVolumeBinName(parent, name)
+        refuseCrossBin(parent, name)
         if (!parent.isDirectory && !parent.mkdirs()) {
             val directError = IOException("Cannot create folder ${parent.absolutePath}")
             return withSafWrite(parent, directError) { saf, volume, tree ->
@@ -108,6 +216,8 @@ class LocalFileSystem(
     override fun createFile(parentDir: XEntry, name: String): XEntry {
         requireSafeEntryName(name)
         val file = File(parentDir.path, name)
+        refuseVolumeBinName(file.parentFile, name)
+        refuseCrossBin(File(parentDir.path), name)
         try {
             createEmptyFileExclusive(file)
         } catch (e: FileAlreadyExistsException) {
@@ -133,6 +243,9 @@ class LocalFileSystem(
     override fun mkdir(parentDir: XEntry, name: String): XEntry {
         requireSafeEntryName(name)
         val dir = File(parentDir.path, name)
+        refuseCrossBin(File(parentDir.path), name)
+        // Another spelling is the same directory on FAT. Returning it pours this folder into the bin.
+        refuseVolumeBinName(File(parentDir.path), name)
         // Idempotent: copy ops re-create destination subfolders that may already exist.
         if (dir.isDirectory) return toEntry(dir, readAttrs(dir))
         if (!dir.mkdirs()) {
@@ -151,24 +264,182 @@ class LocalFileSystem(
         return toEntry(dir, readAttrs(dir))
     }
 
-    override fun delete(entry: XEntry) {
+    override fun delete(entry: XEntry) = delete(entry, EditorSiblingScan())
+
+    /** [delete] as one of several. [siblings] keeps each folder's listing for the next one. */
+    fun delete(entry: XEntry, siblings: EditorSiblingScan) {
         val file = File(entry.path)
+        // The link node itself can be unlinked. A path reached through it deletes the target.
+        val linkNode = Files.isSymbolicLink(file.toPath())
+        if (followsSymlinkOutOfTrashBucket(file) ||
+            (!linkNode && TrashPaths.crossesVolumeBin(file.absolutePath, volumeRoots()))
+        ) {
+            throw IOException("Cannot delete ${entry.name}")
+        }
+        // A directory symlink must not be listed or handed to SAF. Both follow it.
+        if (linkNode) {
+            unlinkSymlinkOnly(file, entry.name)
+            unlinkEditorSiblings(file, siblings)
+            return
+        }
+        // A regular file File can see has no grant-only children, and once it is gone no
+        // grant still holds it. Only other nodes pay for the grant lookups below, each a
+        // StorageManager call on API 26–29.
+        val seenFile = file.isFile
+        // File.exists stays true for a moment after a provider delete on SD/USB.
+        // Grant-only children must go first. An empty File listing still rmdirs,
+        // and that success used to skip the provider delete of the real tree.
+        if (!seenFile) deleteUnlistedGrantChildren(file)
+        var accepted = false
         try {
             deleteRecursively(file)
+            accepted = true
         } catch (e: IOException) {
             withSafWrite(file, e) { saf, volume, tree ->
                 val document = saf.resolve(volume, tree, file)
-                if (document != null) saf.delete(document)
-                else if (file.exists()) throw e
+                if (document != null) {
+                    saf.delete(document)
+                    accepted = true
+                } else if (nodeSurvivedDelete(file)) throw e
             }
         }
+        if (accepted && nodeSurvivedDelete(file)) {
+            // exists() stays true after delete() returned true on SD/USB. Only a
+            // document the stored grant already names may be removed; requesting a
+            // grant here can delete a different file with the same spelling.
+            runCatching { deleteUnseenGranted(file) }
+        }
+        if (!seenFile && !nodeSurvivedDelete(file)) {
+            // delete() is false for a path File cannot see. A persisted grant may
+            // still name the only copy; do not report success before that lookup.
+            // A provider error after the node is already gone must not keep the ready sibling.
+            try {
+                legacySaf?.deletePath(file)
+            } catch (e: IOException) {
+                // File cannot see a grant-only document. That is not success while
+                // the grant still names it; the pane would say the file is gone.
+                if (nodeSurvivedDelete(file) || legacySaf?.persistedDocument(file) != null) {
+                    throw IOException("Cannot delete ${entry.name}", e)
+                }
+            }
+        }
+        if (!accepted && nodeSurvivedDelete(file)) {
+            // The payload is still here, so the ready sibling may be the only complete copy.
+            throw IOException("Cannot delete ${entry.name}")
+        }
+        unlinkEditorSiblings(file, siblings)
+    }
+
+    private fun unlinkSymlinkOnly(file: File, name: String) {
+        if (!file.delete() && Files.isSymbolicLink(file.toPath())) {
+            throw IOException("Cannot delete $name")
+        }
+    }
+
+    private fun deleteUnlistedGrantChildren(dir: File) {
+        if (Files.isSymbolicLink(dir.toPath())) return
+        val listed = dir.list()
+        val listedLower = listed?.map { it.lowercase(Locale.ROOT) }?.toSet()
+        val docs = grantedChildren(dir)
+        val grantDir = docs?.associate { (name, isDir) -> name.lowercase(Locale.ROOT) to isDir }
+        // Walk directories File already listed. Their grant-only children are not
+        // in this listing, and an empty rmdir would leave them on the volume.
+        if (listed != null) {
+            for (name in listed) {
+                if (name.isEmpty() || name == "." || name == ".." ||
+                    '/' in name || '\\' in name
+                ) {
+                    continue
+                }
+                val child = File(dir, name)
+                if (Files.isSymbolicLink(child.toPath())) continue
+                if (child.isDirectory || grantDir?.get(name.lowercase(Locale.ROOT)) == true) {
+                    deleteUnlistedGrantChildren(child)
+                }
+            }
+        }
+        if (docs == null) return
+        for ((name, isDir) in docs) {
+            if (name.isEmpty() || name == "." || name == ".." ||
+                '/' in name || '\\' in name
+            ) {
+                continue
+            }
+            if (listedLower != null && name.lowercase(Locale.ROOT) in listedLower) continue
+            val child = File(dir, name)
+            if (Files.isSymbolicLink(child.toPath())) {
+                unlinkSymlinkOnly(child, name)
+                continue
+            }
+            if (isDir) deleteUnlistedGrantChildren(child)
+            deleteUnseenGranted(child)
+        }
+    }
+
+    private fun unlinkEditorSiblings(file: File, scan: EditorSiblingScan) {
+        val parent = file.parentFile ?: return
+        val folder = scan.folders.getOrPut(parent.path) { scanEditorScratch(parent) }
+        val deleted = HashSet<String>()
+        val listed = folder.listed
+        if (listed != null) {
+            for (name in listed.remove(file.name).orEmpty()) {
+                deleteOneSibling(File(parent, name))
+                deleted += name
+            }
+        } else {
+            // list() == null is unreadable, not empty. Drop every editor name the grant still has.
+            val known = ArrayList<String>()
+            known += ".${file.name}.xfiles-ready"
+            known += ".${file.name}.xfiles-tmp"
+            known += folder.granted[file.name].orEmpty()
+            for (name in known) {
+                deleteKnownEditorSibling(parent, name, folder.grantNames)
+                deleted += name
+            }
+        }
+        // An empty File listing can still omit the ready copy the grant names.
+        // Leaving it merges those bytes onto the next file of the same name.
+        for (name in folder.granted.remove(file.name).orEmpty()) {
+            if (name !in deleted) deleteKnownEditorSibling(parent, name, folder.grantNames)
+        }
+    }
+
+    private fun scanEditorScratch(parent: File): FolderScratch {
+        val grantNames = grantedNames(parent).orEmpty()
+        return FolderScratch(
+            listed = parent.list()?.let { scratchByOwner(it.asList()) },
+            granted = scratchByOwner(grantNames),
+            grantNames = grantNames.toHashSet(),
+        )
+    }
+
+    private fun deleteKnownEditorSibling(parent: File, name: String, grantNames: Set<String>) {
+        val sibling = File(parent, name)
+        if (nodeSurvivedDelete(sibling)) {
+            deleteOneSibling(sibling)
+            return
+        }
+        if (name in grantNames) deleteUnseenGranted(sibling)
+    }
+
+    private fun deleteOneSibling(sibling: File) {
+        try {
+            deleteRecursively(sibling)
+        } catch (e: IOException) {
+            val saf = legacySaf ?: throw e
+            saf.deletePath(sibling)
+        }
+        // delete() already returned true. exists() can stay true on SD/USB after that.
+        // Failing here aborts before the bin record is dropped and hides the ready copy.
     }
 
     override fun rename(entry: XEntry, newName: String): XEntry {
         requireSafeEntryName(newName)
         val file = File(entry.path)
+        refuseCrossBin(file, entry.name)
         val parent = file.parentFile
             ?: throw IOException("Cannot rename ${entry.name}")
+        refuseVolumeBinName(parent, newName)
         val target = File(parent, newName)
         // A case-only rename ("photo.jpg" -> "Photo.jpg") points at the same file on
         // case-insensitive storage; allow it instead of tripping the exists() guard.
@@ -230,6 +501,9 @@ class LocalFileSystem(
      */
     fun replaceRanges(entry: XEntry, edits: List<ByteRangeEdit>, expected: FileStamp? = null): Boolean {
         val target = File(entry.localPath ?: entry.path)
+        // RandomAccessFile and FileInputStream follow links. A trashed symlink must not
+        // write the live target.
+        refuseBinSymlink(target, entry.name, open = false)
         val parent = target.parentFile ?: throw IOException("Cannot save ${entry.name}")
         val sorted = edits.sortedBy { it.from }
         var last = 0L
@@ -290,6 +564,31 @@ class LocalFileSystem(
      * then starts from the original, and if it fails too the caller's retry is checked against
      * the stamp it holds rather than refused as another app's change.
      */
+    /** A case variant of `.xfiles-trash` on a volume root is the live bin, which listings then hide. */
+    private fun refuseVolumeBinName(parent: File?, name: String) {
+        if (parent == null || !name.equals(TrashPaths.DIR_NAME, ignoreCase = true)) return
+        if (volumeRoots().any { TrashPaths.samePath(it, parent.absolutePath) }) {
+            throw IOException("Cannot use $name")
+        }
+    }
+
+    private fun refuseCrossBin(file: File, name: String) {
+        if (TrashPaths.crossesVolumeBin(file.absolutePath, volumeRoots())) {
+            throw IOException("Cannot write $name")
+        }
+    }
+
+    private fun refuseBinSymlink(file: File, name: String, open: Boolean) {
+        val roots = volumeRoots()
+        val path = file.absolutePath
+        if (!TrashPaths.isVolumeBinSymlink(path, roots) &&
+            !TrashPaths.crossesVolumeBin(path, roots)
+        ) {
+            return
+        }
+        throw IOException(if (open) "Cannot open $name" else "Cannot save $name")
+    }
+
     private fun writeInPlaceIfSameLength(target: File, edits: List<ByteRangeEdit>): Boolean {
         if (target.length() < inPlaceMinBytes) return false
         if (edits.any { it.bytes.size.toLong() != it.to - it.from }) return false
@@ -555,15 +854,49 @@ class LocalFileSystem(
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ||
             legacySaf?.secondaryVolumeFor(File(entry.path)) == null
 
-    private fun deleteRecursively(file: File) {
-        // Never descend through symlinks; delete only the link itself.
-        if (file.isDirectory && !Files.isSymbolicLink(file.toPath())) {
-            file.listFiles()?.forEach(::deleteRecursively)
-        }
-        if (!file.delete() && file.exists()) {
-            throw IOException("Cannot delete ${file.absolutePath}")
-        }
+    /** The link itself may be deleted. A path reached by following it may not. */
+    private fun isBinSymlink(file: File): Boolean =
+        TrashPaths.isVolumeBinSymlink(file.absolutePath, volumeRoots())
+
+    /** Inside a mounted volume bin, or the same `files/<id>/` shape before mounts publish. */
+    private fun pathInVolumeBin(path: String): Boolean {
+        val roots = volumeRoots()
+        return TrashPaths.isInsideVolumeBin(path, roots) ||
+            TrashPaths.isUnmountedBinPayload(path, roots)
     }
+
+    private fun followsSymlinkOutOfTrashBucket(file: File): Boolean {
+        if (isBinSymlink(file)) return false
+        val path = file.absolutePath
+        if (!pathInVolumeBin(path)) return false
+        val bucket = trashBucketPath(path) ?: return false
+        var cursor = file.absoluteFile.parentFile
+        var crossedLink = false
+        while (cursor != null && !TrashPaths.samePath(cursor.path, bucket)) {
+            if (Files.isSymbolicLink(cursor.toPath())) {
+                crossedLink = true
+                break
+            }
+            cursor = cursor.parentFile
+        }
+        if (!crossedLink) return false
+        val canonicalBucket = runCatching { trashBucketPath(file.canonicalPath) }.getOrNull()
+        return canonicalBucket == null || !TrashPaths.samePath(canonicalBucket, bucket)
+    }
+
+    private fun trashBucketPath(path: String): String? {
+        val normalized = if (path.length > 1) path.trimEnd('/') else path
+        val marker = "/${TrashPaths.DIR_NAME}/files/"
+        val idx = normalized.indexOf(marker)
+        if (idx < 0) return null
+        val rest = normalized.substring(idx + marker.length)
+        val slash = rest.indexOf('/')
+        val id = if (slash < 0) rest else rest.substring(0, slash)
+        if (!TrashPaths.isId(id)) return null
+        return normalized.substring(0, idx) + marker + id
+    }
+
+    private fun deleteRecursively(file: File) = deleteTrashBytes(file)
 
     /**
      * All of an entry's metadata from ONE stat. The old per-field java.io.File calls
@@ -577,52 +910,84 @@ class LocalFileSystem(
         null // vanished mid-listing or broken symlink
     }
 
+    /**
+     * One lstat for a child [list] is about to show, and a following stat only for a
+     * symlink. The second value says whether the child is itself a symlink.
+     */
+    private fun readChildAttrs(file: File): Pair<BasicFileAttributes?, Boolean> {
+        val own = try {
+            Files.readAttributes(file.toPath(), BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        } catch (_: IOException) {
+            return null to false
+        }
+        return if (own.isSymbolicLink) readAttrs(file) to true else own to false
+    }
+
+    /**
+     * [TrashPaths.crossesVolumeBin] resolves the whole path, one realpath per row. A child of
+     * a folder [list] already checked can only cross by being a symlink itself, or by being
+     * the bin's own name under a folder that is another spelling of a volume root.
+     */
+    private fun mayCrossVolumeBin(file: File, listedSymlink: Boolean?): Boolean =
+        listedSymlink != false || file.name.equals(TrashPaths.DIR_NAME, ignoreCase = true)
+
     private fun toEntry(
         file: File,
         attrs: BasicFileAttributes?,
         countChildren: Boolean = false,
+        /** Null outside a listing: the whole path is checked. */
+        listedSymlink: Boolean? = null,
     ): XEntry {
         val abs = file.absolutePath
         val name = file.name
-        val isDir = attrs?.isDirectory == true
+        val link = isBinSymlink(file)
+        // A symlink outside the bin can still resolve inside it. File() and ZipFile
+        // follow localPath, so this row must not look like a normal file or archive.
+        val crosses = !link && mayCrossVolumeBin(file, listedSymlink) &&
+            TrashPaths.crossesVolumeBin(abs, volumeRoots())
+        val hidden = link || crosses
+        val isDir = attrs?.isDirectory == true && !hidden
         val counts = if (isDir && countChildren) directoryChildCount(file) else -1 to 0
         return XEntry(
             id = XId.file(abs),
             name = name,
             isDir = isDir,
-            size = if (isDir || attrs == null) -1L else attrs.size(),
+            size = if (isDir || attrs == null || hidden) -1L else attrs.size(),
             mtime = attrs?.lastModifiedTime()?.toMillis() ?: 0L,
             mime = if (isDir) null else FileTypes.mimeOf(name),
             hidden = name.startsWith("."),
-            kind = when {
-                isDir -> EntryKind.DIR
-                FileTypes.isBrowsableArchive(name) -> EntryKind.ARCHIVE
-                else -> EntryKind.FILE
-            },
+            kind = entryKind(isDir, hidden, name),
             childCountHint = counts.first,
             hiddenChildCountHint = counts.second,
-            localPath = abs,
+            localPath = if (hidden) null else abs,
         )
     }
 
     private fun toEntry(file: File, document: SafDocument): XEntry {
         val name = file.name
-        val isDir = document.isDirectory
+        val link = isBinSymlink(file)
+        val crosses = !link && TrashPaths.crossesVolumeBin(file.absolutePath, volumeRoots())
+        val hidden = link || crosses
+        val isDir = document.isDirectory && !hidden
         return XEntry(
             id = XId.file(file.absolutePath),
             name = name,
             isDir = isDir,
-            size = if (isDir) -1L else document.size,
+            size = if (isDir || hidden) -1L else document.size,
             mtime = document.lastModified,
             mime = if (isDir) null else document.mimeType,
             hidden = name.startsWith("."),
-            kind = when {
-                isDir -> EntryKind.DIR
-                FileTypes.isBrowsableArchive(name) -> EntryKind.ARCHIVE
-                else -> EntryKind.FILE
-            },
-            localPath = file.absolutePath,
+            kind = entryKind(isDir, hidden, name),
+            localPath = if (hidden) null else file.absolutePath,
         )
+    }
+
+    /** A bin symlink is a file node even when its name looks like a zip. Search must not open it. */
+    private fun entryKind(isDir: Boolean, binSymlink: Boolean, name: String): EntryKind = when {
+        isDir -> EntryKind.DIR
+        binSymlink -> EntryKind.FILE
+        FileTypes.isBrowsableArchive(name) -> EntryKind.ARCHIVE
+        else -> EntryKind.FILE
     }
 
     /**
@@ -659,6 +1024,37 @@ class LocalFileSystem(
         }
     }
 }
+
+/**
+ * The editor's `.name.xfiles-ready` and `.name.xfiles-tmp*` siblings in the folders one
+ * operation deletes from. Each folder is listed once, so deleting N files of a folder is
+ * not N listings of it. A sibling written after that listing is not seen.
+ */
+class EditorSiblingScan {
+    internal val folders = HashMap<String, FolderScratch>()
+}
+
+internal class FolderScratch(
+    /** Scratch names File listed, by the payload they belong to. Null when File cannot list. */
+    val listed: HashMap<String, MutableList<String>>?,
+    /** Scratch names the stored grant lists, by payload. */
+    val granted: HashMap<String, MutableList<String>>,
+    /** Every name the stored grant lists. */
+    val grantNames: Set<String>,
+)
+
+/** Scratch names by payload. A name that splits more than one way is under each payload. */
+private fun scratchByOwner(names: List<String>): HashMap<String, MutableList<String>> {
+    val out = HashMap<String, MutableList<String>>()
+    for (name in names) {
+        for (owner in editorScratchOwnerCandidates(name)) out.getOrPut(owner) { ArrayList(1) } += name
+    }
+    return out
+}
+
+/** True when [file] is still a node. [File.exists] follows links, so a dangling symlink looks gone. */
+internal fun nodeSurvivedDelete(file: File): Boolean =
+    file.exists() || java.nio.file.Files.isSymbolicLink(file.toPath())
 
 /**
  * Files at least this large take same-length edits in place. Below it a rewrite is a few

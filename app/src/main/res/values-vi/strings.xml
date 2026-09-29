@@ -154,6 +154,15 @@ Hãy gắn vị trí đó thành thư mục trong ứng dụng khác trước �
     <string name="storage_access_summary">Cần để duyệt và quản lý các tập tin trên thiết bị này.</string>
     <string name="grant_access">Cấp quyền truy cập</string>
     <string name="delete_confirmation">Xóa %1$s%2$s? Không thể hoàn tác thao tác này.</string>
+    <string name="recycle_bin">Thùng rác</string>
+    <string name="move_to_recycle_bin_confirmation">Chuyển %1$s%2$s vào Thùng rác?</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s sẽ được chuyển vào Thùng rác. Mục không thể khôi phục sẽ bị xóa vĩnh viễn.</string>
+    <string name="delete_permanently">Xóa vĩnh viễn</string>
+    <string name="restore">Khôi phục</string>
+    <string name="empty_recycle_bin">Dọn sạch Thùng rác</string>
+    <string name="empty_recycle_bin_confirmation">Xóa vĩnh viễn mọi thứ trong Thùng rác? Không thể hoàn tác thao tác này.</string>
+    <string name="recycle_bin_empty">Thùng rác trống</string>
+    <string name="recycle_bin_unknown_location">%1$s · không rõ vị trí ban đầu</string>
     <string name="and_more"> và %1$d nữa</string>
     <string name="create_zip_in">Tạo ZIP trong %1$s</string>
     <string name="location">Vị trí: %1$s</string>

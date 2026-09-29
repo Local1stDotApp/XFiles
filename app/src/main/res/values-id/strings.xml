@@ -154,6 +154,15 @@ Pasang dulu lokasi itu sebagai folder di aplikasi lain — RCX (rclone), Nextclo
     <string name="storage_access_summary">Diperlukan untuk menelusuri dan mengelola file di perangkat ini.</string>
     <string name="grant_access">Berikan akses</string>
     <string name="delete_confirmation">Hapus %1$s%2$s? Hal ini tidak dapat dibatalkan.</string>
+    <string name="recycle_bin">Tong Sampah</string>
+    <string name="move_to_recycle_bin_confirmation">Pindahkan %1$s%2$s ke Tong Sampah?</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s akan dipindahkan ke Tong Sampah. Item yang tidak dapat dipulihkan akan dihapus secara permanen.</string>
+    <string name="delete_permanently">Hapus permanen</string>
+    <string name="restore">Pulihkan</string>
+    <string name="empty_recycle_bin">Kosongkan Tong Sampah</string>
+    <string name="empty_recycle_bin_confirmation">Hapus permanen semua isi Tong Sampah? Hal ini tidak dapat dibatalkan.</string>
+    <string name="recycle_bin_empty">Tong Sampah kosong</string>
+    <string name="recycle_bin_unknown_location">%1$s · lokasi asli tidak diketahui</string>
     <string name="and_more"> dan %1$d lainnya</string>
     <string name="create_zip_in">Buat ZIP di %1$s</string>
     <string name="location">Lokasi: %1$s</string>

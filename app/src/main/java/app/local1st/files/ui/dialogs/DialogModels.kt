@@ -1,10 +1,20 @@
 package app.local1st.files.ui.dialogs
 
+import app.local1st.files.core.fs.DeleteDisposition
 import app.local1st.files.core.fs.XEntry
 
 /** Modal UI requested by MainViewModel; rendered by MainDialogs (ui/dialogs/Dialogs.kt). */
 sealed interface DialogRequest {
-    data class ConfirmDelete(val entries: List<XEntry>) : DialogRequest
+    data class ConfirmDelete(
+        val entries: List<XEntry>,
+        val mode: DeleteDisposition,
+        /** True only when the user chose Delete permanently, not when the bin was unavailable. */
+        val explicitPermanent: Boolean = false,
+        /** Ids [DeleteDisposition] saw as trashable. A later mount must not unlink these. */
+        val trashableIds: Set<String> = emptySet(),
+    ) : DialogRequest
+
+    data object ConfirmEmptyTrash : DialogRequest
     data class Rename(val entry: XEntry) : DialogRequest
     data class NewFolder(val parent: XEntry) : DialogRequest
     data class NewTextFile(val parent: XEntry) : DialogRequest

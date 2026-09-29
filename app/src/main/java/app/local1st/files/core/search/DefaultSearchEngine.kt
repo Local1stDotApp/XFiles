@@ -2,6 +2,7 @@ package app.local1st.files.core.search
 
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.FsRegistry
+import app.local1st.files.core.fs.TrashPaths
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import java.io.IOException
@@ -19,16 +20,26 @@ import kotlinx.coroutines.flow.flowOn
  * Inaccessible directories are skipped; archives larger than [MAX_ARCHIVE_BYTES]
  * are not descended into.
  */
-class DefaultSearchEngine(private val registry: FsRegistry) : SearchEngine {
+class DefaultSearchEngine(
+    private val registry: FsRegistry,
+    private val volumeRoots: () -> List<String> = { emptyList() },
+) : SearchEngine {
 
     override fun search(root: XEntry, query: String): Flow<SearchHit> = flow {
         val matcher = buildMatcher(query)
+        val rootPath = root.localPath ?: root.path
+        // One mount read for the whole walk. A pending snapshot scans StorageManager,
+        // and doing that once per file stalls a large search.
+        val roots = volumeRoots()
+        val allowBin = root.scheme == XId.SCHEME_TRASH ||
+            (root.scheme == XId.SCHEME_FILE &&
+                TrashPaths.isInsideVolumeBin(rootPath, roots))
         val deque = ArrayDeque<XEntry>()
         val visitedContainers = HashSet<String>()
         var visited = 0
         var hits = 0
 
-        if (root.isContainer && !isDeniedPath(root)) {
+        if (root.isContainer && !isDeniedPath(root, allowBin, roots)) {
             deque.addFirst(root)
             visitedContainers.add(root.id)
         }
@@ -47,13 +58,14 @@ class DefaultSearchEngine(private val registry: FsRegistry) : SearchEngine {
             val descend = ArrayList<XEntry>()
             for (child in children) {
                 if (++visited > MAX_VISITED) return@flow
+                if (isDeniedPath(child, allowBin, roots)) continue
 
                 if (matcher(child.name)) {
                     emit(SearchHit(entry = child, parentId = dir.id))
                     if (++hits >= MAX_HITS) return@flow
                 }
 
-                if (shouldDescend(child) && visitedContainers.add(child.id)) {
+                if (shouldDescend(child, allowBin, roots) && visitedContainers.add(child.id)) {
                     descend.add(child)
                 }
             }
@@ -63,8 +75,8 @@ class DefaultSearchEngine(private val registry: FsRegistry) : SearchEngine {
         }
     }.flowOn(Dispatchers.IO)
 
-    private fun shouldDescend(entry: XEntry): Boolean = when {
-        isDeniedPath(entry) -> false
+    private fun shouldDescend(entry: XEntry, allowBin: Boolean, roots: List<String>): Boolean = when {
+        isDeniedPath(entry, allowBin, roots) -> false
         // Remote document trees: match the current folder's children, never walk a NAS.
         entry.scheme == XId.SCHEME_SAF -> false
         entry.isDir -> true
@@ -72,9 +84,17 @@ class DefaultSearchEngine(private val registry: FsRegistry) : SearchEngine {
         else -> false
     }
 
-    private fun isDeniedPath(entry: XEntry): Boolean {
+    private fun isDeniedPath(entry: XEntry, allowBin: Boolean, roots: List<String>): Boolean {
         if (entry.scheme != XId.SCHEME_FILE) return false
         val path = entry.path
+        // LocalFileSystem clears localPath on a row that resolves into a bin, so only
+        // those rows pay for the realpath check. A walk visits up to MAX_VISITED rows.
+        if (!allowBin && roots.isNotEmpty() &&
+            (TrashPaths.isConcealedBinPath(path, roots) ||
+                (entry.localPath == null && TrashPaths.crossesVolumeBin(path, roots)))
+        ) {
+            return true
+        }
         return DENIED_PREFIXES.any { path == it || path.startsWith("$it/") }
     }
 

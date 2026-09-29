@@ -1,6 +1,7 @@
 package app.local1st.files.core.ops
 
 import app.local1st.files.core.fs.EntryKind
+import app.local1st.files.core.fs.TrashPaths
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 
@@ -15,7 +16,22 @@ sealed interface FileOp {
         val move: Boolean = false,
     ) : FileOp
 
-    data class Delete(override val sources: List<XEntry>) : FileOp
+    /**
+     * Delete [sources]. A local file on a writable volume is moved to that volume's
+     * Recycle Bin unless [permanent] is set. [permanent] is only the user's explicit
+     * choice. [mustTrash] means every source was confirmed for the bin.
+     * [trashableIds] are the mixed-confirm ids that were trashable then; those
+     * must not be unlinked if a later mount list cannot take them.
+     */
+    data class Delete(
+        override val sources: List<XEntry>,
+        val permanent: Boolean = false,
+        val mustTrash: Boolean = false,
+        val trashableIds: Set<String> = emptySet(),
+    ) : FileOp
+
+    /** Put Recycle Bin items back at their original paths. */
+    data class Restore(override val sources: List<XEntry>) : FileOp
 
     /** Pack [sources] into a new zip named [archiveName] inside [destDir]. */
     data class Compress(
@@ -77,3 +93,28 @@ internal fun canMoveSource(entry: XEntry): Boolean =
 /** In-app text editing is a local-file path; SAF/root entries open as a read-only stream. */
 internal fun canEditCreatedTextFile(entry: XEntry): Boolean =
     entry.scheme == XId.SCHEME_FILE && entry.canWrite
+
+/**
+ * Folder name for an extract. Listings hide a volume's bin, and another spelling
+ * is the same directory, so that name is never reused.
+ */
+internal fun uniqueExtractFolderName(
+    desired: String,
+    listed: Collection<String>,
+    volumeRoot: Boolean,
+    caseInsensitive: Boolean = false,
+): String {
+    val taken: MutableSet<String> = if (caseInsensitive) {
+        java.util.TreeSet(String.CASE_INSENSITIVE_ORDER)
+    } else {
+        HashSet()
+    }
+    taken += listed
+    if (volumeRoot) taken += TrashPaths.DIR_NAME
+    var name = desired
+    var i = 1
+    while (name in taken || (volumeRoot && name.equals(TrashPaths.DIR_NAME, ignoreCase = true))) {
+        name = "$desired ($i)".also { i++ }
+    }
+    return name
+}

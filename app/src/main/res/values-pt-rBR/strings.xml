@@ -154,6 +154,15 @@ Monte esse local como pasta em outro app primeiro — RCX (rclone), Nextcloud ou
     <string name="storage_access_summary">Necessário para navegar e gerenciar arquivos neste dispositivo.</string>
     <string name="grant_access">Conceder acesso</string>
     <string name="delete_confirmation">Excluir %1$s%2$s? Isto não pode ser desfeito.</string>
+    <string name="recycle_bin">Lixeira</string>
+    <string name="move_to_recycle_bin_confirmation">Mover %1$s%2$s para a lixeira?</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s será movido para a lixeira. O que não puder ser recuperado será excluído permanentemente.</string>
+    <string name="delete_permanently">Excluir permanentemente</string>
+    <string name="restore">Restaurar</string>
+    <string name="empty_recycle_bin">Esvaziar lixeira</string>
+    <string name="empty_recycle_bin_confirmation">Excluir permanentemente tudo na lixeira? Isto não pode ser desfeito.</string>
+    <string name="recycle_bin_empty">A lixeira está vazia</string>
+    <string name="recycle_bin_unknown_location">%1$s · local original desconhecido</string>
     <string name="and_more"> e %1$d mais</string>
     <string name="create_zip_in">Criar ZIP em %1$s</string>
     <string name="location">Localização: %1$s</string>

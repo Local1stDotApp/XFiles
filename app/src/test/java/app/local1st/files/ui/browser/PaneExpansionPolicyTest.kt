@@ -3,6 +3,7 @@ package app.local1st.files.ui.browser
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
+import org.junit.Assert.assertTrue
 import app.local1st.files.core.prefs.SessionDirectory
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
@@ -16,6 +17,119 @@ import org.junit.Assert.assertSame
 import org.junit.Test
 
 class PaneExpansionPolicyTest {
+
+    @Test
+    fun failedBinListingKeepsTheRowsAlreadyShown() {
+        val row = XEntry(id = "file://a", name = "a.txt", isDir = false)
+        val replacement = XEntry(id = "file://b", name = "b.txt", isDir = false)
+
+        val kept = rowsAfterFailedListing(
+            XId.TRASH_ROOT,
+            listOf(row),
+            emptyList(),
+            "Storage is still mounting",
+        )
+        assertEquals(listOf(row.id), kept.map { it.id })
+        assertTrue(
+            rowsAfterFailedListing(XId.TRASH_ROOT, null, emptyList(), "Storage is still mounting").isEmpty(),
+        )
+        assertEquals(
+            listOf(replacement.name),
+            rowsAfterFailedListing("file://dir", listOf(row), listOf(replacement), "err").map { it.name },
+        )
+        assertEquals(
+            listOf(replacement.name),
+            rowsAfterFailedListing(XId.TRASH_ROOT, listOf(row), listOf(replacement), null).map { it.name },
+        )
+    }
+
+    @Test
+    fun trashRowsDropWhenTheirVolumeIsUnmounted() {
+        val internal = "/storage/emulated/0"
+        val usb = "/storage/usb"
+        val kept = XEntry(
+            id = XId.file("$internal/.xfiles-trash/files/abc-00000001/a.txt"),
+            name = "a.txt",
+            isDir = false,
+            localPath = "$internal/.xfiles-trash/files/abc-00000001/a.txt",
+        )
+        val ejected = XEntry(
+            id = XId.file("$usb/.xfiles-trash/files/bbb-00000002/b.txt"),
+            name = "b.txt",
+            isDir = false,
+            localPath = "$usb/.xfiles-trash/files/bbb-00000002/b.txt",
+        )
+
+        val visible = trashRowsOnMountedVolumes(listOf(kept, ejected), listOf(internal))
+
+        assertEquals(listOf(kept.id), visible.map { it.id })
+        assertTrue(trashRowsOnMountedVolumes(listOf(ejected), emptyList()).isEmpty())
+    }
+
+    @Test
+    fun binSearchHitExpandsTheBinNotTheHiddenTrashDirectory() {
+        val root = "/storage/emulated/0"
+        val folder = "$root/.xfiles-trash/files/abc-00000001/photos"
+        val nested = XId.file("$folder/trip/a.jpg")
+        val top = XId.file("$root/.xfiles-trash/files/abc-00000001/a.txt")
+
+        assertEquals(
+            listOf(XId.TRASH_ROOT, XId.file(folder), XId.file("$folder/trip")),
+            binRevealAncestors(nested, listOf(root)),
+        )
+        assertEquals(listOf(XId.TRASH_ROOT), binRevealAncestors(top, listOf(root)))
+        assertEquals(
+            null,
+            binRevealAncestors(XId.file("$root/Download/a.txt"), listOf(root)),
+        )
+        val archive = "$root/.xfiles-trash/files/abc-00000001/photos.zip"
+        assertEquals(
+            listOf(XId.TRASH_ROOT, XId.file(archive), XId.zip(archive, "trip")),
+            binRevealAncestors(XId.zip(archive, "trip/a.jpg"), listOf(root)),
+        )
+    }
+
+    @Test
+    fun binRowsPageFromTheVisualParentAndZipFocusStaysOnTheBin() {
+        val root = "/storage/emulated/0"
+        val photo = XId.file("$root/.xfiles-trash/files/abc-00000001/a.jpg")
+        val parents = mapOf(photo to XId.TRASH_ROOT)
+        assertEquals(XId.TRASH_ROOT, siblingParentId(photo, parents))
+        assertEquals(
+            XId.file("$root/DCIM"),
+            siblingParentId(XId.file("$root/DCIM/b.jpg"), emptyMap()),
+        )
+        val archive = XId.zip("$root/.xfiles-trash/files/abc-00000001/photos.zip", "a.jpg")
+        assertEquals(XId.TRASH_ROOT, focusForBinPath(archive, listOf(root)))
+        val outside = XId.zip("$root/Download/a.zip", "a.jpg")
+        assertEquals(outside, focusForBinPath(outside, listOf(root)))
+    }
+
+    @Test
+    fun emptyTrashDropsThoseIdsFromEitherPane() {
+        val root = "/storage/emulated/0"
+        val note = XId.file("$root/.xfiles-trash/files/abc-00000001/note")
+        val nested = XId.file("$root/.xfiles-trash/files/abc-00000001/photos/trip")
+        val folder = XId.file("$root/.xfiles-trash/files/abc-00000001/photos")
+        val keep = XId.file("$root/Download/keep")
+        assertEquals(
+            setOf(keep),
+            selectionWithoutGone(setOf(note, nested, keep), setOf(note, folder)),
+        )
+        assertEquals(
+            setOf(XId.file("$root/.xfiles-trash/files/abc-00000001/note-extra")),
+            selectionWithoutGone(
+                setOf(XId.file("$root/.xfiles-trash/files/abc-00000001/note-extra")),
+                setOf(note),
+            ),
+        )
+        val zipInside = XId.zip("$root/.xfiles-trash/files/abc-00000001/photos/trip.zip", "a.jpg")
+        val zipOnNote = XId.zip(note.substringAfter("://"), "page")
+        assertEquals(
+            setOf(keep),
+            selectionWithoutGone(setOf(zipInside, zipOnNote, keep), setOf(note, folder)),
+        )
+    }
 
     @Test
     fun openingFolderCollapsesOnlyItsSiblings() {

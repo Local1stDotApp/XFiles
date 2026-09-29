@@ -154,6 +154,15 @@
     <string name="storage_access_summary">इस डिवाइस पर फ़ाइलें ब्राउज़ और प्रबंधित करने की आवश्यकता है।</string>
     <string name="grant_access">पहुंच प्रदान करें</string>
     <string name="delete_confirmation">%1$s%2$s हटाएँ? इसे वापस नहीं लाया जा सकता।</string>
+    <string name="recycle_bin">रीसायकल बिन</string>
+    <string name="move_to_recycle_bin_confirmation">%1$s%2$s को रीसायकल बिन में ले जाएँ?</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s रीसायकल बिन में ले जाया जाएगा। जिसे वापस नहीं लाया जा सकता, उसे स्थायी रूप से हटा दिया जाएगा।</string>
+    <string name="delete_permanently">स्थायी रूप से हटाएँ</string>
+    <string name="restore">पुनर्स्थापित करें</string>
+    <string name="empty_recycle_bin">रीसायकल बिन खाली करें</string>
+    <string name="empty_recycle_bin_confirmation">रीसायकल बिन की हर चीज़ स्थायी रूप से हटाएँ? इसे वापस नहीं लाया जा सकता।</string>
+    <string name="recycle_bin_empty">रीसायकल बिन खाली है</string>
+    <string name="recycle_bin_unknown_location">%1$s · मूल स्थान अज्ञात</string>
     <string name="and_more"> और %1$d अन्य</string>
     <string name="create_zip_in">%1$s में ZIP बनाएँ</string>
     <string name="location">स्थान: %1$s</string>

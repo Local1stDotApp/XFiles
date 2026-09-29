@@ -64,7 +64,10 @@ and an icon fallback while loading.
 Multi-select via right-edge checkmarks. **The other pane is the destination** for
 copy, move, zip and extract: set its folder, return to the source pane, then run the
 operation directly. `Copy to…`/`Move to…` in the long-press menu remain available when
-you want a one-off explicit destination. Plus delete, rename, new folder. Mounted USB
+you want a one-off explicit destination. Delete on internal storage, an SD card, or a USB
+drive moves the files to the Recycle Bin, where they can be restored. Empty Recycle Bin,
+and delete under Root or a network location, remove them permanently. Plus rename and
+new folder. Mounted USB
 OTG drives appear as pane roots next to internal storage and SD cards, and the list
 updates when a drive is plugged or unplugged. On Android 8–10, writes to SD cards, USB
 drives and other secondary volumes work through a one-time SAF grant.

@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,6 +58,10 @@ import coil3.compose.AsyncImagePainter
 import app.local1st.files.R
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.XEntry
+import app.local1st.files.core.fs.XId
+import app.local1st.files.di.Graph
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.local1st.files.core.thumb.AppIcon
 import app.local1st.files.core.thumb.PrivFile
 import app.local1st.files.core.thumb.VideoThumb
@@ -479,17 +484,28 @@ private fun EntryThumbnail(entry: XEntry) {
                 modifier = Modifier.size(24.dp),
             )
         }
-        AsyncImage(
-            model = when {
-                isVideo -> VideoThumb(
-                    path = entry.localPath ?: entry.path,
-                    mtime = entry.mtime,
-                    size = entry.size,
-                    privileged = entry.localPath == null,
-                )
-                entry.localPath != null -> File(entry.localPath)
-                else -> PrivFile(entry.path, entry.mtime, entry.size)
-            },
+        // LocalFileSystem clears localPath on a row that is, or resolves into, a bin entry,
+        // so File() below never follows one. A file:// row without it is read through
+        // openIn on IO, which refuses those links; composition does no file I/O here.
+        val localPath = entry.localPath
+        val grantImage by produceState<ByteArray?>(null, entry.id) {
+            if (isVideo || localPath != null || entry.scheme != XId.SCHEME_FILE) return@produceState
+            value = withContext(Dispatchers.IO) { thumbnailBytes(entry) }
+        }
+        val thumbModel = when {
+            localPath == null && entry.scheme == XId.SCHEME_FILE && !isVideo -> grantImage
+            isVideo && (localPath != null || entry.scheme == XId.SCHEME_ROOT) -> VideoThumb(
+                path = localPath ?: entry.path,
+                mtime = entry.mtime,
+                size = entry.size,
+                privileged = localPath == null,
+            )
+            localPath != null -> File(localPath)
+            entry.scheme == XId.SCHEME_ROOT -> PrivFile(entry.path, entry.mtime, entry.size)
+            else -> null
+        }
+        if (thumbModel != null) AsyncImage(
+            model = thumbModel,
             contentDescription = null,
             contentScale = ContentScale.Crop,
             onState = { loaded = it is AsyncImagePainter.State.Success },
@@ -514,6 +530,26 @@ private fun EntryThumbnail(entry: XEntry) {
         }
     }
 }
+
+private const val THUMB_MAX_BYTES = 8L * 1024 * 1024
+
+/** Small decode of a grant-only image. Null when the file is too large or cannot be opened. */
+private fun thumbnailBytes(entry: XEntry): ByteArray? = runCatching {
+    if (entry.size > THUMB_MAX_BYTES) return null
+    Graph.fsRegistry.forId(entry.id).openIn(entry).use { input ->
+        val out = java.io.ByteArrayOutputStream()
+        val chunk = ByteArray(16 * 1024)
+        var total = 0
+        while (true) {
+            val n = input.read(chunk)
+            if (n < 0) break
+            total += n
+            if (total > THUMB_MAX_BYTES) return null
+            out.write(chunk, 0, n)
+        }
+        out.toByteArray()
+    }
+}.getOrNull()
 
 @Composable
 private fun entryDetails(node: TreeNode): String {

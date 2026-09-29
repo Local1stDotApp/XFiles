@@ -154,6 +154,15 @@
     <string name="storage_access_summary">このデバイスのファイルを閲覧、管理するために必要です。</string>
     <string name="grant_access">アクセスを許可</string>
     <string name="delete_confirmation">%1$s%2$s を削除しますか？この操作は元に戻せません。</string>
+    <string name="recycle_bin">ゴミ箱</string>
+    <string name="move_to_recycle_bin_confirmation">%1$s%2$s をゴミ箱に移動しますか？</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s をゴミ箱に移動します。復元できない項目は完全に削除されます。</string>
+    <string name="delete_permanently">完全に削除</string>
+    <string name="restore">復元</string>
+    <string name="empty_recycle_bin">ゴミ箱を空にする</string>
+    <string name="empty_recycle_bin_confirmation">ゴミ箱の中身を完全に削除しますか？この操作は元に戻せません。</string>
+    <string name="recycle_bin_empty">ゴミ箱は空です</string>
+    <string name="recycle_bin_unknown_location">%1$s · 元の場所は不明</string>
     <string name="and_more">、ほか %1$d 件</string>
     <string name="create_zip_in">%1$s に ZIP を作成</string>
     <string name="location">場所: %1$s</string>

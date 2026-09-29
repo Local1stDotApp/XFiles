@@ -38,7 +38,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
-import app.local1st.files.core.fs.XId
 import app.local1st.files.core.util.Format
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.components.TooltipIconButton
@@ -61,6 +60,12 @@ private const val HEX_STREAM_LIMIT = 8 * 1024 * 1024
 private const val MAX_CACHED_PAGES = 1024
 private const val HEX_CHARS = "0123456789ABCDEF"
 
+/** Bytes the hex viewer will page. A local file wins over a stale [entrySize]. */
+internal fun hexFileSize(file: File?, entrySize: Long): Long {
+    val measured = file?.takeIf { it.isFile }?.length()
+    return measured ?: if (entrySize >= 0) entrySize else -1L
+}
+
 /**
  * Classic hex dump: "OFFSET  HH HH ...  ASCII" rows. Local files are paged on
  * demand through a RandomAccessFile; other schemes are read up to 8 MiB.
@@ -68,19 +73,15 @@ private const val HEX_CHARS = "0123456789ABCDEF"
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun HexViewer(entry: XEntry, onClose: () -> Unit) {
-    val localPath = remember(entry.id) {
-        entry.localPath ?: entry.path.takeIf { entry.scheme == XId.SCHEME_FILE }
-    }
+    // localPath is cleared for a bin symlink. Falling back to the file:// path
+    // would follow that link into the live target.
+    val localPath = remember(entry.id) { entry.localPath }
 
     // Sized outside the chrome so the bar can show it while the rows are still loading.
     val file = remember(localPath) { localPath?.let(::File) }
-    val fileSize = remember(file) {
-        when {
-            entry.size >= 0 -> entry.size
-            file != null -> file.length()
-            else -> -1L
-        }
-    }
+    // Recover rewrites a truncated file before this opens, but the entry still
+    // carries the short size. A local file's length is the bytes we will page.
+    val fileSize = remember(file, entry.size) { hexFileSize(file, entry.size) }
     val loaded = if (file == null) {
         produceState<Result<ByteArray>?>(initialValue = null, entry.id) {
             value = withContext(Dispatchers.IO) {

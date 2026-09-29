@@ -1,16 +1,26 @@
 package app.local1st.files.core.ops
 
+import app.local1st.files.core.fs.EditorSiblingScan
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.FsRegistry
+import app.local1st.files.core.fs.HiddenBin
 import app.local1st.files.core.fs.LocalFileSystem
+import app.local1st.files.core.fs.TrashPaths
+import app.local1st.files.core.fs.TrashRecord
+import app.local1st.files.core.fs.TrashStore
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
+import app.local1st.files.core.fs.requireSafeEntryName
 import app.local1st.files.core.util.FileTypes
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.file.Files
+import java.nio.file.LinkOption
+import java.nio.file.StandardCopyOption
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
@@ -30,6 +40,10 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val COPY_BUFFER_SIZE = 128 * 1024
+
+/** Case fold for overwrite-all memory. Locale.ROOT so Turkish I/ı does not split one name. */
+internal fun restoreBatchPathKey(path: String): String =
+    path.trimEnd('/').lowercase(Locale.ROOT)
 
 /** Minimum interval between StateFlow progress publications (~10 updates/s). */
 private const val PUBLISH_INTERVAL_NANOS = 100_000_000L
@@ -57,6 +71,7 @@ class DefaultOperationEngine(
     private val scope: CoroutineScope,
     private val registry: FsRegistry,
     private val cacheDir: File,
+    private val trash: TrashStore = TrashStore(volumes = { emptyList() }),
 ) : OperationEngine {
 
     private val nextId = AtomicLong(1L)
@@ -85,6 +100,7 @@ class DefaultOperationEngine(
             val message = when (op) {
                 is FileOp.Copy -> runCopy(op, running, dirty)
                 is FileOp.Delete -> runDelete(op, running, dirty)
+                is FileOp.Restore -> runRestore(op, running, dirty)
                 is FileOp.Compress -> runCompress(op, running, dirty)
                 is FileOp.Extract -> runExtract(op, running, dirty)
             }
@@ -125,6 +141,8 @@ class DefaultOperationEngine(
         // Case-insensitive for local storage (FAT/emulated) so conflicts aren't missed.
         val destNames = nameSetFor(destDir)
         destNames += destFs.list(destDir).map { it.name }
+        // Listings hide this name. A fast rename onto it would become the live bin.
+        if (isConcealedBinName(destDir, TrashPaths.DIR_NAME)) destNames += TrashPaths.DIR_NAME
         dirty += destDir.id
 
         // Guard: never copy/move a container into itself or one of its own descendants;
@@ -142,10 +160,15 @@ class DefaultOperationEngine(
         // so the user still gets the conflict dialog.
         var movedFast = 0
         val pending = ArrayList<XEntry>(validSources.size)
+        val siblings = EditorSiblingScan()
+        // Copy, share, and open read these paths. A cut-off save's ready sibling is the
+        // real bytes. One listing per source folder, not one per source.
+        markRecovered(trash.recoverTruncatedEdits(validSources.map { it.localPath ?: it.path }), dirty)
         for (src in validSources) {
             if (op.move && tryFastRename(src, destDir, destNames)) {
                 movedFast++
                 XId.parent(src.id)?.let(dirty::add)
+                forgetTrash(src, dirty)
             } else {
                 pending += src
             }
@@ -160,7 +183,7 @@ class DefaultOperationEngine(
                 val export = appExportFor(src).also { appExports[src.id] = it }
                 ScanTotals(export.totalBytes, 1)
             } else {
-                scanTree(src, t)
+                scanTree(src, t, carryBin = op.move)
             }
         }
         t.setTotals(
@@ -175,43 +198,63 @@ class DefaultOperationEngine(
         for ((i, src) in pending.withIndex()) {
             t.ensureActive()
             var name = appExports[src.id]?.name ?: src.name
-            if (name in destNames) {
-                val choice = remembered ?: t.awaitConflict(Conflict(src, name)).let { res ->
-                    if (res.applyToAll) remembered = res.choice
-                    res.choice
-                }
-                when (choice) {
-                    ConflictChoice.SKIP -> {
-                        t.skipItems(perSource[i])
-                        continue
+            if (isConcealedBinName(destDir, name)) {
+                name = uniqueName(name, src.isDir, destNames)
+            }
+            var displaced: TrashRecord? = null
+            var copiedApp = false
+            try {
+                if (name in destNames) {
+                    val choice = remembered ?: t.awaitConflict(Conflict(src, name)).let { res ->
+                        if (res.applyToAll) remembered = res.choice
+                        res.choice
                     }
-                    ConflictChoice.OVERWRITE -> {
-                        // Overwriting a dir replaces it wholesale (delete + re-copy);
-                        // no per-child merge. Overwriting the source itself, or a dir that
-                        // *contains* the source, would destroy the data we are about to
-                        // read, so skip instead.
-                        val existing = childNamed(destDir, name)
-                        if (existing != null && isSelfOrInside(src, existing)) {
+                    when (choice) {
+                        ConflictChoice.SKIP -> {
                             t.skipItems(perSource[i])
                             continue
                         }
-                        if (existing != null) {
-                            registry.forScheme(existing.scheme).delete(existing)
+                        ConflictChoice.OVERWRITE -> {
+                            // Overwriting a dir replaces it wholesale, not per child.
+                            // Overwriting the source itself would destroy the bytes we
+                            // are about to read, so skip instead.
+                            val existing = childNamed(destDir, name)
+                            if (existing != null && isSelfOrInside(src, existing)) {
+                                t.skipItems(perSource[i])
+                                continue
+                            }
+                            if (existing != null) displaced = displaceForOverwrite(existing, dirty)
                         }
+                        ConflictChoice.RENAME -> name = uniqueName(name, src.isDir, destNames)
                     }
-                    ConflictChoice.RENAME -> name = uniqueName(name, src.isDir, destNames)
                 }
-            }
-            val export = appExports[src.id]
-            if (export != null) {
-                copyAppPackage(src, destDir, name, export, t)
-            } else {
-                copyTree(src, destDir, name, t)
+                val export = appExports[src.id]
+                if (export != null) {
+                    copyAppPackage(src, destDir, name, export, t)
+                    copiedApp = true
+                } else {
+                    copyTree(src, destDir, name, t, carryBin = op.move)
+                }
+                if (displaced != null) {
+                    try {
+                        trash.purge(displaced)
+                    } catch (_: IOException) {
+                        // The replacement is already in place. The occupant stays recoverable.
+                    }
+                    dirty += XId.TRASH_ROOT
+                }
+            } catch (cancelled: CancellationException) {
+                undoOverwrite(displaced, destDir, name)
+                throw cancelled
+            } catch (failure: Exception) {
+                undoOverwrite(displaced, destDir, name)
+                throw failure
             }
             destNames += name
             // An app isn't a real file on a writable fs — there's nothing to remove after a "move".
-            if (op.move && export == null) {
-                registry.forScheme(src.scheme).delete(src)
+            if (op.move && !copiedApp) {
+                deleteSource(src, siblings)
+                forgetTrash(src, dirty)
                 XId.parent(src.id)?.let(dirty::add)
             }
             processed++
@@ -231,19 +274,29 @@ class DefaultOperationEngine(
         if (src.scheme != XId.SCHEME_FILE || destDir.scheme != XId.SCHEME_FILE) return false
         if (destDir.kind == EntryKind.ARCHIVE) return false
         if (src.name in destNames) return false
+        // Sidecar display names are not filesystem names and may contain a slash.
+        if (!isSafeFastRenameName(src.name)) return false
         val renamed = File(src.path).renameTo(File(destDir.path, src.name))
         if (renamed) destNames += src.name
         return renamed
     }
 
-    private fun copyTree(src: XEntry, destParent: XEntry, name: String, t: RunningOpImpl) {
+    private fun copyTree(
+        src: XEntry,
+        destParent: XEntry,
+        name: String,
+        t: RunningOpImpl,
+        carryBin: Boolean,
+    ) {
+        // A bin row's display name can contain a slash. Joining it would escape destParent.
+        if (!isSafeFastRenameName(name)) throw IOException("Invalid name: $name")
         t.ensureActive()
         t.current(src.name)
         if (src.isDir) {
             val newDir = registry.forEntry(destParent).mkdir(destParent, name)
             t.itemsDone(1)
-            for (child in registry.forEntry(src).list(src)) {
-                copyTree(child, newDir, child.name, t)
+            for (child in childrenForTransfer(src, carryBin)) {
+                copyTree(child, newDir, child.name, t, carryBin)
             }
         } else {
             copyFile(src, destParent, name, t)
@@ -253,7 +306,13 @@ class DefaultOperationEngine(
 
     private fun copyFile(src: XEntry, destParent: XEntry, name: String, t: RunningOpImpl) {
         var completed = false
+        var created = false
         try {
+            if (copyVolumeBinSymlink(src, destParent, name)) {
+                completed = true
+                return
+            }
+            created = true
             registry.forScheme(src.scheme).openIn(src).use { input ->
                 registry.forEntry(destParent).openOut(destParent, name).use { output ->
                     val buffer = ByteArray(COPY_BUFFER_SIZE)
@@ -268,9 +327,31 @@ class DefaultOperationEngine(
             }
             completed = true
         } finally {
-            // Never leave a partial target behind on cancel or error.
-            if (!completed) runCatching { deleteChildIfExists(destParent, name) }
+            // A bin-symlink copy that fails before the link exists must not delete
+            // the name overwrite already removed. A partial file copy still does.
+            if (!completed && created) runCatching { deleteChildIfExists(destParent, name) }
         }
+    }
+
+    /**
+     * Copies the link node. [LocalFileSystem.openIn] refuses a bin symlink because
+     * a stream would be the live target, and that refusal used to abort the whole tree.
+     */
+    private fun copyVolumeBinSymlink(src: XEntry, destParent: XEntry, name: String): Boolean {
+        if (src.scheme != XId.SCHEME_FILE || destParent.scheme != XId.SCHEME_FILE) return false
+        if (!isSafeFastRenameName(name)) return false
+        val roots = trash.mountedVolumes().map { it.rootPath }
+        if (!TrashPaths.isVolumeBinSymlink(src.path, roots)) return false
+        val dest = File(destParent.localPath ?: destParent.path, name).toPath()
+        // exists() stays true after a successful SD/USB delete. Replace that node
+        // instead of failing and leaving the overwritten name gone.
+        Files.copy(
+            File(src.path).toPath(),
+            dest,
+            LinkOption.NOFOLLOW_LINKS,
+            StandardCopyOption.REPLACE_EXISTING,
+        )
+        return true
     }
 
     // ----------------------------------------------------------------- App package
@@ -364,21 +445,182 @@ class DefaultOperationEngine(
     // ----------------------------------------------------------------- Delete
 
     private fun runDelete(op: FileOp.Delete, t: RunningOpImpl, dirty: MutableSet<String>): String {
-        val perSource = op.sources.map { countTree(it, t) }
+        // A trash is one rename, so don't walk the tree just to count it.
+        val trashMounted = if (op.permanent) null else trash.mountedVolumes()
+        val toBin = op.sources.map { src -> trashMounted != null && trash.canTrash(src, trashMounted) }
+        val perSource = op.sources.mapIndexed { i, src -> if (toBin[i]) 1 else countTree(src, t) }
         t.setTotals(totalBytes = 0L, totalItems = perSource.sum())
         t.setState(OpState.RUNNING)
+        // Merge cut-off saves for the whole selection first: one listing per folder
+        // instead of one per file, and nothing has moved yet if a merge fails. A folder's
+        // ready copies are inside it and move with it, so folders are not walked.
+        trash.recoverTruncatedEdits(
+            op.sources.filterIndexed { i, src -> toBin[i] && !src.isDir }.map { it.localPath ?: it.path },
+        )
         var deleted = 0
+        var trashed = 0
+        val siblings = EditorSiblingScan()
         for ((i, src) in op.sources.withIndex()) {
             t.ensureActive()
             t.current(src.name)
-            // fs.delete is recursive (leaf-first inside the fs); progress advances
-            // per top-level source, scaled by the scanned subtree size.
-            registry.forScheme(src.scheme).delete(src)
+            if (toBin[i]) {
+                trashMoved(src, dirty, recoverEdits = false)
+                trashed += perSource[i]
+            } else if (trashLate(op, src)) {
+                // The mount list used to count the tree can miss a volume that
+                // finishes mounting during that walk. Do not unlink it.
+                trashMoved(src, dirty)
+                trashed += 1
+            } else {
+                if (trash.blocksUnresolved(src)) throw IOException("Storage is still mounting")
+                // The dialog already promised a bin move. A later read-only or
+                // settled mount must not turn that into an unlink.
+                if (op.mustTrash || src.id in op.trashableIds) {
+                    throw IOException("Cannot move ${src.name} to the Recycle Bin")
+                }
+                val path = src.localPath ?: src.path
+                val claimed = trash.claimBinBytes(path)
+                try {
+                    deleteSource(src, siblings)
+                    forgetTrash(src, dirty)
+                } finally {
+                    if (claimed != null) trash.releaseBinBytes(claimed)
+                }
+                deleted += perSource[i]
+            }
             XId.parent(src.id)?.let(dirty::add)
             t.itemsDone(perSource[i])
-            deleted += perSource[i]
         }
-        return "Deleted ${countLabel(deleted)}"
+        return when {
+            trashed > 0 && deleted == 0 -> "Moved ${countLabel(trashed)} to the Recycle Bin"
+            trashed > 0 -> "Moved ${countLabel(trashed)} to the Recycle Bin, deleted ${countLabel(deleted)}"
+            else -> "Deleted ${countLabel(deleted)}"
+        }
+    }
+
+    private suspend fun runRestore(
+        op: FileOp.Restore,
+        t: RunningOpImpl,
+        dirty: MutableSet<String>,
+    ): String {
+        t.setTotals(totalBytes = 0L, totalItems = op.sources.size)
+        t.setState(OpState.RUNNING)
+        var restored = 0
+        var skipped = 0
+        var remembered: ConflictChoice? = null
+        // Paths this batch already put back. Overwrite-all must not trash those and then
+        // report every item restored.
+        val restoredHere = HashSet<String>()
+        for (src in op.sources) {
+            t.ensureActive()
+            t.current(src.name)
+            val path = src.localPath ?: src.path
+            val record = trash.lookup(path) ?: throw IOException("Cannot restore ${src.name}")
+            // A symlink parent must fail before overwrite trashes whatever the link points at.
+            if (!trash.restoreTargetIsReal(record)) {
+                throw IOException("Cannot restore ${src.name}")
+            }
+            val planned = trash.plannedParent(record)
+            val parentEntry = XEntry(
+                id = XId.file(planned.absolutePath),
+                name = planned.name.ifEmpty { planned.absolutePath },
+                isDir = true,
+                kind = EntryKind.DIR,
+                localPath = planned.absolutePath,
+            )
+            val destNames = nameSetFor(parentEntry)
+            // File.list misses children that only the stored grant names. list() unions them.
+            val listed = runCatching {
+                registry.forEntry(parentEntry).list(parentEntry).map { it.name }
+            }.getOrNull()
+            if (listed != null) destNames.addAll(listed)
+            else if (planned.isDirectory) planned.list()?.let(destNames::addAll)
+            val parentKey = pathKey(planned.absolutePath)
+            for (restoredPath in restoredHere) {
+                val prefix = "$parentKey/"
+                if (!restoredPath.startsWith(prefix)) continue
+                val rest = restoredPath.removePrefix(prefix)
+                if ('/' !in rest) destNames += rest
+            }
+            var name = record.name
+            // The file currently at the original name. Put it in the bin first so a failed
+            // restore can move it back; never unlink it.
+            var displaced: TrashRecord? = null
+            try {
+                if (name in destNames) {
+                    val choice = remembered ?: t.awaitConflict(Conflict(src, name)).let { res ->
+                        if (res.applyToAll) remembered = res.choice
+                        res.choice
+                    }
+                    when (choice) {
+                        ConflictChoice.SKIP -> {
+                            skipped++
+                            t.itemsDone(1)
+                            continue
+                        }
+                        ConflictChoice.OVERWRITE -> {
+                            val existing = childNamed(parentEntry, name)
+                                ?: symlinkOccupant(parentEntry, name)
+                            val occupantPath = existing?.let { it.localPath ?: it.path }
+                            val claimed = File(planned, name).absolutePath
+                            // stat can miss a file this batch just wrote via SAF.
+                            if (restoredHereCovers(claimed, restoredHere) ||
+                                (occupantPath != null && restoredHereCovers(occupantPath, restoredHere))
+                            ) {
+                                name = uniqueName(name, src.isDir, destNames)
+                            } else if (existing != null) {
+                                displaced = trash.trash(existing)
+                                dirty += XId.TRASH_ROOT
+                                // Restore may still fail. The folder already lost this name.
+                                dirty += parentEntry.id
+                            }
+                        }
+                        ConflictChoice.RENAME -> name = uniqueName(name, src.isDir, destNames)
+                    }
+                }
+                val parent = trash.restoreParent(record)
+                // nameSetFor already folded case. The listing spelling can still differ.
+                val vacated = displaced != null && name.equals(displaced.name, ignoreCase = true)
+                trash.restore(record, name, vacated = vacated)
+                restoredHere += pathKey(File(parent, name).absolutePath)
+                restored++
+                dirty += XId.TRASH_ROOT
+                ancestorIds(parent, record.volumeRoot).forEach(dirty::add)
+                t.itemsDone(1)
+            } catch (cancelled: CancellationException) {
+                restoreDisplaced(displaced)
+                throw cancelled
+            } catch (failure: Exception) {
+                restoreDisplaced(displaced)
+                throw failure
+            }
+        }
+        return if (skipped > 0) {
+            "Restored ${countLabel(restored)} ($skipped skipped)"
+        } else {
+            "Restored ${countLabel(restored)}"
+        }
+    }
+
+    private fun pathKey(path: String): String = restoreBatchPathKey(path)
+
+    /** True when this batch already restored [occupantPath] or a file inside it. */
+    private fun restoredHereCovers(occupantPath: String, restoredHere: Set<String>): Boolean {
+        val key = pathKey(occupantPath)
+        val prefix = "$key/"
+        return restoredHere.any { it == key || it.startsWith(prefix) }
+    }
+
+    /** The destination folder, created when the original parent was removed with the file. */
+    private fun ancestorIds(parent: File, volumeRoot: String): List<String> {
+        val ids = ArrayList<String>()
+        var cursor: File? = parent
+        while (cursor != null) {
+            ids += XId.file(cursor.absolutePath)
+            if (TrashPaths.samePath(cursor.path, volumeRoot)) break
+            cursor = cursor.parentFile
+        }
+        return ids
     }
 
     /** Best-effort count for progress scaling; real errors surface from delete itself. */
@@ -408,9 +650,12 @@ class DefaultOperationEngine(
         val destFs = registry.forEntry(destDir)
         val destNames = nameSetFor(destDir)
         destNames += destFs.list(destDir).map { it.name }
+        // Listings hide this name. Cleanup must not treat a failed zip as that directory.
+        if (isConcealedBinName(destDir, TrashPaths.DIR_NAME)) destNames += TrashPaths.DIR_NAME
         dirty += destDir.id
+        markRecovered(trash.recoverTruncatedEdits(op.sources.map { it.localPath ?: it.path }), dirty)
 
-        val perSource = op.sources.map { scanTree(it, t) }
+        val perSource = op.sources.map { scanTree(it, t, carryBin = false) }
         val totalBytes = perSource.sumOf { it.bytes }
         t.setTotals(
             totalBytes = totalBytes,
@@ -418,6 +663,9 @@ class DefaultOperationEngine(
         )
 
         var archiveName = op.archiveName
+        if (isConcealedBinName(destDir, archiveName)) {
+            archiveName = uniqueName(archiveName, isDir = false, taken = destNames)
+        }
         if (archiveName in destNames) {
             val conflictSource = op.sources.firstOrNull() ?: destDir
             val resolution = t.awaitConflict(Conflict(conflictSource, archiveName))
@@ -486,7 +734,7 @@ class DefaultOperationEngine(
         if (entry.id == outputId) return
         if (entry.isDir) {
             out += ZipTurbo.ZipSource(relPath, isDir = true, entry.mtime) { EMPTY_INPUT }
-            for (child in registry.forEntry(entry).list(entry)) {
+            for (child in childrenForTransfer(entry, carryBin = false)) {
                 collectZipSources(child, "$relPath/${child.name}", outputId, out)
             }
         } else {
@@ -546,10 +794,20 @@ class DefaultOperationEngine(
         // Fallback: sequential extraction (7z/tar/rar, or non-local destination).
         val archiveRoot = archive.copy(kind = EntryKind.ARCHIVE)
         val children = registry.forEntry(archiveRoot).list(archiveRoot)
-        val perSource = children.map { scanTree(it, t) }
+        val perSource = children.map { scanTree(it, t, carryBin = false) }
         t.setTotals(perSource.sumOf { it.bytes }, perSource.sumOf { it.items })
         t.setState(OpState.RUNNING)
-        for (child in children) copyTree(child, destDir, child.name, t)
+        val taken = nameSetFor(destDir)
+        taken += registry.forEntry(destDir).list(destDir).map { it.name }
+        if (isConcealedBinName(destDir, TrashPaths.DIR_NAME)) taken += TrashPaths.DIR_NAME
+        for (child in children) {
+            val childName = if (isConcealedBinName(destDir, child.name)) {
+                uniqueName(child.name, child.isDir, taken).also { taken += it }
+            } else {
+                child.name
+            }
+            copyTree(child, destDir, childName, t, carryBin = false)
+        }
         return "Extracted ${archive.name}"
     }
 
@@ -561,23 +819,67 @@ class DefaultOperationEngine(
      * so its on-disk size is what counts. Entries inside an archive (`zip://` ids)
      * report decompressed sizes, matching what their [app.local1st.files.core.fs.XFileSystem.openIn] streams.
      */
-    private fun scanTree(entry: XEntry, t: RunningOpImpl): ScanTotals {
+    private fun scanTree(entry: XEntry, t: RunningOpImpl, carryBin: Boolean): ScanTotals {
         val totals = ScanTotals()
-        scanInto(entry, totals, t)
+        scanInto(entry, totals, t, carryBin)
         return totals
     }
 
-    private fun scanInto(entry: XEntry, totals: ScanTotals, t: RunningOpImpl) {
+    private fun scanInto(entry: XEntry, totals: ScanTotals, t: RunningOpImpl, carryBin: Boolean) {
         t.ensureActive()
         totals.items++
         if (entry.isDir) {
             t.current(entry.name)
-            for (child in registry.forEntry(entry).list(entry)) {
-                scanInto(child, totals, t)
+            for (child in childrenForTransfer(entry, carryBin)) {
+                scanInto(child, totals, t, carryBin)
             }
         } else {
             totals.bytes += entry.size.coerceAtLeast(0L)
         }
+    }
+
+    /**
+     * Listings hide a volume's `.xfiles-trash`. Only a move deletes the source,
+     * so only a move copies the bin; copy and zip would put deleted files back.
+     */
+    private fun childrenForTransfer(dir: XEntry, carryBin: Boolean): List<XEntry> {
+        val listed = registry.forEntry(dir).list(dir)
+        if (!carryBin) return listed
+        val bin = volumeBinChild(dir) ?: return listed
+        if (listed.any { it.name == TrashPaths.DIR_NAME }) return listed
+        return listed + bin
+    }
+
+    private fun volumeBinChild(dir: XEntry): XEntry? {
+        if (!dir.isDir) return null
+        if (dir.scheme != XId.SCHEME_FILE && dir.scheme != XId.SCHEME_ROOT) return null
+        val path = dir.localPath ?: dir.path
+        val volume = trash.mountedVolumes().firstOrNull { TrashPaths.samePath(it.rootPath, path) }
+            ?: return null
+        val binPath = TrashPaths.binRoot(volume.rootPath)
+        when (trash.hiddenBin(volume.rootPath)) {
+            HiddenBin.ABSENT -> return null
+            // File cannot see a grant-only bin, and neither can the grant listing.
+            // Copying nothing and then deleting the source would drop the only copies.
+            HiddenBin.UNKNOWN -> throw IOException("Cannot move ${dir.name}")
+            HiddenBin.PRESENT -> Unit
+        }
+        return XEntry(
+            id = "${dir.scheme}://$binPath",
+            name = TrashPaths.DIR_NAME,
+            isDir = true,
+            kind = EntryKind.DIR,
+            localPath = if (dir.scheme == XId.SCHEME_FILE) binPath else null,
+        )
+    }
+
+    /** True when [name] is the hidden bin of the volume [parent] itself. */
+    private fun isConcealedBinName(parent: XEntry, name: String): Boolean {
+        if (parent.scheme != XId.SCHEME_FILE && parent.scheme != XId.SCHEME_ROOT) return false
+        // Root volumes can be case-insensitive too. An exact compare still hits the live bin.
+        if (!name.equals(TrashPaths.DIR_NAME, ignoreCase = true)) return false
+        val parentPath = parent.localPath ?: parent.path
+        return trash.mountedVolumes().any { TrashPaths.samePath(it.rootPath, parentPath) }
     }
 
     /** Name set for a destination dir; case-insensitive for local storage. */
@@ -596,6 +898,9 @@ class DefaultOperationEngine(
     }
 
     private fun deleteChildIfExists(parentDir: XEntry, name: String) {
+        if (!isSafeFastRenameName(name)) return
+        // stat still sees the hidden bin. Deleting that name would empty the recycle bin.
+        if (isConcealedBinName(parentDir, name)) return
         val existing = childNamed(parentDir, name) ?: return
         registry.forScheme(existing.scheme).delete(existing)
     }
@@ -604,10 +909,24 @@ class DefaultOperationEngine(
      * Destination child for [name]. SAF ids are provider document ids, not display names, so
      * [XId.child] cannot be used to look them up.
      */
+    /** A dangling symlink is invisible to [stat] and [File.exists], but it still occupies the name. */
+    private fun symlinkOccupant(parentDir: XEntry, name: String): XEntry? {
+        if (parentDir.scheme != XId.SCHEME_FILE) return null
+        val file = java.io.File(parentDir.localPath ?: parentDir.path, name)
+        if (!java.nio.file.Files.isSymbolicLink(file.toPath())) return null
+        return XEntry(
+            id = XId.file(file.absolutePath),
+            name = name,
+            isDir = false,
+            kind = EntryKind.FILE,
+            localPath = file.absolutePath,
+        )
+    }
+
     private fun childNamed(parentDir: XEntry, name: String): XEntry? {
-        if (parentDir.scheme == XId.SCHEME_SAF) {
-            return registry.forEntry(parentDir).list(parentDir)
-                .firstOrNull { it.name.equals(name, ignoreCase = true) }
+        if (parentDir.scheme == XId.SCHEME_SAF || parentDir.scheme == XId.SCHEME_FILE) {
+            val listed = runCatching { registry.forEntry(parentDir).list(parentDir) }.getOrNull()
+            listed?.firstOrNull { it.name.equals(name, ignoreCase = true) }?.let { return it }
         }
         val childId = XId.child(parentDir, name)
         return registry.forId(childId).stat(childId)
@@ -628,19 +947,123 @@ class DefaultOperationEngine(
     private fun titleFor(op: FileOp): String = when (op) {
         is FileOp.Copy ->
             "${if (op.move) "Moving" else "Copying"} ${countLabel(op.sources.size)}"
-        is FileOp.Delete -> "Deleting ${countLabel(op.sources.size)}"
+        is FileOp.Delete ->
+            if (deleteGoesToBin(op))
+                "Moving ${countLabel(op.sources.size)} to the Recycle Bin"
+            else "Deleting ${countLabel(op.sources.size)}"
+        is FileOp.Restore -> "Restoring ${countLabel(op.sources.size)}"
         is FileOp.Compress -> "Creating ${op.archiveName}"
         is FileOp.Extract -> "Extracting ${op.archive.name}"
     }
 
     private fun verbFor(op: FileOp): String = when (op) {
         is FileOp.Copy -> if (op.move) "Move" else "Copy"
-        is FileOp.Delete -> "Delete"
+        is FileOp.Delete -> if (deleteGoesToBin(op)) "Move" else "Delete"
+        is FileOp.Restore -> "Restore"
         is FileOp.Compress -> "Compress"
         is FileOp.Extract -> "Extract"
     }
 
+    /** True when this delete is a bin move, including a confirm that forbids unlinking. */
+    private fun deleteGoesToBin(op: FileOp.Delete): Boolean =
+        !op.permanent && (op.mustTrash || deletesToBin(op))
+
+    /** A move or permanent delete of a top-level bin item drops its restore record. */
+    private fun forgetTrash(entry: XEntry, dirty: MutableSet<String>) {
+        if (trash.noteRemoved(entry.localPath ?: entry.path)) dirty += XId.TRASH_ROOT
+    }
+
+    /**
+     * Park a replaceable occupant in the bin so a failed copy can put it back.
+     * A destination that cannot be trashed is still removed permanently.
+     * A pending mount can look read-only after the card is writable; deleting
+     * then skips the bin, so that case fails and leaves the occupant in place.
+     */
+    private fun displaceForOverwrite(existing: XEntry, dirty: MutableSet<String>): TrashRecord? {
+        if (trash.canTrash(existing)) {
+            val record = trash.trash(existing)
+            dirty += XId.TRASH_ROOT
+            XId.parent(existing.id)?.let(dirty::add)
+            return record
+        }
+        if (trash.blocksUnresolved(existing)) throw IOException("Storage is still mounting")
+        registry.forScheme(existing.scheme).delete(existing)
+        forgetTrash(existing, dirty)
+        return null
+    }
+
+    /** Drop a partial replacement, then return the occupant the failed copy displaced. */
+    private fun undoOverwrite(displaced: TrashRecord?, destDir: XEntry, name: String) {
+        if (displaced == null) return
+        val partial = childNamed(destDir, name)
+        if (partial != null) {
+            val partialPath = partial.localPath ?: partial.path
+            if (!TrashPaths.isInsideVolumeBin(partialPath, listOf(displaced.volumeRoot))) {
+                runCatching { registry.forScheme(partial.scheme).delete(partial) }
+            }
+        }
+        restoreDisplaced(displaced)
+    }
+
+    /** Moves an overwritten occupant back to the name restore failed to claim. */
+    private fun restoreDisplaced(displaced: TrashRecord?) {
+        if (displaced == null) return
+        try {
+            trash.restore(displaced, displaced.name, vacated = true)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // The occupant is still a bin record, so the newer bytes stay recoverable.
+        }
+    }
+
+    /**
+     * Marks the source and the bin dirty even when [TrashStore.trash] throws
+     * after the bytes have already left the folder.
+     */
+    private fun trashMoved(src: XEntry, dirty: MutableSet<String>, recoverEdits: Boolean = true) {
+        try {
+            trash.trash(src, recoverEdits)
+        } finally {
+            dirty += XId.TRASH_ROOT
+            XId.parent(src.id)?.let(dirty::add)
+        }
+    }
+
+    /** Local deletes of one operation share [siblings]: each folder is listed once. */
+    private fun deleteSource(src: XEntry, siblings: EditorSiblingScan) {
+        val fs = registry.forScheme(src.scheme)
+        if (fs is LocalFileSystem) fs.delete(src, siblings) else fs.delete(src)
+    }
+
+    /**
+     * A merged save changed a source's size and removed its hidden siblings. A file inside
+     * a copied folder sits below the source, so its own folder is the one to re-read.
+     */
+    private fun markRecovered(paths: Set<String>, dirty: MutableSet<String>) {
+        for (path in paths) File(path).parent?.let { dirty += XId.file(it) }
+    }
+
+    /** True when a fresh mount list can still move [src] to the bin. */
+    private fun trashLate(op: FileOp.Delete, src: XEntry): Boolean {
+        if (op.permanent) return false
+        return trash.canTrash(src, trash.mountedVolumes())
+    }
+
+    private fun deletesToBin(op: FileOp.Delete): Boolean {
+        if (op.permanent || op.sources.isEmpty()) return false
+        val mounted = trash.mountedVolumes()
+        return op.sources.all { trash.canTrash(it, mounted) }
+    }
+
     private fun countLabel(n: Int): String = if (n == 1) "1 item" else "$n items"
+
+    private fun isSafeFastRenameName(name: String): Boolean = try {
+        requireSafeEntryName(name)
+        true
+    } catch (_: IOException) {
+        false
+    }
 }
 
 private class ScanTotals(var bytes: Long = 0L, var items: Int = 0)

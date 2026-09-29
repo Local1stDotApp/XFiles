@@ -6,6 +6,7 @@ import app.local1st.files.core.fs.FsRegistry
 import app.local1st.files.core.fs.LegacySafAccess
 import app.local1st.files.core.fs.RootsRepository
 import app.local1st.files.core.fs.SafLocationActions
+import app.local1st.files.core.fs.TrashStore
 import app.local1st.files.core.ops.OperationEngine
 import app.local1st.files.core.prefs.Favorite
 import app.local1st.files.core.prefs.SafLocation
@@ -65,7 +66,23 @@ object Graph {
     }
 
     lateinit var roots: RootsRepository
+
+    /**
+     * Cached volume paths. Does not call StorageManager or StatFs, so composition
+     * can read it on every frame.
+     */
+    fun mountedVolumePaths(): List<String> {
+        if (!::roots.isInitialized) return emptyList()
+        return roots.peekMountedVolumes().map { it.path }
+    }
+
+    /** One mount scan without StatFs when the cache is stale. Not for composition. */
+    fun freshMountedVolumePaths(): List<String> {
+        if (!::roots.isInitialized) return emptyList()
+        return runCatching { roots.currentMountedVolumes().map { it.path } }.getOrDefault(emptyList())
+    }
     lateinit var locationActions: SafLocationActions
+    lateinit var trash: TrashStore
     lateinit var opEngine: OperationEngine
     lateinit var searchEngine: SearchEngine
 

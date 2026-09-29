@@ -1,9 +1,11 @@
 package app.local1st.files.core.fs
 
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -18,6 +20,21 @@ class LocalFileReplaceTest {
     val temporaryFolder = TemporaryFolder()
 
     private val fs = LocalFileSystem()
+
+    @Test
+    fun replaceRangesRefusesATrashedSymlink() {
+        val root = temporaryFolder.newFolder("vol")
+        val bin = File(root, ".xfiles-trash/files/abc-00000001").apply { mkdirs() }
+        val live = File(root, "live.txt").apply { writeText("live-bytes") }
+        val link = File(bin, "note")
+        Files.createSymbolicLink(link.toPath(), live.toPath())
+
+        val rooted = LocalFileSystem(volumeRoots = { listOf(root.absolutePath) })
+        assertThrows(IOException::class.java) {
+            rooted.replaceRanges(entry(link), listOf(ByteRangeEdit(0, 4, "xxxx".toByteArray())))
+        }
+        assertEquals("live-bytes", live.readText())
+    }
 
     @Test
     fun replaceContents_rewritesTheWholeFile() {

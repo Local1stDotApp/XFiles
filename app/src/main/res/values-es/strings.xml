@@ -154,6 +154,15 @@ Monta esa ubicación como carpeta en otra app primero — RCX (rclone), Nextclou
     <string name="storage_access_summary">Necesario para explorar y administrar los archivos de este dispositivo.</string>
     <string name="grant_access">Conceder acceso</string>
     <string name="delete_confirmation">¿Eliminar %1$s%2$s? No se puede deshacer.</string>
+    <string name="recycle_bin">Papelera</string>
+    <string name="move_to_recycle_bin_confirmation">¿Mover %1$s%2$s a la papelera?</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s se moverá a la papelera. Lo que no se pueda recuperar se eliminará de forma permanente.</string>
+    <string name="delete_permanently">Eliminar permanentemente</string>
+    <string name="restore">Restaurar</string>
+    <string name="empty_recycle_bin">Vaciar papelera</string>
+    <string name="empty_recycle_bin_confirmation">¿Eliminar permanentemente todo el contenido de la papelera? No se puede deshacer.</string>
+    <string name="recycle_bin_empty">La papelera está vacía</string>
+    <string name="recycle_bin_unknown_location">%1$s · ubicación original desconocida</string>
     <string name="and_more"> y %1$d más</string>
     <string name="create_zip_in">Crear ZIP en %1$s</string>
     <string name="location">Ubicación: %1$s</string>

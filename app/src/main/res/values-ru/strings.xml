@@ -154,6 +154,15 @@
     <string name="storage_access_summary">Требуется для просмотра и управления файлами на этом устройстве.</string>
     <string name="grant_access">Предоставить доступ</string>
     <string name="delete_confirmation">Удалить %1$s%2$s? Это невозможно отменить.</string>
+    <string name="recycle_bin">Корзина</string>
+    <string name="move_to_recycle_bin_confirmation">Переместить %1$s%2$s в корзину?</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s будет перемещено в корзину. То, что нельзя восстановить, удаляется навсегда.</string>
+    <string name="delete_permanently">Удалить навсегда</string>
+    <string name="restore">Восстановить</string>
+    <string name="empty_recycle_bin">Очистить корзину</string>
+    <string name="empty_recycle_bin_confirmation">Навсегда удалить всё из корзины? Это невозможно отменить.</string>
+    <string name="recycle_bin_empty">Корзина пуста</string>
+    <string name="recycle_bin_unknown_location">%1$s · исходное расположение неизвестно</string>
     <string name="and_more"> и ещё %1$d</string>
     <string name="create_zip_in">Создать ZIP-архив в %1$s</string>
     <string name="location">Местоположение: %1$s</string>

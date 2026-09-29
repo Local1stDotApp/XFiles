@@ -10,12 +10,18 @@ import android.os.StatFs
 import android.os.storage.StorageManager
 import android.os.storage.StorageVolume
 import androidx.annotation.RequiresApi
+import app.local1st.files.R
 import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.prefs.Favorite
 import app.local1st.files.core.prefs.SafLocation
 import app.local1st.files.core.util.Format
+import android.os.SystemClock
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.Executor
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -39,6 +45,18 @@ class DefaultRootsRepository(
         context.getSystemService(Context.STORAGE_SERVICE) as StorageManager
     private val _volumeEpoch = MutableStateFlow(0L)
     override val volumeEpoch: StateFlow<Long> = _volumeEpoch
+    private val mountedLock = Any()
+    @Volatile
+    private var mountSnapshot = MountPublish()
+    @Volatile
+    private var pendingRetryAt = 0L
+    private val scanGeneration = AtomicLong(0)
+    private val refreshQueued = AtomicBoolean(false)
+    private val _mountedVolumes = MutableStateFlow<List<MountedVolume>>(emptyList())
+    override val mountedVolumes: StateFlow<List<MountedVolume>> = _mountedVolumes
+    private val mountedScanner = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "xfiles-volumes").apply { isDaemon = true }
+    }
 
     private val mediaReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -64,6 +82,7 @@ class DefaultRootsRepository(
             @Suppress("UnspecifiedRegisterReceiverFlag")
             context.registerReceiver(mediaReceiver, filter)
         }
+        refreshMountedAsync()
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
@@ -80,18 +99,145 @@ class DefaultRootsRepository(
 
     private fun bumpVolumeEpoch() {
         _volumeEpoch.update { it + 1 }
+        refreshMountedAsync()
     }
 
-    override fun volumes(): List<Volume> {
-        return storageManager.storageVolumes.mapNotNull { volume ->
+    override fun peekMountedVolumes(): List<MountedVolume> {
+        if (mountSnapshot.needsRefresh(_volumeEpoch.value) &&
+            SystemClock.uptimeMillis() >= pendingRetryAt
+        ) {
+            refreshMountedAsync()
+        }
+        return mountSnapshot.cached
+    }
+
+    override fun currentMountedVolumes(): List<MountedVolume> {
+        val epoch = _volumeEpoch.value
+        val snapshot = mountSnapshot
+        if (!snapshot.needsRefresh(epoch)) return snapshot.cached
+        if (snapshot.pending && SystemClock.uptimeMillis() < pendingRetryAt) return snapshot.cached
+        synchronized(mountedLock) {
+            val now = _volumeEpoch.value
+            val current = mountSnapshot
+            if (!current.needsRefresh(now)) return current.cached
+            if (current.pending && SystemClock.uptimeMillis() < pendingRetryAt) return current.cached
+            // Generation is the start order. Taking it after the scan lets an older
+            // scan seal over a newer pending observation.
+            val generation = scanGeneration.incrementAndGet()
+            val scan = scanMounted(withStats = false)
+            if (_volumeEpoch.value == now) {
+                publishMounted(now, generation, scan.mounted, scan.pending)
+            }
+            return mountSnapshot.cached
+        }
+    }
+
+    override fun requireMountedVolumes(): List<MountedVolume> {
+        currentMountedVolumes()
+        val snapshot = mountSnapshot
+        // A scan abandoned because the epoch moved must not be treated as the new volume list.
+        if (snapshot.pending || snapshot.sealedEpoch != _volumeEpoch.value) {
+            throw IOException("Storage is still mounting")
+        }
+        return snapshot.cached
+    }
+
+    override fun hasUnresolvedVolume(): Boolean {
+        currentMountedVolumes()
+        val snapshot = mountSnapshot
+        return snapshot.pending || snapshot.sealedEpoch != _volumeEpoch.value
+    }
+
+    private fun refreshMountedAsync() {
+        if (!refreshQueued.compareAndSet(false, true)) return
+        val epoch = _volumeEpoch.value
+        val generation = scanGeneration.incrementAndGet()
+        mountedScanner.execute {
+            try {
+                val current = mountSnapshot
+                if (!current.needsRefresh(epoch)) return@execute
+                val scan = scanMounted(withStats = false)
+                if (_volumeEpoch.value != epoch) return@execute
+                publishMounted(epoch, generation, scan.mounted, scan.pending)
+                if (!scan.pending) return@execute
+                // directoryOf can miss a just-mounted SD/USB path. One retry, then wait
+                // for the next epoch or a pane-root scan that resolved the directory.
+                try {
+                    Thread.sleep(MOUNT_RETRY_MS)
+                } catch (_: InterruptedException) {
+                    return@execute
+                }
+                if (!mountSnapshot.needsRefresh(epoch) || _volumeEpoch.value != epoch) return@execute
+                val retryGeneration = scanGeneration.incrementAndGet()
+                val retry = scanMounted(withStats = false)
+                if (_volumeEpoch.value == epoch) {
+                    publishMounted(epoch, retryGeneration, retry.mounted, retry.pending)
+                }
+            } finally {
+                refreshQueued.set(false)
+            }
+        }
+    }
+
+    private fun publishMounted(
+        epoch: Long,
+        generation: Long,
+        mounted: List<MountedVolume>,
+        pending: Boolean,
+    ) {
+        synchronized(mountedLock) {
+            val next = publishMountSnapshot(mountSnapshot, epoch, generation, mounted, pending)
+            if (next == mountSnapshot) return
+            mountSnapshot = next
+            if (pending) pendingRetryAt = SystemClock.uptimeMillis() + MOUNT_RETRY_MS
+            else pendingRetryAt = 0L
+            _mountedVolumes.value = next.cached
+        }
+    }
+
+    /**
+     * StorageManager only unless [withStats] is set. A mounted volume whose directory
+     * is not visible yet stays [MountScan.pending] so the snapshot is not sealed.
+     */
+    private fun scanMounted(withStats: Boolean): MountScan {
+        var pending = false
+        val mounted = ArrayList<MountedVolume>()
+        val volumes = ArrayList<Volume>()
+        for (volume in storageManager.storageVolumes) {
             if (volume.state != Environment.MEDIA_MOUNTED &&
                 volume.state != Environment.MEDIA_MOUNTED_READ_ONLY
             ) {
-                return@mapNotNull null
+                continue
             }
-            val dir = directoryOf(volume) ?: return@mapNotNull null
-            toVolume(volume, dir)
+            val dir = directoryOf(volume)
+            if (dir == null) {
+                pending = true
+                continue
+            }
+            mounted += MountedVolume(
+                path = dir.absolutePath,
+                label = labelOf(volume),
+                writable = volume.state != Environment.MEDIA_MOUNTED_READ_ONLY,
+            )
+            if (withStats) volumes += toVolume(volume, dir)
         }
+        return MountScan(mounted, volumes, pending)
+    }
+
+    private fun labelOf(volume: StorageVolume): String =
+        volume.getDescription(context)?.takeIf { it.isNotBlank() }
+            ?: if (volume.isPrimary) "Internal storage" else "Storage"
+
+    override fun volumes(): List<Volume> {
+        val epoch = _volumeEpoch.value
+        val generation = scanGeneration.incrementAndGet()
+        val scan = scanMounted(withStats = true)
+        // Drop the publish if a volume arrived mid-scan. Sealing the new epoch with
+        // this result would hide that volume and permanent-delete its files.
+        if (_volumeEpoch.value == epoch) {
+            publishMounted(epoch, generation, scan.mounted, scan.pending)
+        }
+        return scan.volumes
     }
 
     override fun paneRoots(): List<XEntry> {
@@ -116,8 +262,9 @@ class DefaultRootsRepository(
         val taken = HashSet<String>()
         volumeEntries.mapTo(taken) { it.id }
         specials.mapTo(taken) { it.id }
-        val roots = ArrayList<XEntry>(volumeEntries.size + specials.size + 4)
+        val roots = ArrayList<XEntry>(volumeEntries.size + specials.size + 5)
         roots += volumeEntries
+        roots += TrashFileSystem.rootEntry(context.getString(R.string.recycle_bin))
         addSafLocations(roots, taken)
         addFavorites(roots, taken)
         roots += specials
@@ -193,8 +340,7 @@ class DefaultRootsRepository(
         } catch (_: IllegalArgumentException) {
             // Just-mounted USB FUSE is sometimes not stat-able yet. Keep the root visible.
         }
-        val label = volume.getDescription(context)?.takeIf { it.isNotBlank() }
-            ?: if (volume.isPrimary) "Internal storage" else "Storage"
+        val label = labelOf(volume)
         val used = if (total > 0 && free >= 0) (total - free).coerceAtLeast(0L) else -1L
         val entry = XEntry(
             id = XId.file(path),
@@ -250,4 +396,73 @@ class DefaultRootsRepository(
             null
         }.getOrNull()
     }
+
+    private companion object {
+        const val MOUNT_RETRY_MS = 300L
+    }
+}
+
+private class MountScan(
+    val mounted: List<MountedVolume>,
+    val volumes: List<Volume>,
+    val pending: Boolean,
+)
+
+internal data class MountPublish(
+    val cached: List<MountedVolume> = emptyList(),
+    val sealedEpoch: Long = Long.MIN_VALUE,
+    /** Epoch of the scan that last won, including one that is still pending. */
+    val observedEpoch: Long = Long.MIN_VALUE,
+    val generation: Long = Long.MIN_VALUE,
+    val pending: Boolean = false,
+) {
+    fun needsRefresh(epoch: Long): Boolean = pending || sealedEpoch != epoch
+}
+
+/**
+ * A pending scan remembers [epoch] so a slower earlier scan cannot seal that
+ * epoch without the new volume. While pending, roots already cached stay.
+ */
+internal fun publishMountSnapshot(
+    current: MountPublish,
+    epoch: Long,
+    generation: Long,
+    mounted: List<MountedVolume>,
+    pending: Boolean,
+): MountPublish {
+    if (epoch < current.observedEpoch) return current
+    if (epoch == current.observedEpoch && generation < current.generation) return current
+    if (pending) {
+        return MountPublish(
+            cached = unionMountedVolumes(current.cached, mounted),
+            sealedEpoch = current.sealedEpoch,
+            observedEpoch = epoch,
+            generation = generation,
+            pending = true,
+        )
+    }
+    return MountPublish(
+        cached = mounted,
+        sealedEpoch = epoch,
+        observedEpoch = epoch,
+        generation = generation,
+        pending = false,
+    )
+}
+
+internal fun unionMountedVolumes(
+    current: List<MountedVolume>,
+    incoming: List<MountedVolume>,
+): List<MountedVolume> {
+    // A pending scan must not keep a stale read-only flag for a volume it just saw.
+    // Volumes missing from this scan stay, so a slower result cannot drop one.
+    val merged = ArrayList<MountedVolume>(current.size + incoming.size)
+    for (vol in current) {
+        val update = incoming.firstOrNull { TrashPaths.samePath(it.path, vol.path) }
+        merged += update ?: vol
+    }
+    for (vol in incoming) {
+        if (merged.none { TrashPaths.samePath(it.path, vol.path) }) merged += vol
+    }
+    return merged
 }

@@ -37,7 +37,10 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import app.local1st.files.R
+import app.local1st.files.core.fs.DeleteDisposition
 import app.local1st.files.core.fs.EntryKind
+import app.local1st.files.core.fs.TrashPaths
+import app.local1st.files.core.fs.TrashVolume
 import app.local1st.files.core.fs.XId
 import app.local1st.files.core.fs.addLocationGuideUrl
 import app.local1st.files.core.util.AppComponents
@@ -65,16 +68,46 @@ fun MainDialogs(vm: MainViewModel) {
     when (val req = request) {
         null -> Unit
 
-        is DialogRequest.ConfirmDelete -> AlertDialog(
+        is DialogRequest.ConfirmDelete -> {
+            val named = if (req.mode == DeleteDisposition.MIXED) {
+                req.entries.filter { it.id in req.trashableIds }
+            } else {
+                req.entries
+            }
+            val names = named.take(3).joinToString(", ") { it.name }
+            val extra = if (named.size > 3) stringResource(R.string.and_more, named.size - 3) else ""
+            val title = if (req.mode == DeleteDisposition.TRASH) R.string.recycle_bin else R.string.delete
+            val message = when (req.mode) {
+                DeleteDisposition.TRASH ->
+                    stringResource(R.string.move_to_recycle_bin_confirmation, names, extra)
+                DeleteDisposition.PERMANENT ->
+                    stringResource(R.string.delete_confirmation, names, extra)
+                // Only the trashable names. The rest of the sentence covers permanent deletion.
+                DeleteDisposition.MIXED ->
+                    stringResource(R.string.mixed_delete_confirmation, names, extra)
+            }
+            val confirm = if (req.mode == DeleteDisposition.TRASH) R.string.move else R.string.delete
+            AlertDialog(
+                onDismissRequest = dismiss,
+                title = { Text(stringResource(title)) },
+                text = { Text(message) },
+                confirmButton = {
+                    Button(onClick = {
+                        vm.performDelete(req.entries, req.mode, req.explicitPermanent, req.trashableIds)
+                    }) {
+                        Text(stringResource(confirm))
+                    }
+                },
+                dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel)) } },
+            )
+        }
+
+        is DialogRequest.ConfirmEmptyTrash -> AlertDialog(
             onDismissRequest = dismiss,
-            title = { Text(stringResource(R.string.delete)) },
-            text = {
-                val names = req.entries.take(3).joinToString(", ") { it.name }
-                val extra = if (req.entries.size > 3) stringResource(R.string.and_more, req.entries.size - 3) else ""
-                Text(stringResource(R.string.delete_confirmation, names, extra))
-            },
+            title = { Text(stringResource(R.string.empty_recycle_bin)) },
+            text = { Text(stringResource(R.string.empty_recycle_bin_confirmation)) },
             confirmButton = {
-                Button(onClick = { vm.performDelete(req.entries) }) { Text(stringResource(R.string.delete)) }
+                Button(onClick = { vm.performEmptyTrash() }) { Text(stringResource(R.string.delete)) }
             },
             dismissButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel)) } },
         )
@@ -112,19 +145,25 @@ fun MainDialogs(vm: MainViewModel) {
             onConfirm = { vm.performCompress(req.sources, req.destDir, it) },
         )
 
-        is DialogRequest.Details -> AlertDialog(
+        is DialogRequest.Details -> {
+            val detailRoots = Graph.roots.mountedVolumes.collectAsState().value.map { it.path }
+            val detailBin = stringResource(R.string.recycle_bin)
+            val detailPath = req.entry.localPath ?: req.entry.id.substringAfter("://")
+            val detailLocation = detailLocationOf(req.entry, detailPath, detailRoots, detailBin)
+            AlertDialog(
             onDismissRequest = dismiss,
             title = { Text(req.entry.name) },
             text = {
                 Column {
-                    Text(stringResource(R.string.location, req.entry.id))
+                    Text(stringResource(R.string.location, detailLocation))
                     if (!req.entry.isDir) Text(stringResource(R.string.size, Format.bytes(req.entry.size)))
                     Text(stringResource(R.string.modified, Format.dateTime(req.entry.mtime)))
                     req.entry.mime?.let { Text(stringResource(R.string.file_type, it)) }
                 }
             },
             confirmButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.close)) } },
-        )
+            )
+        }
 
         is DialogRequest.EntryMenu -> ModalBottomSheet(onDismissRequest = dismiss) {
             EntryMenuContent(vm, req, dismiss)
@@ -246,8 +285,11 @@ private fun EntryMenuContent(
     val entry = req.entry
     val context = Graph.appContext
     val clipboard = LocalClipboardManager.current
+    val mountedNow = Graph.roots.mountedVolumes.collectAsState().value
+    val volumeRoots = mountedNow.map { it.path }
+    val trashVolumes = mountedNow.map { TrashVolume(it.path, it.label, it.writable) }
     val otherPaneDestination = vm.otherPaneDestination()
-    val canUseOtherPane = isFileOperationDestination(otherPaneDestination)
+    val canUseOtherPane = isFileOperationDestination(otherPaneDestination, volumeRoots)
     val unavailableDestinationReason = stringResource(
         R.string.cannot_write,
         otherPaneDestination?.name ?: stringResource(R.string.this_device),
@@ -313,6 +355,8 @@ private fun EntryMenuContent(
                 }
             }
             MenuItem(stringResource(R.string.uninstall)) { IntentUtils.uninstall(context, entry.path); dismiss() }
+        } else if (entry?.kind == EntryKind.RECYCLE_BIN) {
+            MenuItem(stringResource(R.string.empty_recycle_bin)) { vm.requestEmptyTrash() }
         } else if (entry != null) {
             MenuItem(stringResource(R.string.details)) { vm.dialog.value = DialogRequest.Details(entry) }
             if (entry.isDir && vm.canCreateFileIn(entry)) {
@@ -332,8 +376,24 @@ private fun EntryMenuContent(
                 }
             }
 
+            val entryPath = entry.localPath ?: entry.path
+            val binSymlink = entry.scheme == XId.SCHEME_FILE &&
+                (TrashPaths.isVolumeBinSymlink(entryPath, volumeRoots) ||
+                    TrashPaths.crossesVolumeBin(entryPath, volumeRoots))
+            val topLevelTrash = entry.scheme == XId.SCHEME_FILE &&
+                TrashPaths.isRestorableBinItem(entryPath, volumeRoots)
+            val underTrash = entry.scheme == XId.SCHEME_FILE &&
+                TrashPaths.isInsideVolumeBin(entryPath, volumeRoots)
+            if (topLevelTrash) {
+                MenuItem(stringResource(R.string.restore)) {
+                    vm.restore(listOf(entry))
+                    dismiss()
+                }
+            }
+
             if ((entry.kind == EntryKind.DIR || entry.kind == EntryKind.FILE ||
                     entry.kind == EntryKind.ARCHIVE) &&
+                !underTrash &&
                 (entry.pinned || !vm.activeCtrl.isTopLevelRoot(entry.id))
             ) {
                 // The Graph cache is warm from startup, so the item renders with the right
@@ -352,13 +412,14 @@ private fun EntryMenuContent(
 
             if (!entry.isDir) {
                 val hasLocalFile = entry.localPath != null
-                val canHandoff = hasLocalFile || entry.scheme == XId.SCHEME_SAF
+                // FileProvider follows a bin symlink and would hand the live target to another app.
+                val canHandoff = !binSymlink && (hasLocalFile || entry.scheme == XId.SCHEME_SAF)
                 MenuItem(
                     label = stringResource(R.string.open_with),
                     enabled = canHandoff,
                     disabledReason = stringResource(R.string.requires_local_file),
                 ) { vm.openWith(entry); dismiss() }
-                if (hasLocalFile) {
+                if (hasLocalFile && !binSymlink) {
                     MenuItem(stringResource(R.string.open_as_text)) { vm.openAsText(entry); dismiss() }
                     MenuItem(stringResource(R.string.open_as_hex)) { vm.openAsHex(entry); dismiss() }
                 }
@@ -398,14 +459,21 @@ private fun EntryMenuContent(
                 if (FileTypes.isInstallable(entry.extension)) {
                     MenuItem(
                         label = stringResource(R.string.install),
-                        enabled = entry.localPath != null,
+                        enabled = entry.localPath != null && !binSymlink,
                         disabledReason = stringResource(R.string.requires_local_file),
                     ) { vm.installPackage(entry); dismiss() }
                 }
             }
-            if (entry.canWrite && entry.kind != EntryKind.LOCATION) {
+            if (entry.canWrite && entry.kind != EntryKind.LOCATION && !topLevelTrash) {
                 MenuItem(stringResource(R.string.rename)) { vm.requestRename(entry) }
+            }
+            if (entry.canWrite && entry.kind != EntryKind.LOCATION) {
                 MenuItem(stringResource(R.string.delete)) { vm.requestDelete(listOf(entry)) }
+                if (!underTrash && Graph.trash.canTrash(entry, trashVolumes)) {
+                    MenuItem(stringResource(R.string.delete_permanently)) {
+                        vm.requestDelete(listOf(entry), permanent = true)
+                    }
+                }
             }
         }
 

@@ -154,6 +154,15 @@ Monta prima quella posizione come cartella in un’altra app — RCX (rclone), N
     <string name="storage_access_summary">Necessario per sfogliare e gestire i file su questo dispositivo.</string>
     <string name="grant_access">Concedi l\'accesso</string>
     <string name="delete_confirmation">Eliminare %1$s%2$s? Questa operazione non può essere annullata.</string>
+    <string name="recycle_bin">Cestino</string>
+    <string name="move_to_recycle_bin_confirmation">Spostare %1$s%2$s nel cestino?</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s verrà spostato nel cestino. Ciò che non può essere recuperato viene eliminato definitivamente.</string>
+    <string name="delete_permanently">Elimina definitivamente</string>
+    <string name="restore">Ripristina</string>
+    <string name="empty_recycle_bin">Svuota cestino</string>
+    <string name="empty_recycle_bin_confirmation">Eliminare definitivamente tutto il contenuto del cestino? Questa operazione non può essere annullata.</string>
+    <string name="recycle_bin_empty">Il cestino è vuoto</string>
+    <string name="recycle_bin_unknown_location">%1$s · posizione originale sconosciuta</string>
     <string name="and_more"> e %1$d altri</string>
     <string name="create_zip_in">Crea ZIP in %1$s</string>
     <string name="location">Posizione: %1$s</string>

@@ -22,13 +22,18 @@ import java.nio.file.FileAlreadyExistsException
  * `localPath` (the paths are unreadable without root), so thumbnails/open-with are skipped
  * and the app's own viewers stream content back through [openIn].
  */
-class RootFileSystem : XFileSystem {
+class RootFileSystem(
+    /** Volume roots whose `.xfiles-trash` directory is the bin, not a user folder. */
+    private val volumeRoots: () -> List<String> = { emptyList() },
+) : XFileSystem {
 
     override val scheme: String = XId.SCHEME_ROOT
 
     override fun list(dir: XEntry): List<XEntry> {
         requireEnabled()
         val path = dir.path
+        // stat -L would walk a symlink into the bin and hand back paths that delete follows.
+        if (crossesResolvedVolumeBin(path)) return emptyList()
         // Glob absolute paths instead of `cd`-ing in: on some devices (Magisk su + SELinux)
         // the shell can read an app's private data dir but cannot chdir into it — `cd` then
         // fails *silently* (rc=0, cwd stays `/`), which would list `/` under every folder.
@@ -63,12 +68,20 @@ class RootFileSystem : XFileSystem {
         }
 
         val entries = ArrayList<XEntry>()
+        val roots = volumeRoots()
+        val insideBin = roots.isNotEmpty() && TrashPaths.isInsideVolumeBin(path, roots)
         output.lineSequence().forEach { line ->
             if (line.isEmpty()) return@forEach
             val parts = line.split("|", limit = 4)
             if (parts.size < 4) return@forEach
             val name = parts[3].substringAfterLast('/')
             if (name.isEmpty() || name == "." || name == "..") return@forEach
+            val childPath = if (path == "/" || path.isEmpty()) "/$name" else "${path.trimEnd('/')}/$name"
+            if (!insideBin && roots.isNotEmpty() &&
+                TrashPaths.isConcealedBinPath(childPath, roots)
+            ) {
+                return@forEach
+            }
             val isDir = parts[0] == "directory"
             val size = parts[1].toLongOrNull() ?: 0L
             val mtimeSec = parts[2].toLongOrNull() ?: 0L
@@ -106,17 +119,22 @@ class RootFileSystem : XFileSystem {
 
     override fun openIn(entry: XEntry): InputStream {
         requireEnabled()
+        refuseCrossBin(entry.path, entry.name)
         return transportFor(entry.path).openRead(entry.path)
     }
 
     override fun openOut(parentDir: XEntry, name: String): OutputStream {
         requireWritable()
+        refuseVolumeBinName(parentDir.path, name)
+        refuseCrossBin(parentDir.path, name)
         return transportFor(parentDir.path).openWrite(XId.joinPath(parentDir.path, name))
     }
 
     override fun createFile(parentDir: XEntry, name: String): XEntry {
         requireWritable()
         requireSafeEntryName(name)
+        refuseVolumeBinName(parentDir.path, name)
+        refuseCrossBin(parentDir.path, name)
         val childPath = XId.joinPath(parentDir.path, name)
         val output = transportFor(parentDir.path).exec(buildString {
             append("p=").append(shQuote(childPath)).append('\n')
@@ -141,6 +159,8 @@ class RootFileSystem : XFileSystem {
 
     override fun mkdir(parentDir: XEntry, name: String): XEntry {
         requireWritable()
+        refuseCrossBin(parentDir.path, name)
+        refuseVolumeBinName(parentDir.path, name)
         val childPath = XId.joinPath(parentDir.path, name)
         transportFor(parentDir.path).exec("mkdir -p ${shQuote(childPath)}")
         return toEntry(parentDir.path, name, isDir = true, size = -1L, mtime = 0L)
@@ -148,6 +168,12 @@ class RootFileSystem : XFileSystem {
 
     override fun delete(entry: XEntry) {
         requireWritable()
+        val linkNode = runCatching {
+            java.nio.file.Files.isSymbolicLink(java.io.File(entry.path).toPath())
+        }.getOrDefault(false)
+        if (!linkNode && crossesResolvedVolumeBin(entry.path)) {
+            throw IOException("Cannot delete ${entry.name}")
+        }
         // Own process: a recursive delete can run for minutes and must not queue
         // every root listing behind it on the persistent shell's lock.
         transportFor(entry.path).execOneShot("rm -rf ${shQuote(entry.path)}")
@@ -155,7 +181,9 @@ class RootFileSystem : XFileSystem {
 
     override fun rename(entry: XEntry, newName: String): XEntry {
         requireWritable()
+        refuseCrossBin(entry.path, entry.name)
         val parentPath = entry.path.trimEnd('/').substringBeforeLast('/', "").ifEmpty { "/" }
+        refuseVolumeBinName(parentPath, newName)
         val dst = XId.joinPath(parentPath, newName)
         transportFor(entry.path).exec("mv -f ${shQuote(entry.path)} ${shQuote(dst)}")
         return toEntry(parentPath, newName, entry.isDir, entry.size, entry.mtime)
@@ -173,6 +201,51 @@ class RootFileSystem : XFileSystem {
     }
 
     /** In read-only root mode, any write that would need superuser is refused up front. */
+    /** A case variant of `.xfiles-trash` on a volume root is the live bin. `mkdir -p` would reuse it. */
+    private fun refuseVolumeBinName(parentPath: String, name: String) {
+        if (!name.equals(TrashPaths.DIR_NAME, ignoreCase = true)) return
+        if (volumeRoots().any { TrashPaths.samePath(it, parentPath) }) {
+            throw IOException("Cannot use $name")
+        }
+    }
+
+    private fun refuseCrossBin(path: String, name: String) {
+        if (crossesResolvedVolumeBin(path)) {
+            throw IOException("Cannot write $name")
+        }
+    }
+
+    /**
+     * App-UID `realpath` throws `EACCES` on the private directories this transport
+     * exists to browse. That failure is not a hop into the bin. When the app cannot
+     * resolve the path, ask the same transport that will follow it.
+     */
+    private fun crossesResolvedVolumeBin(path: String): Boolean {
+        val roots = volumeRoots()
+        if (TrashPaths.crossesVolumeBin(path, roots)) return true
+        if (roots.isEmpty()) return false
+        if (runCatching { java.io.File(path).canonicalPath }.isSuccess) return false
+        val resolved = privilegedCanonical(path) ?: return false
+        val lexicalInside = TrashPaths.isInsideVolumeBin(path, roots)
+        val resolvedRoots = roots.flatMap { root ->
+            listOfNotNull(
+                root,
+                runCatching { java.io.File(root).canonicalPath }.getOrNull(),
+                privilegedCanonical(root),
+            )
+        }
+        return lexicalInside != TrashPaths.isInsideVolumeBin(resolved, resolvedRoots)
+    }
+
+    private fun privilegedCanonical(path: String): String? {
+        if (!PrivilegedAccess.enabled) return null
+        val transport = runCatching { transportFor(path) }.getOrNull() ?: return null
+        val output = runCatching {
+            transport.exec("p=${shQuote(path)}\nreadlink -f \"\$p\" 2>/dev/null\n")
+        }.getOrNull() ?: return null
+        return output.lineSequence().map { it.trim() }.firstOrNull { it.startsWith("/") }
+    }
+
     private fun requireWritable() {
         requireEnabled()
         if (PrivilegedAccess.readOnly) throw IOException("Read-only root mode — enable writes in Settings")

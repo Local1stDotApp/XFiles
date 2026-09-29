@@ -7,8 +7,11 @@ import app.local1st.files.R
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.local1st.files.core.fs.AddLocationResult
+import app.local1st.files.core.fs.DeleteDisposition
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.SafFileSystem
+import app.local1st.files.core.fs.TrashFileSystem
+import app.local1st.files.core.fs.TrashPaths
 import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.fs.priv.SuTransport
 import app.local1st.files.core.fs.XEntry
@@ -19,6 +22,7 @@ import app.local1st.files.core.ops.FileOp
 import app.local1st.files.core.ops.OpsService
 import app.local1st.files.core.ops.canEditCreatedTextFile
 import app.local1st.files.core.ops.canMoveSource
+import app.local1st.files.core.ops.uniqueExtractFolderName
 import app.local1st.files.core.util.AabConverter
 import app.local1st.files.core.util.ApkInstaller
 import app.local1st.files.core.util.AppComponents
@@ -36,7 +40,9 @@ import app.local1st.files.core.util.XapkObbInstaller
 import app.local1st.files.di.Graph
 import java.io.File
 import java.io.FileInputStream
+import java.io.IOException
 import java.nio.file.FileAlreadyExistsException
+import java.nio.file.Files
 import java.util.zip.ZipFile
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -472,6 +478,7 @@ class MainViewModel : ViewModel() {
     // ---- opening entries ----
 
     fun openEntry(pane: PaneController, entry: XEntry) {
+        if (refuseVolumeBinSymlink(entry)) return
         if (entry.isContainer) {
             // Apps and archives (incl. APKs) expand in place; long-press opens their menu.
             pane.toggleExpand(entry)
@@ -488,26 +495,36 @@ class MainViewModel : ViewModel() {
         }
         when (FileTypes.categoryOf(entry.name, entry.mime)) {
             FileCategory.IMAGE -> {
-                val siblings = pane.siblings(entry, FileCategory.IMAGE)
-                showViewer(
-                    ViewerRequest.Image(
-                        items = siblings,
-                        startIndex = siblings.indexOfFirst { it.id == entry.id }.coerceAtLeast(0),
-                    ),
-                )
+                val siblings = viewerSiblings(pane, entry, FileCategory.IMAGE)
+                val index = siblings.indexOfFirst { it.id == entry.id }.coerceAtLeast(0)
+                openAfterRecover(listOf(entry), entry.name, requiredId = entry.id) {
+                    showViewer(ViewerRequest.Image(items = siblings, startIndex = index))
+                }
             }
-            FileCategory.TEXT -> showViewer(ViewerRequest.Text(entry))
-            FileCategory.AUDIO -> showViewer(
-                ViewerRequest.Media(entry, pane.siblings(entry, FileCategory.AUDIO)),
-            )
-            FileCategory.VIDEO -> showViewer(
-                ViewerRequest.Media(entry, pane.siblings(entry, FileCategory.VIDEO)),
-            )
-            FileCategory.DATABASE -> showViewer(ViewerRequest.Hex(entry))
+            FileCategory.TEXT -> openAfterRecover(listOf(entry), entry.name) {
+                showViewer(ViewerRequest.Text(entry))
+            }
+            FileCategory.AUDIO -> {
+                val playlist = viewerSiblings(pane, entry, FileCategory.AUDIO)
+                openAfterRecover(listOf(entry), entry.name, requiredId = entry.id) {
+                    showViewer(ViewerRequest.Media(entry, playlist))
+                }
+            }
+            FileCategory.VIDEO -> {
+                val playlist = viewerSiblings(pane, entry, FileCategory.VIDEO)
+                openAfterRecover(listOf(entry), entry.name, requiredId = entry.id) {
+                    showViewer(ViewerRequest.Media(entry, playlist))
+                }
+            }
+            FileCategory.DATABASE -> openAfterRecover(listOf(entry), entry.name) {
+                showViewer(ViewerRequest.Hex(entry))
+            }
             FileCategory.APK, FileCategory.ARCHIVE ->
                 dialog.value = DialogRequest.EntryMenu(entry)
-            FileCategory.PDF -> showViewer(ViewerRequest.Pdf(entry))
-            FileCategory.GENERIC -> {
+            FileCategory.PDF -> openAfterRecover(listOf(entry), entry.name) {
+                showViewer(ViewerRequest.Pdf(entry))
+            }
+            FileCategory.GENERIC -> openAfterRecover(listOf(entry), entry.name) {
                 if (!IntentUtils.openWith(Graph.appContext, entry)) {
                     showViewer(ViewerRequest.Hex(entry))
                 }
@@ -516,17 +533,63 @@ class MainViewModel : ViewModel() {
     }
 
     fun openAsHex(entry: XEntry) {
-        showViewer(ViewerRequest.Hex(entry))
+        if (refuseVolumeBinSymlink(entry)) return
+        openAfterRecover(listOf(entry), entry.name) {
+            showViewer(ViewerRequest.Hex(entry))
+        }
     }
 
     fun openWith(entry: XEntry) {
+        if (refuseVolumeBinSymlink(entry)) return
         val contentUri = safContentUri(entry)
         if (entry.localPath == null && contentUri == null) {
             snackbar.tryEmit(text(R.string.open_with_requires_local_file))
             return
         }
-        if (!IntentUtils.openWith(Graph.appContext, entry, contentUri)) {
-            snackbar.tryEmit(text(R.string.no_app_can_open, entry.name))
+        openAfterRecover(listOf(entry), entry.name) {
+            if (!IntentUtils.openWith(Graph.appContext, entry, contentUri)) {
+                snackbar.tryEmit(text(R.string.no_app_can_open, entry.name))
+            }
+        }
+    }
+
+    /**
+     * A crashed text save leaves the complete bytes in a sibling. Put them back
+     * before share or a viewer reads the truncated file. Only [entries] are touched:
+     * opening one photo must not rewrite the others in its folder.
+     */
+    private fun openAfterRecover(
+        entries: List<XEntry>,
+        failureName: String,
+        requiredId: String? = null,
+        open: () -> Unit,
+    ) {
+        viewModelScope.launch {
+            val recovered = try {
+                withContext(Dispatchers.IO) {
+                    recoverOpenedEntries(entries, requiredId, Graph.trash::recoverTruncatedEdits)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: IOException) {
+                snackbar.tryEmit(error.message ?: text(R.string.cannot_read, failureName))
+                return@launch
+            }
+            refreshRecoveredFolders(recovered)
+            open()
+        }
+    }
+
+    /**
+     * A merged save changed a file's size and removed its hidden siblings behind the listing.
+     * The folder is re-read for those. Its own row sits in the parent's listing and only
+     * takes the new time, as after a text save.
+     */
+    private fun refreshRecoveredFolders(paths: Set<String>) {
+        for (dir in paths.mapNotNullTo(LinkedHashSet()) { File(it).parent }) {
+            val id = XId.file(dir)
+            panes.forEach { it.refresh(id) }
+            refreshListedFile(id)
         }
     }
 
@@ -535,10 +598,22 @@ class MainViewModel : ViewModel() {
         if (intent.action != Intent.ACTION_VIEW || intent.data == null) return
         viewModelScope.launch {
             val resolved = withContext(Dispatchers.IO) {
-                runCatching { ExternalOpenResolver.resolve(Graph.appContext, intent) }
+                val roots = Graph.freshMountedVolumePaths()
+                runCatching { ExternalOpenResolver.resolve(Graph.appContext, intent, roots) }
             }
             resolved.fold(
                 onSuccess = { (kind, entry) ->
+                    val recovered = try {
+                        withContext(Dispatchers.IO) {
+                            recoverOpenedEntries(listOf(entry), entry.id, Graph.trash::recoverTruncatedEdits)
+                        }
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: IOException) {
+                        snackbar.tryEmit(error.message ?: text(R.string.cannot_read, entry.name))
+                        return@launch
+                    }
+                    refreshRecoveredFolders(recovered)
                     when (kind) {
                         ExternalOpenKind.ARCHIVE -> dialog.value = DialogRequest.EntryMenu(entry)
                         ExternalOpenKind.IMAGE -> showViewer(ViewerRequest.Image(listOf(entry), 0))
@@ -617,6 +692,7 @@ class MainViewModel : ViewModel() {
      * The system shows its own confirm UI and reports the result.
      */
     fun installPackage(entry: XEntry) {
+        if (refuseVolumeBinSymlink(entry)) return
         val path = entry.localPath ?: run { snackbar.tryEmit(text(R.string.nothing_to_install)); return }
         val label = entry.name.substringBeforeLast('.').ifBlank { entry.name }
         // The registry is app-wide, so it also guards against a second install of the same entry.
@@ -769,7 +845,10 @@ class MainViewModel : ViewModel() {
     }
 
     fun openAsText(entry: XEntry) {
-        showViewer(ViewerRequest.Text(entry))
+        if (refuseVolumeBinSymlink(entry)) return
+        openAfterRecover(listOf(entry), entry.name) {
+            showViewer(ViewerRequest.Text(entry))
+        }
     }
 
     /**
@@ -837,15 +916,96 @@ class MainViewModel : ViewModel() {
         activeCtrl.clearSelection()
     }
 
-    fun requestDelete(entries: List<XEntry> = activeCtrl.selectionEntries()) {
+    fun requestDelete(
+        entries: List<XEntry> = activeCtrl.selectionEntries(),
+        permanent: Boolean = false,
+    ) {
         if (entries.isEmpty()) return
-        dialog.value = DialogRequest.ConfirmDelete(entries)
+        // disposition walks StorageManager when the mount cache is stale.
+        viewModelScope.launch {
+            val plan = try {
+                withContext(Dispatchers.IO) { Graph.trash.planDelete(entries, permanent) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                snackbar.tryEmit(e.message ?: text(R.string.cannot_read_folder))
+                return@launch
+            }
+            dialog.value = DialogRequest.ConfirmDelete(
+                entries,
+                plan.mode,
+                explicitPermanent = permanent,
+                trashableIds = plan.trashableIds,
+            )
+        }
     }
 
-    fun performDelete(entries: List<XEntry>) {
+    fun performDelete(
+        entries: List<XEntry>,
+        mode: DeleteDisposition,
+        explicitPermanent: Boolean = false,
+        trashableIds: Set<String> = emptySet(),
+    ) {
         dialog.value = null
-        Graph.opEngine.submit(FileOp.Delete(entries))
+        viewModelScope.launch {
+            try {
+                // The op title reads the mount list before the worker starts.
+                // Inferred "permanent" is not latched: the worker asks the bin again.
+                withContext(Dispatchers.IO) {
+                    Graph.opEngine.submit(
+                        FileOp.Delete(
+                            entries,
+                            permanent = explicitPermanent,
+                            mustTrash = !explicitPermanent && mode == DeleteDisposition.TRASH,
+                            trashableIds = if (explicitPermanent) emptySet() else trashableIds,
+                        ),
+                    )
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                snackbar.tryEmit(e.message ?: text(R.string.cannot_read_folder))
+                return@launch
+            }
+            val ids = entries.mapTo(HashSet()) { it.id }
+            panes.forEach { it.dropSelection(ids) }
+            activeCtrl.clearSelection()
+        }
+    }
+
+    fun restore(entries: List<XEntry>) {
+        if (entries.isEmpty()) return
+        dialog.value = null
+        Graph.opEngine.submit(FileOp.Restore(entries))
+        val ids = entries.mapTo(HashSet()) { it.id }
+        panes.forEach { it.dropSelection(ids) }
         activeCtrl.clearSelection()
+    }
+
+    fun requestEmptyTrash() {
+        dialog.value = DialogRequest.ConfirmEmptyTrash
+    }
+
+    fun performEmptyTrash() {
+        dialog.value = null
+        viewModelScope.launch {
+            val items = withContext(Dispatchers.IO) {
+                runCatching {
+                    Graph.fsRegistry.forScheme(XId.SCHEME_TRASH).list(TrashFileSystem.rootEntry())
+                }
+            }.getOrElse { failure ->
+                if (failure is CancellationException) throw failure
+                snackbar.tryEmit(failure.message ?: text(R.string.cannot_read_folder))
+                return@launch
+            }
+            if (items.isEmpty()) {
+                snackbar.tryEmit(text(R.string.recycle_bin_empty))
+                return@launch
+            }
+            Graph.opEngine.submit(FileOp.Delete(items, permanent = true))
+            val gone = items.mapTo(HashSet()) { it.id }
+            panes.forEach { it.dropSelection(gone) }
+        }
     }
 
     /** Creates a new zip in the other pane after asking only for its filename. */
@@ -870,10 +1030,21 @@ class MainViewModel : ViewModel() {
                 runCatching {
                     // Never merge into a pre-existing folder: pick a free name.
                     val fs = Graph.fsRegistry.forEntry(destDir)
-                    val taken = fs.list(destDir).map { it.name }.toSet()
-                    var name = extractName
-                    var i = 1
-                    while (name in taken) name = "$extractName ($i)".also { i++ }
+                    val parentPath = destDir.localPath ?: destDir.path
+                    val volumeRoot = Graph.freshMountedVolumePaths()
+                        .any { TrashPaths.samePath(it, parentPath) }
+                    val listed = fs.list(destDir).map { it.name }
+                    val caseInsensitive = destDir.scheme == XId.SCHEME_FILE
+                    val name = uniqueExtractFolderName(
+                        extractName,
+                        listed,
+                        volumeRoot,
+                        caseInsensitive,
+                    )
+                    val reused = listed.any { existing ->
+                        if (caseInsensitive) existing.equals(name, ignoreCase = true) else existing == name
+                    }
+                    if (reused) throw IOException("Cannot create folder")
                     fs.mkdir(destDir, name)
                 }
             }
@@ -978,10 +1149,44 @@ class MainViewModel : ViewModel() {
             snackbar.tryEmit(text(R.string.share_requires_local_files))
             return
         }
-        val uris = files.map { safContentUri(it) }
-        if (!IntentUtils.share(Graph.appContext, files, uris)) {
-            snackbar.tryEmit(text(R.string.cannot_share_files))
+        viewModelScope.launch {
+            // One realpath per file. A large selection must not resolve them on the main thread.
+            if (withContext(Dispatchers.IO) { files.any(::isVolumeBinSymlink) }) {
+                snackbar.tryEmit(text(R.string.cannot_share_files))
+                return@launch
+            }
+            openAfterRecover(files, files.first().name) {
+                val uris = files.map { safContentUri(it) }
+                if (!IntentUtils.share(Graph.appContext, files, uris)) {
+                    snackbar.tryEmit(text(R.string.cannot_share_files))
+                }
+            }
         }
+    }
+
+    private fun refuseVolumeBinSymlink(entry: XEntry): Boolean {
+        if (!isVolumeBinSymlink(entry)) return false
+        snackbar.tryEmit(text(R.string.cannot_read, entry.name))
+        return true
+    }
+
+    private fun viewerSiblings(
+        pane: PaneController,
+        entry: XEntry,
+        category: FileCategory,
+    ): List<XEntry> {
+        // Main thread. A listed row with a localPath already passed LocalFileSystem's bin
+        // checks; only rows without one need the realpath check.
+        val rows = pane.siblings(entry, category).filter { it.localPath != null || !isVolumeBinSymlink(it) }
+        return rows.ifEmpty { listOf(entry) }
+    }
+
+    private fun isVolumeBinSymlink(entry: XEntry): Boolean {
+        val path = entry.localPath ?: entry.path.takeIf { entry.scheme == XId.SCHEME_FILE } ?: return false
+        val roots = runCatching { Graph.roots.peekMountedVolumes().map { it.path } }
+            .getOrDefault(emptyList())
+        return TrashPaths.isVolumeBinSymlink(path, roots) ||
+            TrashPaths.crossesVolumeBin(path, roots)
     }
 
     private fun safContentUri(entry: XEntry): Uri? {
@@ -1012,11 +1217,61 @@ class MainViewModel : ViewModel() {
     }
 }
 
-internal fun isFileOperationDestination(dest: XEntry?): Boolean =
-    dest != null && dest.isDir && dest.canWrite &&
-        (dest.scheme == XId.SCHEME_FILE ||
-            dest.scheme == XId.SCHEME_ROOT ||
-            dest.scheme == XId.SCHEME_SAF)
+internal fun isFileOperationDestination(
+    dest: XEntry?,
+    volumeRoots: List<String> = currentVolumeRoots(),
+): Boolean {
+    if (dest == null || !dest.isDir || !dest.canWrite) return false
+    if (dest.scheme != XId.SCHEME_FILE &&
+        dest.scheme != XId.SCHEME_ROOT &&
+        dest.scheme != XId.SCHEME_SAF
+    ) {
+        return false
+    }
+    if (dest.scheme == XId.SCHEME_FILE || dest.scheme == XId.SCHEME_ROOT) {
+        val path = dest.localPath ?: dest.path
+        // A symlink outside the bin still resolves inside it. Copy must not follow that.
+        if (TrashPaths.isInsideVolumeBin(path, volumeRoots) ||
+            TrashPaths.crossesVolumeBin(path, volumeRoots)
+        ) {
+            return false
+        }
+    }
+    return true
+}
+
+/**
+ * The file the user opened must recover. A bad temp on another entry must not
+ * block that viewer. A grant-only row has no localPath; its file:// path is still real.
+ * [recover] takes the whole batch so each folder is listed once. Returns the files
+ * either batch changed.
+ */
+internal fun recoverOpenedEntries(
+    entries: List<XEntry>,
+    requiredId: String?,
+    recover: (paths: List<String>, onFailure: (String, IOException) -> Unit) -> Set<String>,
+): Set<String> {
+    val changed = LinkedHashSet<String>()
+    val required = entries.firstOrNull { it.id == requiredId }
+    required?.let(::recoverableLocalPath)?.let { path ->
+        changed += recover(listOf(path)) { _, error -> throw error }
+    }
+    val rest = entries.filter { it.id != required?.id }.mapNotNull(::recoverableLocalPath)
+    // One entry's bad temp cannot veto sharing or opening the others.
+    if (rest.isNotEmpty()) changed += recover(rest) { _, _ -> }
+    return changed
+}
+
+internal fun recoverableLocalPath(entry: XEntry): String? {
+    if (entry.isDir || entry.scheme != XId.SCHEME_FILE) return null
+    entry.localPath?.let { return it }
+    val path = entry.path
+    if (path.isEmpty()) return null
+    if (Files.isSymbolicLink(File(path).toPath())) return null
+    return path
+}
+
+private fun currentVolumeRoots(): List<String> = Graph.mountedVolumePaths()
 
 /** A copy or move whose non-pane destination is being chosen. */
 data class PendingTransfer(

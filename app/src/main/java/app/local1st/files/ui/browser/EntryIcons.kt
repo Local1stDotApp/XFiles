@@ -7,6 +7,7 @@ import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Android
 import androidx.compose.material.icons.outlined.Apps
 import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -81,6 +82,7 @@ object EntryIcons {
         EntryKind.APP_COMPONENT_GROUP, EntryKind.APP_COMPONENT -> componentIcon(entry)
         EntryKind.ROOT -> Icons.Outlined.Security
         EntryKind.LOCATION -> Icons.Outlined.Cloud
+        EntryKind.RECYCLE_BIN -> Icons.Outlined.DeleteOutline
         EntryKind.ARCHIVE -> Icons.Outlined.FolderZip
         EntryKind.DIR -> if (expanded) Icons.Outlined.FolderOpen else Icons.Outlined.Folder
         EntryKind.FILE -> forCategory(FileTypes.categoryOf(entry.name, entry.mime))
@@ -117,15 +119,21 @@ object EntryIcons {
 
     /** True when the row should try a Coil thumbnail instead of a vector icon. */
     fun wantsThumbnail(entry: XEntry): Boolean {
+        if (entry.isDir) return false
+        val category = FileTypes.categoryOf(entry.name, entry.mime)
+        // A grant-only image has no local file. openIn still decodes it, and the
+        // reader stops at a size cap when the grant length is unknown.
+        if (entry.scheme == XId.SCHEME_FILE && entry.localPath == null &&
+            category == FileCategory.IMAGE
+        ) {
+            return true
+        }
         // size < 0 = stat failed mid-listing: nothing decodable behind the entry, and a
         // video's (path, mtime, size) thumb-cache key would be degenerate.
         val readableModel = entry.localPath != null ||
             (entry.scheme == XId.SCHEME_ROOT && PrivilegedAccess.canOpenFd())
-        if (!readableModel || entry.isDir || entry.size < 0) return false
-        return when (FileTypes.categoryOf(entry.name, entry.mime)) {
-            FileCategory.IMAGE, FileCategory.VIDEO -> true
-            else -> false
-        }
+        if (!readableModel || entry.size < 0) return false
+        return category == FileCategory.IMAGE || category == FileCategory.VIDEO
     }
 }
 

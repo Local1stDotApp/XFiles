@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import app.local1st.files.core.fs.EntryKind
+import app.local1st.files.core.fs.TrashPaths
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import java.io.File
@@ -13,11 +14,21 @@ import java.io.IOException
 import java.util.UUID
 
 object ExternalOpenResolver {
-    fun resolve(context: Context, intent: Intent): Pair<ExternalOpenKind, XEntry> {
+    fun resolve(
+        context: Context,
+        intent: Intent,
+        volumeRoots: List<String> = emptyList(),
+    ): Pair<ExternalOpenKind, XEntry> {
         if (intent.action != Intent.ACTION_VIEW) throw IOException("Unsupported external action")
         val uri = intent.data ?: throw IOException("No file was provided")
         val expectedKind = ExternalOpenRegistry.kindOf(intent.component)
             ?: throw IOException("Unknown external open target")
+        if (uri.scheme == "file") {
+            val path = uri.path ?: throw IOException("Invalid file URI")
+            if (refusesExternalFile(path, volumeRoots)) {
+                throw IOException("Cannot open ${File(path).name}")
+            }
+        }
         val metadata = metadata(context, uri, intent.type)
         validate(expectedKind, metadata.name, metadata.mime)
 
@@ -40,6 +51,11 @@ object ExternalOpenResolver {
         }
         return expectedKind to entry
     }
+
+    /** A file:// open must not follow a bin symlink into the live target. */
+    internal fun refusesExternalFile(path: String, volumeRoots: List<String>): Boolean =
+        TrashPaths.isVolumeBinSymlink(path, volumeRoots) ||
+            TrashPaths.crossesVolumeBin(path, volumeRoots)
 
     private data class Metadata(val name: String, val size: Long, val mime: String?)
 

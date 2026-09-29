@@ -37,6 +37,7 @@ import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.RestoreFromTrash
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -78,12 +79,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.local1st.files.R
+import app.local1st.files.core.fs.TrashPaths
+import app.local1st.files.core.fs.XId
+import app.local1st.files.di.Graph
 import app.local1st.files.ui.navigationBarsStable
 import app.local1st.files.ui.statusBarsStable
 import app.local1st.files.core.fs.XEntry
-import app.local1st.files.core.fs.XId
 import app.local1st.files.ui.browser.CrumbBarHeight
 import app.local1st.files.ui.browser.PaneView
+import app.local1st.files.ui.dialogs.visibleBinLabel
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.dialogs.DialogRequest
 
@@ -104,8 +108,15 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     val otherPaneState by otherPaneController.state.collectAsStateWithLifecycle()
     val otherPaneDestination = otherPaneController.focusedDirEntry()
     val otherPaneName = paneLocationName(otherPaneDestination, otherPaneState.focusedDirId)
-    val otherPanePath = paneLocationPath(otherPaneDestination, otherPaneState.focusedDirId)
-    val canUseOtherPane = isFileOperationDestination(otherPaneDestination)
+    val volumeRoots = Graph.roots.mountedVolumes.collectAsStateWithLifecycle().value.map { it.path }
+    val binName = stringResource(R.string.recycle_bin)
+    val otherPanePath = paneLocationPath(
+        otherPaneDestination,
+        otherPaneState.focusedDirId,
+        volumeRoots,
+        binName,
+    )
+    val canUseOtherPane = isFileOperationDestination(otherPaneDestination, volumeRoots)
     var initiallyLaidOutPanes by remember(vm) { mutableStateOf<Set<Int>>(emptySet()) }
     var startupContentReady by rememberSaveable(vm) {
         mutableStateOf(sessionReady && activeState.snapshotOnly)
@@ -113,12 +124,14 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     val wideLayout = LocalConfiguration.current.screenWidthDp >= 700
 
     val selectionCount = activeState.selection.size
-    val selectedFiles = if (selectionCount > 0) {
-        vm.activeCtrl.selectionEntries().filter { !it.isDir }
-    } else {
-        emptyList()
+    val selected = if (selectionCount > 0) vm.activeCtrl.selectionEntries() else emptyList()
+    val selectedFiles = selected.filter { !it.isDir }
+    val canRestoreSelection = selected.isNotEmpty() && selected.all { entry ->
+        entry.scheme == XId.SCHEME_FILE &&
+            TrashPaths.isRestorableBinItem(entry.localPath ?: entry.path, volumeRoots)
     }
-    val canShareSelection = selectedFiles.isNotEmpty() && selectedFiles.all { canHandoff(it) }
+    val canShareSelection = selectedFiles.isNotEmpty() &&
+        selectedFiles.all { canHandoff(it, volumeRoots) }
     val unavailableDestinationLabel = stringResource(R.string.cannot_write, otherPaneName)
     val copyTargetLabel = if (canUseOtherPane) {
         "${stringResource(R.string.copy_to_title)} $otherPaneName"
@@ -242,9 +255,11 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                                 path = paneLocationPath(
                                     targetDestination,
                                     targetState.focusedDirId,
+                                    volumeRoots,
+                                    binName,
                                 ),
                                 ready = targetDestination != null,
-                                writable = isFileOperationDestination(targetDestination),
+                                writable = isFileOperationDestination(targetDestination, volumeRoots),
                                 activePane = page,
                                 onClick = { vm.setActivePane(targetPane) },
                             )
@@ -312,6 +327,12 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
                                 enabled = canUseOtherPane,
                             ) {
                                 vm.copySelection(move = true)
+                            }
+                            if (canRestoreSelection) {
+                                TooltipIconButton(
+                                    stringResource(R.string.restore),
+                                    Icons.Outlined.RestoreFromTrash,
+                                ) { vm.restore(vm.activeCtrl.selectionEntries()) }
                             }
                             TooltipIconButton(stringResource(R.string.delete), Icons.Outlined.Delete) { vm.requestDelete() }
                             TooltipIconButton(
@@ -506,12 +527,22 @@ private fun paneLocationName(destination: XEntry?, focusedDirId: String?): Strin
     }
 }
 
-private fun paneLocationPath(destination: XEntry?, focusedDirId: String?): String {
+private fun paneLocationPath(
+    destination: XEntry?,
+    focusedDirId: String?,
+    volumeRoots: List<String>,
+    binName: String,
+): String {
     val id = destination?.id ?: focusedDirId ?: return "…"
     if (XId.schemeOf(id) == XId.SCHEME_SAF) return destination?.name ?: "Location"
+    if (XId.schemeOf(id) == XId.SCHEME_TRASH) return binName
     val path = id.substringAfter("://")
+    visibleBinLabel(path, volumeRoots, binName)?.let { return it }
     return if (id.startsWith("${XId.SCHEME_ROOT}://")) "root:$path" else path.ifBlank { "/" }
 }
 
-private fun canHandoff(entry: XEntry): Boolean =
-    entry.localPath != null || entry.scheme == XId.SCHEME_SAF
+private fun canHandoff(entry: XEntry, volumeRoots: List<String>): Boolean {
+    val path = entry.localPath
+    if (path != null && TrashPaths.isVolumeBinSymlink(path, volumeRoots)) return false
+    return path != null || entry.scheme == XId.SCHEME_SAF
+}

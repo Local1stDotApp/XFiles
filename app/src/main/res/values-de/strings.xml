@@ -154,6 +154,15 @@ Hängen Sie den Ort zuerst in einer anderen App als Ordner ein — RCX (rclone),
     <string name="storage_access_summary">Wird zum Durchsuchen und Verwalten von Dateien auf diesem Gerät benötigt.</string>
     <string name="grant_access">Zugriff gewähren</string>
     <string name="delete_confirmation">%1$s%2$s löschen? Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="recycle_bin">Papierkorb</string>
+    <string name="move_to_recycle_bin_confirmation">%1$s%2$s in den Papierkorb verschieben?</string>
+    <string name="mixed_delete_confirmation">%1$s%2$s wird in den Papierkorb verschoben. Was sich nicht wiederherstellen lässt, wird endgültig gelöscht.</string>
+    <string name="delete_permanently">Endgültig löschen</string>
+    <string name="restore">Wiederherstellen</string>
+    <string name="empty_recycle_bin">Papierkorb leeren</string>
+    <string name="empty_recycle_bin_confirmation">Alles im Papierkorb endgültig löschen? Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="recycle_bin_empty">Der Papierkorb ist leer</string>
+    <string name="recycle_bin_unknown_location">%1$s · ursprünglicher Ort unbekannt</string>
     <string name="and_more"> und %1$d mehr</string>
     <string name="create_zip_in">ZIP-Datei in %1$s erstellen</string>
     <string name="location">Speicherort: %1$s</string>
