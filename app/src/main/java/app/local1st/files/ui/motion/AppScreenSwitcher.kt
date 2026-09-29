@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.navigationevent.NavigationEvent
 import app.local1st.files.ui.main.AppScreenEntry
 import kotlinx.coroutines.CancellationException
@@ -152,6 +153,7 @@ class AppScreenSwitcher(
         commit = 0f
         resetGesture()
         runMotion {
+            awaitRevealedPage()
             animate(
                 initialValue = 0f,
                 targetValue = 1f,
@@ -161,10 +163,11 @@ class AppScreenSwitcher(
         }
     }
 
-    private fun reverseForward(newFront: AppScreenEntry) {
+    private fun reverseForward(newFront: AppScreenEntry, revealsNewPage: Boolean = false) {
         rear = newFront
         mode = Mode.Forward
         runMotion {
+            if (revealsNewPage) awaitRevealedPage()
             animate(
                 initialValue = playhead,
                 targetValue = 0f,
@@ -181,7 +184,7 @@ class AppScreenSwitcher(
         commit = 0f
         resetGesture()
         mode = Mode.Forward
-        reverseForward(newFront = entering)
+        reverseForward(newFront = entering, revealsNewPage = true)
     }
 
     private fun startCommit(after: (() -> Unit)? = null) {
@@ -213,6 +216,14 @@ class AppScreenSwitcher(
         touchYDelta = 0f
         initialTouchY = Float.NaN
         swipeEdge = NavigationEvent.EDGE_LEFT
+    }
+
+    /**
+     * A page coming on screen is composed and measured in the next frame, which can take several
+     * frame times. Starting the clock after that frame keeps the motion from opening with a jump.
+     */
+    private suspend fun awaitRevealedPage() {
+        withFrameNanos { }
     }
 
     private fun runMotion(block: suspend () -> Unit) {
