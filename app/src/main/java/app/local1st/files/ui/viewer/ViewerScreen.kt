@@ -23,6 +23,7 @@ fun ViewerScreen(vm: MainViewModel, request: ViewerRequest, onBack: () -> Unit) 
                 entry = req.entry,
                 startEditing = req.startEditing,
                 onClose = close,
+                onFileChanged = { vm.refreshListedFile(req.entry.id) },
             )
             is ViewerRequest.Hex -> HexViewer(req.entry, close)
             is ViewerRequest.Pdf -> PdfViewer(req.entry, close) { vm.openWith(req.entry) }

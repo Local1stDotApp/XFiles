@@ -3,6 +3,40 @@ package app.local1st.files.ui.browser
 import androidx.compose.runtime.Immutable
 import app.local1st.files.core.fs.XEntry
 
+/**
+ * Size and modification time of [id], or this list when [id] is absent or already current.
+ * A folder takes only the time: its row's size is not a file length, and a root's may be its
+ * volume's. An unchanged list is the same instance: the pane sort cache keys on that identity.
+ */
+internal fun List<XEntry>.withFileMetadata(id: String, size: Long, mtime: Long): List<XEntry> {
+    val index = indexOfFirst { it.id == id }
+    if (index < 0) return this
+    val current = this[index]
+    if (current.mtime == mtime && (current.isDir || current.size == size)) return this
+    val updated = ArrayList(this)
+    updated[index] = if (current.isDir) current.copy(mtime = mtime) else current.copy(size = size, mtime = mtime)
+    return updated
+}
+
+/**
+ * The same patch in every cached directory. A directory that does not contain [id] keeps its list.
+ */
+internal fun Map<String, List<XEntry>>.withFileMetadata(
+    id: String,
+    size: Long,
+    mtime: Long,
+): Map<String, List<XEntry>> {
+    var changed: MutableMap<String, List<XEntry>>? = null
+    for ((dir, kids) in this) {
+        val updated = kids.withFileMetadata(id, size, mtime)
+        if (updated !== kids) {
+            if (changed == null) changed = LinkedHashMap(this)
+            changed[dir] = updated
+        }
+    }
+    return changed ?: this
+}
+
 /** Prefer a live listing's visible size over a stale hint once this directory has been listed. */
 internal fun XEntry.withListedChildCount(listed: List<XEntry>?, showHidden: Boolean): XEntry {
     if (!isDir || badge != null) return this

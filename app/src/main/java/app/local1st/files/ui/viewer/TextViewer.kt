@@ -209,7 +209,12 @@ private class EditorHandle {
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit) {
+fun TextViewer(
+    entry: XEntry,
+    startEditing: Boolean = false,
+    onClose: () -> Unit,
+    onFileChanged: () -> Unit = {},
+) {
     val context = LocalContext.current
     val cannotRead = stringResource(R.string.cannot_read, entry.name)
     val saveFailed = stringResource(R.string.save_failed)
@@ -302,6 +307,8 @@ fun TextViewer(entry: XEntry, startEditing: Boolean = false, onClose: () -> Unit
             saving = false
             result.fold(
                 onSuccess = { wroteReplacement ->
+                    // Either way the file on disk changed, and the folder listing is behind it.
+                    onFileChanged()
                     if (wroteReplacement) {
                         leaveEditMode()
                         feedback = saved

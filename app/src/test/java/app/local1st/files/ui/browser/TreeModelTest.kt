@@ -8,6 +8,63 @@ import org.junit.Test
 class TreeModelTest {
 
     @Test
+    fun fileMetadataReplacesSizeAndTimeAndKeepsTheRest() {
+        val pinned = XEntry(
+            id = "file:///docs/a.txt",
+            name = "a.txt",
+            isDir = false,
+            size = 4,
+            mtime = 1_000,
+            pinned = true,
+        )
+        val other = XEntry(id = "file:///docs/b.txt", name = "b.txt", isDir = false, size = 2, mtime = 2_000)
+        val listed = listOf(pinned, other)
+
+        val updated = listed.withFileMetadata(pinned.id, size = 18, mtime = 9_000)
+
+        assertEquals(18, updated[0].size)
+        assertEquals(9_000, updated[0].mtime)
+        assertEquals("a.txt", updated[0].name)
+        assertEquals(true, updated[0].pinned)
+        assertSame(other, updated[1])
+    }
+
+    @Test
+    fun fileMetadataKeepsTheListWhenNothingChanged() {
+        val file = XEntry(id = "file:///docs/a.txt", name = "a.txt", isDir = false, size = 4, mtime = 1_000)
+        val listed = listOf(file)
+
+        assertSame(listed, listed.withFileMetadata("file:///docs/missing.txt", size = 1, mtime = 2))
+        assertSame(listed, listed.withFileMetadata(file.id, size = 4, mtime = 1_000))
+    }
+
+    @Test
+    fun fileMetadataGivesAFolderOnlyTheTime() {
+        val dir = XEntry(id = "file:///docs", name = "docs", isDir = true, size = 7, mtime = 1_000, childCountHint = 3)
+        val listed = listOf(dir)
+
+        val updated = listed.withFileMetadata(dir.id, size = -1, mtime = 9_000)
+
+        assertEquals(dir.copy(mtime = 9_000), updated[0])
+        assertSame(listed, listed.withFileMetadata(dir.id, size = -1, mtime = 1_000))
+    }
+
+    @Test
+    fun fileMetadataUpdatesOnlyTheDirectoryThatContainsTheFile() {
+        val file = XEntry(id = "file:///docs/a.txt", name = "a.txt", isDir = false, size = 4, mtime = 1_000)
+        val docs = listOf(file)
+        val other = listOf(XEntry(id = "file:///pics/a.jpg", name = "a.jpg", isDir = false, size = 8, mtime = 3_000))
+        val children = mapOf("file:///docs" to docs, "file:///pics" to other)
+
+        val updated = children.withFileMetadata(file.id, size = 18, mtime = 9_000)
+
+        assertEquals(18, updated.getValue("file:///docs")[0].size)
+        assertEquals(9_000, updated.getValue("file:///docs")[0].mtime)
+        assertSame(other, updated.getValue("file:///pics"))
+        assertSame(children, children.withFileMetadata("file:///nowhere", size = 1, mtime = 2))
+    }
+
+    @Test
     fun listedChildCountReplacesAStaleHint() {
         val dir = XEntry(id = "file:///docs", name = "docs", isDir = true, childCountHint = 1)
         val listed = listOf(

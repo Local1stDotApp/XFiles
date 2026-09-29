@@ -772,6 +772,26 @@ class MainViewModel : ViewModel() {
         showViewer(ViewerRequest.Text(entry))
     }
 
+    /**
+     * A text save does not go through the op engine, so the listing still shows the size and
+     * time from when the folder was read. A save that replaced the file moved its folder's time
+     * as well.
+     */
+    fun refreshListedFile(id: String) {
+        viewModelScope.launch {
+            val fresh = withContext(Dispatchers.IO) {
+                listOfNotNull(id, XId.parent(id)).mapNotNull { target ->
+                    // The save already stands; a row that cannot be read back keeps its old values.
+                    runCatching { Graph.fsRegistry.forId(target).stat(target) }.getOrNull()
+                        ?.let { target to it }
+                }
+            }
+            for ((target, stat) in fresh) {
+                panes.forEach { it.applyFileMetadata(target, stat.size, stat.mtime) }
+            }
+        }
+    }
+
     // ---- file operations ----
 
     /** Copies or moves the active pane's selection directly into the other pane's folder. */

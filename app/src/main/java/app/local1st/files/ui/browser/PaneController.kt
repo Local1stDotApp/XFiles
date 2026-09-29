@@ -1190,7 +1190,10 @@ class PaneController(
         val error = result.exceptionOrNull()?.let {
             it.message ?: Graph.appContext.getString(R.string.cannot_read, entry.name)
         }
-        if (!applyListingIfCurrent(entry.id, generation, kids, error)) return emptyList()
+        val applied = applyListingIfCurrent(entry.id, generation, kids, error)
+        // Like [load]: a refresh asked for while this read was out may be newer than what it read.
+        if (reloadRequested.remove(entry.id) && applied) load(entry)
+        if (!applied) return emptyList()
         return kids
     }
 
@@ -1200,6 +1203,21 @@ class PaneController(
         finishStartupRestoreForInteraction()
         val entry = findEntry(dirId) ?: return
         if (tree.value.children.containsKey(dirId)) load(entry)
+    }
+
+    /**
+     * Writes a saved file's size and time over the cached row. Reloading the parent would mark
+     * that folder loading and re-read every child. A read of the parent already under way may
+     * have seen the old values and would land over these, so the parent is read again after it.
+     */
+    fun applyFileMetadata(id: String, size: Long, mtime: Long) {
+        tree.update { current ->
+            val roots = current.roots.withFileMetadata(id, size, mtime)
+            val children = current.children.withFileMetadata(id, size, mtime)
+            if (roots === current.roots && children === current.children) current
+            else current.copy(roots = roots, children = children)
+        }
+        XId.parent(id)?.let { dir -> if (dir in tree.value.loading) reloadRequested += dir }
     }
 
     fun refreshDirty(ids: Set<String>) {
