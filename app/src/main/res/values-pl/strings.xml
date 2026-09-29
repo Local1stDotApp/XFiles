@@ -163,7 +163,7 @@ Najpierw zamontuj tę lokalizację w innej aplikacji jako folder — RCX (rclone
     <string name="empty_recycle_bin_confirmation">Trwale usunąć wszystko z kosza? Tej operacji nie można cofnąć.</string>
     <string name="recycle_bin_empty">Kosz jest pusty</string>
     <string name="recycle_bin_unknown_location">%1$s · nieznana pierwotna lokalizacja</string>
-    <string name="and_more"> i jeszcze %1$d</string>
+    <string name="and_more">\u0020i jeszcze %1$d</string>
     <string name="create_zip_in">Utwórz ZIP w: %1$s</string>
     <string name="location">Lokalizacja: %1$s</string>
     <string name="size">Rozmiar: %1$s</string>

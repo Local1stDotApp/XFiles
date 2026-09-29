@@ -163,7 +163,7 @@ Pasang dulu lokasi itu sebagai folder di aplikasi lain — RCX (rclone), Nextclo
     <string name="empty_recycle_bin_confirmation">Hapus permanen semua isi Tong Sampah? Hal ini tidak dapat dibatalkan.</string>
     <string name="recycle_bin_empty">Tong Sampah kosong</string>
     <string name="recycle_bin_unknown_location">%1$s · lokasi asli tidak diketahui</string>
-    <string name="and_more"> dan %1$d lainnya</string>
+    <string name="and_more">\u0020dan %1$d lainnya</string>
     <string name="create_zip_in">Buat ZIP di %1$s</string>
     <string name="location">Lokasi: %1$s</string>
     <string name="size">Ukuran: %1$s</string>

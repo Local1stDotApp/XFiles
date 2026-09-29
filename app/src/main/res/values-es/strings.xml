@@ -163,7 +163,7 @@ Monta esa ubicación como carpeta en otra app primero — RCX (rclone), Nextclou
     <string name="empty_recycle_bin_confirmation">¿Eliminar permanentemente todo el contenido de la papelera? No se puede deshacer.</string>
     <string name="recycle_bin_empty">La papelera está vacía</string>
     <string name="recycle_bin_unknown_location">%1$s · ubicación original desconocida</string>
-    <string name="and_more"> y %1$d más</string>
+    <string name="and_more">\u0020y %1$d más</string>
     <string name="create_zip_in">Crear ZIP en %1$s</string>
     <string name="location">Ubicación: %1$s</string>
     <string name="size">Tamaño: %1$s</string>

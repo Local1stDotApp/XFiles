@@ -164,7 +164,7 @@
     <string name="empty_recycle_bin_confirmation">Permanently delete everything in the Recycle Bin? This cannot be undone.</string>
     <string name="recycle_bin_empty">Recycle Bin is empty</string>
     <string name="recycle_bin_unknown_location">%1$s · original location unknown</string>
-    <string name="and_more"> and %1$d more</string>
+    <string name="and_more">\u0020and %1$d more</string>
     <string name="create_zip_in">Create zip in %1$s</string>
     <string name="location">Location: %1$s</string>
     <string name="size">Size: %1$s</string>

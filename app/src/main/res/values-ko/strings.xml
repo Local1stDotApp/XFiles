@@ -163,7 +163,7 @@
     <string name="empty_recycle_bin_confirmation">휴지통의 모든 항목을 영구적으로 삭제할까요? 이 작업은 취소할 수 없습니다.</string>
     <string name="recycle_bin_empty">휴지통이 비어 있습니다</string>
     <string name="recycle_bin_unknown_location">%1$s · 원래 위치를 알 수 없음</string>
-    <string name="and_more"> 외 %1$d개</string>
+    <string name="and_more">\u0020외 %1$d개</string>
     <string name="create_zip_in">%1$s에 ZIP 만들기</string>
     <string name="location">위치: %1$s</string>
     <string name="size">크기: %1$s</string>

@@ -163,7 +163,7 @@ Koppel die locatie eerst in een andere app als map — RCX (rclone), Nextcloud, 
     <string name="empty_recycle_bin_confirmation">Alles in de prullenbak permanent verwijderen? Dit kan niet ongedaan worden gemaakt.</string>
     <string name="recycle_bin_empty">De prullenbak is leeg</string>
     <string name="recycle_bin_unknown_location">%1$s · oorspronkelijke locatie onbekend</string>
-    <string name="and_more"> en nog %1$d</string>
+    <string name="and_more">\u0020en nog %1$d</string>
     <string name="create_zip_in">Maak een zip aan in %1$s</string>
     <string name="location">Locatie: %1$s</string>
     <string name="size">Maat: %1$s</string>

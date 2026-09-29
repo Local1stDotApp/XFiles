@@ -163,7 +163,7 @@ Hängen Sie den Ort zuerst in einer anderen App als Ordner ein — RCX (rclone),
     <string name="empty_recycle_bin_confirmation">Alles im Papierkorb endgültig löschen? Dies kann nicht rückgängig gemacht werden.</string>
     <string name="recycle_bin_empty">Der Papierkorb ist leer</string>
     <string name="recycle_bin_unknown_location">%1$s · ursprünglicher Ort unbekannt</string>
-    <string name="and_more"> und %1$d mehr</string>
+    <string name="and_more">\u0020und %1$d mehr</string>
     <string name="create_zip_in">ZIP-Datei in %1$s erstellen</string>
     <string name="location">Speicherort: %1$s</string>
     <string name="size">Größe: %1$s</string>

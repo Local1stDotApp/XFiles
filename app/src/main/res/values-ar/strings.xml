@@ -163,7 +163,7 @@
     <string name="empty_recycle_bin_confirmation">هل تريد حذف كل محتويات سلة المحذوفات نهائيًا؟ لا يمكن التراجع عن هذا.</string>
     <string name="recycle_bin_empty">سلة المحذوفات فارغة</string>
     <string name="recycle_bin_unknown_location">%1$s · الموقع الأصلي غير معروف</string>
-    <string name="and_more"> و%1$d المزيد</string>
+    <string name="and_more">\u0020و%1$d المزيد</string>
     <string name="create_zip_in">قم بإنشاء ملف مضغوط في %1$s</string>
     <string name="location">الموقع: %1$s</string>
     <string name="size">الحجم: %1$s</string>

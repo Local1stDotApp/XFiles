@@ -163,7 +163,7 @@ Hãy gắn vị trí đó thành thư mục trong ứng dụng khác trước �
     <string name="empty_recycle_bin_confirmation">Xóa vĩnh viễn mọi thứ trong Thùng rác? Không thể hoàn tác thao tác này.</string>
     <string name="recycle_bin_empty">Thùng rác trống</string>
     <string name="recycle_bin_unknown_location">%1$s · không rõ vị trí ban đầu</string>
-    <string name="and_more"> và %1$d nữa</string>
+    <string name="and_more">\u0020và %1$d nữa</string>
     <string name="create_zip_in">Tạo ZIP trong %1$s</string>
     <string name="location">Vị trí: %1$s</string>
     <string name="size">Kích thước: %1$s</string>

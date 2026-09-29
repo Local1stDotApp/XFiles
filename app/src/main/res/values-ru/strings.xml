@@ -163,7 +163,7 @@
     <string name="empty_recycle_bin_confirmation">Навсегда удалить всё из корзины? Это невозможно отменить.</string>
     <string name="recycle_bin_empty">Корзина пуста</string>
     <string name="recycle_bin_unknown_location">%1$s · исходное расположение неизвестно</string>
-    <string name="and_more"> и ещё %1$d</string>
+    <string name="and_more">\u0020и ещё %1$d</string>
     <string name="create_zip_in">Создать ZIP-архив в %1$s</string>
     <string name="location">Местоположение: %1$s</string>
     <string name="size">Размер: %1$s</string>

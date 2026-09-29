@@ -163,7 +163,7 @@ Monte esse local como pasta em outro app primeiro — RCX (rclone), Nextcloud ou
     <string name="empty_recycle_bin_confirmation">Excluir permanentemente tudo na lixeira? Isto não pode ser desfeito.</string>
     <string name="recycle_bin_empty">A lixeira está vazia</string>
     <string name="recycle_bin_unknown_location">%1$s · local original desconhecido</string>
-    <string name="and_more"> e %1$d mais</string>
+    <string name="and_more">\u0020e %1$d mais</string>
     <string name="create_zip_in">Criar ZIP em %1$s</string>
     <string name="location">Localização: %1$s</string>
     <string name="size">Tamanho: %1$s</string>

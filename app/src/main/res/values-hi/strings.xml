@@ -163,7 +163,7 @@
     <string name="empty_recycle_bin_confirmation">रीसायकल बिन की हर चीज़ स्थायी रूप से हटाएँ? इसे वापस नहीं लाया जा सकता।</string>
     <string name="recycle_bin_empty">रीसायकल बिन खाली है</string>
     <string name="recycle_bin_unknown_location">%1$s · मूल स्थान अज्ञात</string>
-    <string name="and_more"> और %1$d अन्य</string>
+    <string name="and_more">\u0020और %1$d अन्य</string>
     <string name="create_zip_in">%1$s में ZIP बनाएँ</string>
     <string name="location">स्थान: %1$s</string>
     <string name="size">आकार: %1$s</string>
