@@ -114,7 +114,11 @@ fun AppScreenSurface(
                 alpha = pose.alpha
                 clip = round
                 shape = if (round) RoundedCornerShape(displayCornerRadius) else RoundedCornerShape(0)
-                compositingStrategy = CompositingStrategy.Offscreen
+                // Not Offscreen: a video's SurfaceView shows through a hole it clears in the
+                // window, and an offscreen layer keeps that hole to itself, so older Android
+                // shows the page background instead of the picture. Auto still goes offscreen
+                // for the closing fade.
+                compositingStrategy = CompositingStrategy.Auto
             }
             .background(background),
     ) {
