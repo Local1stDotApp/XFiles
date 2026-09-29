@@ -464,10 +464,12 @@ private fun EntryMenuContent(
                     ) { vm.installPackage(entry); dismiss() }
                 }
             }
-            if (entry.canWrite && entry.kind != EntryKind.LOCATION && !topLevelTrash) {
+            // A volume or `/` root is writable, but deleting it empties the whole storage.
+            // Rename and delete follow the move rule.
+            if (canMoveSource(entry) && !topLevelTrash) {
                 MenuItem(stringResource(R.string.rename)) { vm.requestRename(entry) }
             }
-            if (entry.canWrite && entry.kind != EntryKind.LOCATION) {
+            if (canMoveSource(entry)) {
                 MenuItem(stringResource(R.string.delete)) { vm.requestDelete(listOf(entry)) }
                 if (!underTrash && Graph.trash.canTrash(entry, trashVolumes)) {
                     MenuItem(stringResource(R.string.delete_permanently)) {

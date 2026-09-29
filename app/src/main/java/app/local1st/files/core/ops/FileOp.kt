@@ -82,7 +82,8 @@ data class ConflictResolution(
 
 /**
  * Move copies then deletes the source. Pane roots and virtual nodes cannot be deleted as a
- * unit (SAF location roots, volumes, `/`, apps), so they are copy-only.
+ * unit (SAF location roots, volumes, `/`, apps), so they are copy-only. Rename and delete
+ * use the same rule.
  */
 internal fun canMoveSource(entry: XEntry): Boolean =
     entry.canWrite &&

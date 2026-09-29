@@ -159,6 +159,7 @@ class FileOperationDestinationTest {
                 directory("file:///storage/emulated/0").copy(kind = EntryKind.VOLUME_INTERNAL),
             ),
         )
+        assertFalse(canMoveSource(directory("root:///").copy(kind = EntryKind.ROOT)))
         assertTrue(canMoveSource(directory("saf://loc-1/docs")))
         assertTrue(
             canMoveSource(

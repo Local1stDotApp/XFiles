@@ -121,6 +121,22 @@ class RootFileSystemTest {
     }
 
     @Test
+    fun theFilesystemRootIsNeverDeletedOrRenamed() {
+        PrivilegedAccess.readOnly = false
+        val slash = RootFileSystem.rootEntry()
+
+        // Refused before any transport runs, so no su or Shizuku is needed here.
+        assertEquals(
+            "Cannot delete Root",
+            assertThrows(IOException::class.java) { RootFileSystem().delete(slash) }.message,
+        )
+        assertEquals(
+            "Cannot rename Root",
+            assertThrows(IOException::class.java) { RootFileSystem().rename(slash, "moved") }.message,
+        )
+    }
+
+    @Test
     fun listingIsBlockedWhenTheSettingsSwitchIsOff() {
         PrivilegedAccess.enabled = false
         val error = assertThrows(IOException::class.java) {

@@ -168,6 +168,7 @@ class RootFileSystem(
 
     override fun delete(entry: XEntry) {
         requireWritable()
+        refuseFilesystemRoot(entry.path, "Cannot delete ${entry.name}")
         val linkNode = runCatching {
             java.nio.file.Files.isSymbolicLink(java.io.File(entry.path).toPath())
         }.getOrDefault(false)
@@ -181,6 +182,7 @@ class RootFileSystem(
 
     override fun rename(entry: XEntry, newName: String): XEntry {
         requireWritable()
+        refuseFilesystemRoot(entry.path, "Cannot rename ${entry.name}")
         refuseCrossBin(entry.path, entry.name)
         val parentPath = entry.path.trimEnd('/').substringBeforeLast('/', "").ifEmpty { "/" }
         refuseVolumeBinName(parentPath, newName)
@@ -207,6 +209,11 @@ class RootFileSystem(
         if (volumeRoots().any { TrashPaths.samePath(it, parentPath) }) {
             throw IOException("Cannot use $name")
         }
+    }
+
+    /** The Root row is writable with su. `rm -rf /` must not follow from its menu. */
+    private fun refuseFilesystemRoot(path: String, message: String) {
+        if (isFilesystemRoot(path)) throw IOException(message)
     }
 
     private fun refuseCrossBin(path: String, name: String) {
