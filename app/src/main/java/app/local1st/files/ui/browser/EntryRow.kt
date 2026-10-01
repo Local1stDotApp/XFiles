@@ -21,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -301,17 +301,9 @@ fun EntryRow(
         }
 
         if (selectable) {
-            val icon = if (selected) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked
             val description = stringResource(if (selected) R.string.deselect else R.string.select)
-            val tint = if (selected) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.outlineVariant
             IconButton(onClick = onToggleSelect, enabled = enabled) {
-                Icon(
-                    icon,
-                    contentDescription = description,
-                    tint = tint,
-                    modifier = Modifier.size(22.dp),
-                )
+                SelectionMark(selected, contentDescription = description)
             }
         }
     }
@@ -362,6 +354,35 @@ private fun ExpandChevron(
                 color,
                 style = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round),
             )
+        }
+    }
+}
+
+/**
+ * Trailing selection mark. The unselected ring is drawn rather than a vector [Icon]: each Icon
+ * rasterizes its own bitmap on first draw, and expanding a folder brings a dozen rows in within
+ * one frame.
+ */
+@Composable
+private fun SelectionMark(selected: Boolean, contentDescription: String?) {
+    val tint = if (selected) MaterialTheme.colorScheme.primary
+    else MaterialTheme.colorScheme.outlineVariant
+    if (selected) {
+        Icon(
+            Icons.Outlined.CheckCircle,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.size(22.dp),
+        )
+    } else {
+        Canvas(
+            Modifier
+                .size(22.dp)
+                .semantics { if (contentDescription != null) this.contentDescription = contentDescription },
+        ) {
+            // The ring of Icons.Outlined.RadioButtonUnchecked: radius 9, stroke 2 in its 24-unit box.
+            val unit = size.minDimension / 24f
+            drawCircle(tint, radius = 9f * unit, style = Stroke(width = 2f * unit))
         }
     }
 }
@@ -454,13 +475,7 @@ private fun StartupEntryRow(
         }
         if (selectable) {
             Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                Icon(
-                    if (selected) Icons.Outlined.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
-                    contentDescription = null,
-                    tint = if (selected) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier.size(22.dp),
-                )
+                SelectionMark(selected, contentDescription = null)
             }
         }
     }
@@ -481,7 +496,11 @@ private fun EntryThumbnail(entry: XEntry) {
                 EntryIcons.forEntry(entry),
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(24.dp),
+                modifier = Modifier
+                    .size(24.dp)
+                    // A memory-cached thumbnail arrives while the row is first measured, before
+                    // this draws; skip the draw then rather than rasterize a hidden vector.
+                    .drawWithContent { if (!loaded) drawContent() },
             )
         }
         // LocalFileSystem clears localPath on a row that is, or resolves into, a bin entry,
