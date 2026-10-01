@@ -92,6 +92,7 @@ import app.local1st.files.core.fs.XEntry
 import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.navigationBarsStable
 import app.local1st.files.ui.statusBarsStable
+import app.local1st.files.ui.theme.DarkSystemBars
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.floor
@@ -139,6 +140,8 @@ fun VideoPlayerScreen(
     // Scrubbing stays safe either way — the scrub layer below keeps clear of the back-gesture edge
     // zones on its own, instead of relying on hidden bars to swallow the first edge swipe.
     SystemBarsHidden(hidden = !controlsVisible)
+    // Black behind the status bar in either theme; a light theme's dark icons would vanish there.
+    DarkSystemBars()
     val view = LocalView.current
     // Keep the panel lit while playing, and also while inspecting frames: frame work is
     // long stretches of staring at a paused picture.

@@ -66,6 +66,7 @@ import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import app.local1st.files.R
 import app.local1st.files.ui.statusBarsStable
+import app.local1st.files.ui.theme.DarkSystemBars
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.di.Graph
 import java.io.File
@@ -87,6 +88,8 @@ private const val MAX_IMAGE_BYTES = 64L * 1024 * 1024
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ImageViewer(items: List<XEntry>, startIndex: Int, onClose: () -> Unit) {
+    // Black behind the status bar in either theme; a light theme's dark icons would vanish there.
+    DarkSystemBars()
     if (items.isEmpty()) {
         Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
             Text(stringResource(R.string.nothing_to_show), color = Color.White)
