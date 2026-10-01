@@ -144,7 +144,14 @@ fun SearchScreen(
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                         .focusRequester(focusRequester),
-                    placeholder = { Text(stringResource(R.string.search_files_hint)) },
+                    // singleLine covers only the query; a long hint would still wrap and grow the field.
+                    placeholder = {
+                        Text(
+                            stringResource(R.string.search_files_hint),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
                     leadingIcon = {
                         TooltipIconButton(
                             stringResource(R.string.close_search),
