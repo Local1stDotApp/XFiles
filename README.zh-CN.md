@@ -5,13 +5,13 @@
 # XFiles
 
 **一款离线、开源的 Android 文件管理器，沿用 X-plore 的操作方式** —— 双栏树形浏览、
-压缩包当文件夹逛、应用管理、APK/AAB/XAPK 安装、root 与 Shizuku 访问 ——
-跑在最新的 Android 技术栈上，界面采用 Material 3 Expressive。
+压缩包当文件夹逛、应用管理、APK/AAB/XAPK 安装、root 与 Shizuku 访问，
+界面采用 Material 3 Expressive。
 
 [![Release](https://img.shields.io/github/v/release/Local1stDotApp/XFiles?include_prereleases&sort=semver&label=release)](https://github.com/Local1stDotApp/XFiles/releases)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE)
-[![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026)-3DDC84?logo=android&logoColor=white)](#构建与运行)
-[![Kotlin](https://img.shields.io/badge/Kotlin-Compose-7F52FF?logo=kotlin&logoColor=white)](#技术栈)
+[![Android](https://img.shields.io/badge/Android-8.0%2B%20(API%2026)-3DDC84?logo=android&logoColor=white)](#下载)
+[![Kotlin](https://img.shields.io/badge/Kotlin-Compose-7F52FF?logo=kotlin&logoColor=white)](#构建)
 [![No network](https://img.shields.io/badge/network-none-success)](#权限与隐私)
 
 [English](README.md) · 简体中文
@@ -26,144 +26,50 @@
 
 ## 缘起
 
-- 过去半年 **X-plore 在 [Waydroid](https://waydro.id) 上用不了了**，得找个替代品。
+- **X-plore 在 [Waydroid](https://waydro.id) 上用不了了**，得找个替代品。
 - **现在是 LLM 时代** —— 工具不趁手，那就自己写一个。
 - **能动 root 的软件，就该开源、彻底离线、什么都不收集。**
   XFiles 没有 `INTERNET` 权限，也没有任何统计埋点。
 
 ## 下载
 
-到 [**Releases**](https://github.com/Local1stDotApp/XFiles/releases) 拿 APK：
+到 [**Releases**](https://github.com/Local1stDotApp/XFiles/releases) 下载 APK：
+**`vX.Y`** 是稳定版，**`nightly`** 是滚动预发布，`main` 每次推送都会重新构建。
+需要 Android 8.0 及以上。首次启动请授予"所有文件访问权限"，App 会直接跳到系统设置页。
 
-- **`vX.Y`** —— 稳定版，每次手动提升 `versionName` 时发布。
-- **`nightly`** —— 一个滚动更新的预发布，`main` 每次推送都会刷新它。
-
-需要 **Android 8.0（API 26）** 及以上。首次启动请授予"所有文件访问权限"
-（App 会直接跳转到系统设置页）。也可以[自己编译](#构建与运行)。
+> **用 iPhone 或 iPad？** 试试 [**XFiles Pro**](https://apps.apple.com/app/id6796674895)。
+> 同样的树形 + 双栏浏览搬到了 iOS 上，还补上了这个 Android 版刻意不做的联网部分：
+> 带 SSH 终端的 SFTP、SMB/NAS、WebDAV、FTP(S)、S3、Google Drive、Dropbox、OneDrive、
+> Jellyfin 和 Emby。它也会作为一个位置出现在系统「文件」App 里。它直连你添加的服务器，
+> 没有中转，也没有统计。免费下载即可保存 3 个网络位置，Pro 解锁无限网络位置和 SSH
+> 终端。它是一个独立的 App，不是从这个仓库构建的；目前中国大陆区 App Store 暂未上架。
 
 ## 功能
 
-### 双栏树形浏览
-
-X-plore 的招牌：两栏互不干扰 —— 宽屏左右并排，手机上是可滑动切换的分页。
-文件夹**原地展开**成树，带缩进引导线，每一栏各自有一个悬浮的面包屑胶囊。
-手机顶部还会一直显示隐藏栏的目标目录，点一下就能切换过去。
-
-压缩包在树里跟普通文件夹没两样 —— 面包屑会直接钻进 `project.zip` 里去。
-
-### 树里直接出缩略图
-
-图片和视频首帧就地渲染。视频帧只按缩略图尺寸抽取一次并落盘缓存，重启后立即可见；
-加载过程中会先显示图标占位，视频还会叠一个播放角标。
-
-### 文件操作
-
-通过右侧边缘的勾选圈多选。**另一栏就是复制、移动、压缩和解压的目的地**：
-先在另一栏打开目标目录，再回来源栏直接执行。需要临时选择其他位置时，仍可使用
-长按菜单里的 `Copy to…` / `Move to…`。内置存储、SD 卡和 USB 上的删除会把文件移入回收站，之后可以还原。清空回收站，以及在 Root 或网络位置上的删除，会永久移除。此外还有重命名、新建文件夹。
-系统已挂载的 USB OTG（U 盘、移动硬盘、读卡器）会作为栏根出现在内置存储和 SD 卡旁边，插拔后自动更新。
-Android 8–10 上，对 SD 卡、USB 等第二存储卷的写入通过一次性的 SAF 授权自动完成。
-
-**添加位置**（首页或设置）可以把其他应用提供的文档树变成栏根——RSAF（rclone）、CIFS Documents Provider、Nextcloud，或任何 `DocumentsProvider`。复制和移动走系统 IPC；XFiles 仍然没有 `INTERNET` 权限，联网的是对方应用。
-如果选中的是本机已有的存储路径，会改成收藏，避免出现重复的根。
-逐步说明：[把网络位置加进 XFiles](https://xfiles.local1st.app/zh/add-location)
-（[文稿](docs/add-location.zh-CN.md)）。
-
-这些都跑在后台引擎上，带进度（Expressive 的波浪进度条）、可取消，
-冲突时可选 跳过 / 覆盖 / 两个都留。
-
-### 高性能 zip
-
-打包时用所有 CPU 核心并行压缩每个条目（commons-compress 的
-`ParallelScatterZipCreator`，已压缩过的媒体文件直接 STORE）。
-解压时每个 worker 各持一个 `ZipFile` 句柄，从共享队列里取活。
-已防 Zip-Slip；临时空间不够时自动退回单线程流式处理。
-
-### 前台服务
-
-耗时的复制/移动/压缩/解压在 App 退到后台后继续跑，常驻通知里带取消按钮，
-并持有 wake lock。空闲时服务自行停止。
-
-### 压缩包当文件夹
-
-zip/jar/apk、7z、tar(.gz/.bz2/.xz)、rar 都能只读浏览；想解压就复制出来。
-能装的东西在树里点一下就能装 —— 见下文。
-
-### 应用管理
-
-已安装和系统应用分成两大类，带真实图标、版本号/包名标签和详细信息。
-支持安装、启动、卸载，或者把 APK 复制出来当文件分享。
-
-展开一个应用，属于它的东西就都在这儿了：一个 **Components** 节点，
-按 activity / provider / receiver / service 分好类；外加 `base.apk` 和每个
-`split_config.*` APK —— 每个都能继续展开，毕竟 APK 本来就是个 zip。
-
-再往下点开某一类，每个组件都会显示类名和它在 manifest 里的真实状态 ——
-`exported` / `not exported`、`enabled` / `disabled`。
-可以启动 activity、创建快捷方式，系统允许的话还能启用/禁用组件。
-
-### 软件包安装器
-
-APK 点一下就能装 —— 长得像 APK 的也一样：拆分包（`.apks` / `.apkm` / `.xapk`，
-XAPK 附带的 **OBB** 扩展文件会放到游戏期望的位置），甚至原始的 **`.aab`**。
-内置的 [bundletool](https://github.com/google/bundletool) 直接在手机上把 bundle
-转换成匹配本机的拆分 APK，并用内置证书签名 —— 不需要电脑，也不需要 Play 商店。
-安装跑在前台服务里，装到一半退出 App 也不会断。
-
-### Root 与 Shizuku
-
-默认打开。存储根列表里会有一个 **Root**（`/`）入口 —— 设置里关掉 **Root access** 即可藏掉。
-旁边还有个独立的 **Read-only** 开关（同样默认打开），会挡掉所有需要特权的写操作，
-让你能进去看，但没法把系统搞坏。
-
-背后有两种可互换的通道，设置里可以自选（也可以留在自动）：
-
-- **`su`** —— 有 root 的设备上的完整超级用户身份。`/data` 展开后是 `adb`、`anr`、
-  `app`、`app-private`、`dalvik-cache` —— 这些目录普通应用连列出来都做不到 ——
-  在 `/data`、`/system` 等目录下 list/read/write/mkdir/rename/delete。
-- **[Shizuku](https://shizuku.rikka.app/)** —— 不需要 root：XFiles 绑定一个以
-  shell（ADB）权限运行的 Shizuku 用户服务，拿到的是真实的文件描述符。
-  设置页会一步步引导安装和授权。
-
-只要有通道可用，普通文件访问被拒的地方它就会悄悄顶上 —— 最典型的是
-**`Android/data`** 和 **`Android/obb`**，打开跟普通文件夹没两样。
-缩略图、查看器、甚至视频播放在特权路径上都照常工作。
-打开 **Root** 时，有 `su` 就走超级用户。没有的话，Shizuku 仍然可以列出 `/`，
-并进入 adb shell 能看见的地方（`/system`、`/proc`、`/storage`、`Android/data`）。
-`/data` 和 `/data/data` 仍然要有超级用户才能进。
-
-设置页里还有其余的偏好项 —— 主题、动态取色、显示隐藏文件、文件夹优先、排序字段和升降序。
-
-### 查看器
-
-图片查看器（分页 + 双指缩放）、可编辑保存的文本查看器、按需分页的十六进制查看器、
-音频播放器，以及一个自研的视频播放器（Media3/ExoPlayer），支持**逐帧精确定位**。
-
-点一下时间读数，它就变成帧计数器 —— 当前帧、总帧数和真实帧率 —— 然后可以 ±1 帧步进；
-在画面上滑动可按时间或按帧拖动并实时预览；那张紧凑的控制卡片可以拖走；也能全屏沉浸播放。
-
-### 搜索
-
-流式实时递归搜索，支持 `*` / `?` 通配符。会钻进压缩包里找，点结果可在树中定位。
-
-### 从其他应用打开
-
-默认关闭，XFiles 不会抢任何默认打开方式。设置里有三个自愿开启的开关，分别把
-XFiles 注册进系统的**压缩包**、**图片**、**视频**打开方式列表 —— 开了之后，
-在别的应用里"用 XFiles 打开"，压缩包直接进树形浏览，图片、视频直接进对应查看器。
-
-### Material 3 Expressive
-
-`MaterialExpressiveTheme` + expressive 动效、动态取色（Android 12+）、
-浅色/深色/跟随系统、悬浮工具栏、`LoadingIndicator` / `LinearWavyProgressIndicator`。
-真正的边到边：没有顶部 app bar —— 内容从状态栏底下滚过去，上面盖一层渐变蒙版，
-只留悬浮的面包屑和设置按钮。
-
-### 18 种语言
-
-界面跟随系统语言：英语之外还有简体中文、繁体中文、阿拉伯语、荷兰语、法语、德语、
-印地语、印尼语、意大利语、日语、韩语、波兰语、葡萄牙语（巴西）、俄语、西班牙语、
-土耳其语和越南语。
+- **双栏树形浏览。** 两栏互不干扰，宽屏左右并排，手机上左右滑动切换。文件夹原地展开成树，
+  图片和视频缩略图直接显示在树里，压缩包跟普通文件夹一样能点进去。
+- **文件操作。** 复制、移动、压缩、解压的目的地就是另一栏，带进度、可取消，冲突时可选
+  跳过 / 覆盖 / 两个都留。任务退到后台也继续跑，压缩会用满所有 CPU 核心。
+  内置存储、SD 卡和 U 盘上的删除会先进回收站，之后可以还原。
+- **各种存储卷。** 内置存储、SD 卡和 USB OTG 设备都是栏根。**添加位置**可以把其他应用
+  提供的文档树固定成栏根（RSAF/rclone、CIFS Documents Provider、Nextcloud，或任何
+  `DocumentsProvider`），XFiles 自己不联网也能访问网络存储。
+  [操作说明](https://xfiles.local1st.app/zh/add-location)。
+- **压缩包。** zip/jar/apk、7z、tar(.gz/.bz2/.xz)、rar 都能只读浏览，想解压就复制出来。
+- **应用管理。** 已安装和系统应用，带图标和详情。展开一个应用，能看到它的
+  activity / service / provider / receiver 以及真实的 `exported` / `enabled` 状态，
+  还有 `base.apk` 和每个拆分 APK。支持启动、卸载、导出 APK，系统允许时还能启用/禁用组件。
+- **软件包安装器。** APK、拆分包（`.apks` / `.apkm` / `.xapk`，连同 OBB）以及原始
+  `.aab` 都能装。内置的 [bundletool](https://github.com/google/bundletool) 直接在手机上
+  把 AAB 转成匹配本机的拆分 APK，不需要电脑，也不需要 Play 商店。
+- **Root 与 Shizuku。** 有 `su` 就提供一个 **Root**（`/`）入口；没有 root 也可以通过
+  [Shizuku](https://shizuku.rikka.app/) 获得 adb shell 级别的访问。两者都能打开
+  `Android/data` 和 `Android/obb`；`/data` 本身需要 `su`。**Read-only** 开关默认打开，
+  会挡掉所有特权写操作，让你能进去看，但没法把系统搞坏。
+- **查看器。** 图片、文本（可编辑）、十六进制、音频，以及支持逐帧步进和拖动预览的视频播放器。
+- **搜索。** 流式实时递归搜索，支持 `*` / `?` 通配符，也会搜进压缩包里。
+- **用 XFiles 打开**压缩包、图片和视频。三个开关都需要手动开启，默认全关。
+- **Material 3 Expressive**、动态取色、边到边显示，支持 18 种语言。
 
 ## 权限与隐私
 
@@ -171,94 +77,50 @@ XFiles 注册进系统的**压缩包**、**图片**、**视频**打开方式列�
 
 | 权限 | 用途 |
 |---|---|
-| `MANAGE_EXTERNAL_STORAGE` | 浏览和修改整个共享存储 —— X-plore 这类管理器的立身之本 |
-| `READ_EXTERNAL_STORAGE`（≤ API 32） | 老版本 Android 上的读取路径 |
-| `WRITE_EXTERNAL_STORAGE`（≤ API 29） | 老版本 Android 上的写入路径 |
+| `MANAGE_EXTERNAL_STORAGE` | 浏览和修改整个共享存储 |
+| `READ_EXTERNAL_STORAGE`（≤ API 32）、`WRITE_EXTERNAL_STORAGE`（≤ API 29） | 老版本 Android 上的同等权限 |
 | `QUERY_ALL_PACKAGES` | 应用管理要列出已安装的应用 |
-| `REQUEST_DELETE_PACKAGES` | 在应用管理里卸载 |
-| `REQUEST_INSTALL_PACKAGES` | 软件包安装器：APK、拆分包（`.apks`/`.apkm`/`.xapk`）、AAB |
+| `REQUEST_INSTALL_PACKAGES`、`REQUEST_DELETE_PACKAGES` | 安装和卸载应用 |
 | `POST_NOTIFICATIONS` | 长任务的进度通知 |
-| `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC` | 退到后台后让复制/移动或安装继续跑 |
-| `WAKE_LOCK` | 任务进行中别休眠 |
+| `FOREGROUND_SERVICE`、`FOREGROUND_SERVICE_DATA_SYNC`、`WAKE_LOCK` | 退到后台后让复制、移动或安装继续跑 |
 | **`INTERNET`** | **没有申请。** App 根本没法访问网络 |
 
-最后一行是操作系统层面的强制约束，不是口头承诺 —— 你可以自己去
+最后一行由操作系统强制保证。你可以去
 [`AndroidManifest.xml`](app/src/main/AndroidManifest.xml) 里看，
 或者对 APK 跑一下 `aapt dump permissions` 验证。
 
-## 技术栈
-
-| 层 | 选型 |
-|---|---|
-| 语言 / UI | Kotlin、Jetpack Compose（BOM 2026.09.00）、material3 **1.5.0-alpha28**（Expressive API） |
-| 构建 | AGP 9.4.1（内置 Kotlin，不用 KGP）、Gradle 9.7.1、compileSdk 37 / target 37 / min 26 |
-| 架构 | MVVM + StateFlow，手写 DI 组合根（`di/Graph`）；app 模块 + 一个 shaded bundletool vendor 模块 |
-| 持久化 | DataStore Preferences |
-| 媒体 / 图片 | Coil 3（GIF，自定义 fetcher：应用图标、落盘缓存的视频缩略图）、Media3 ExoPlayer |
-| 压缩包 | java.util.zip、commons-compress（+xz）、junrar |
-| 特权访问 | Shizuku 13.1.5（用户服务、真实文件描述符）· `su` shell |
-| 软件包安装 | PackageInstaller 会话 · 内置 bundletool 1.18.3 · ARSCLib（进程内 aapt2）· 极简自签名器 |
-
-注：material3 锁在 1.5 alpha 线（`1.5.0-alpha28`），因为 1.4.0 正式版里 Expressive 那批 API 还是 `internal`。
-
-## 项目结构
-
-```
-app/src/main/java/app/local1st/files/
-├── core/
-│   ├── fs/        XEntry 模型、XId id 方案、XFileSystem + FsRegistry、
-│   │   │          Local/Archive/Apps/Root 文件系统、存储根、旧版 SAF 写入
-│   │   └── priv/  特权通道 —— su shell 与 Shizuku 用户服务（真实文件描述符）
-│   ├── ops/       OperationEngine（复制/移动/删除/压缩 + 冲突处理）、OpsService
-│   ├── search/    递归 SearchEngine
-│   ├── prefs/     DataStore 设置
-│   ├── thumb/     Coil fetcher：应用图标、落盘缓存的视频缩略图
-│   └── util/      格式化、mime/类别映射、intent；软件包安装 ——
-│                  PackageInstaller 会话、AAB→APK（bundletool）、XAPK/OBB、
-│                  进程内 aapt2（ARSCLib）、自签名
-├── di/            Graph（组合根）+ GraphInit 装配
-└── ui/
-    ├── browser/   PaneController（树状态机）、PaneView、EntryRow
-    ├── components/ 共享 Compose 组件（tooltip、预测性返回）
-    ├── main/      MainViewModel、MainScreen（双栏 + 悬浮工具栏）、PermissionGate
-    ├── dialogs/   重命名/新建文件夹/删除/压缩/详情、操作进度 + 冲突
-    ├── viewer/    图片 / 文本 / 十六进制查看器、音频播放器、逐帧视频播放器
-    ├── search/    搜索浮层
-    ├── settings/  设置页
-    ├── appinfo/   应用详情浮层
-    └── theme/     MaterialExpressiveTheme 配置
-
-vendor/bundletool-shaded/   把 bundletool 1.18.3 及其锁定依赖 shade 成一个 jar 的 Gradle 模块
-```
-
-条目 id 是类 URI 的字符串：`file:///abs/path`、
-`zip:///abs/archive.zip!/inner/path`、`apps://package.name`、`root:///abs/path`。
-
-## 构建与运行
+## 构建
 
 ```bash
 ./gradlew :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-需要 JDK 17+ 和装了 platform 37 的 Android SDK。
-首次启动请授予"所有文件访问权限"（App 会直接跳到系统设置页）。
+需要 JDK 17+ 和装了 platform 37 的 Android SDK。项目用 Kotlin 和 Jetpack Compose 写成，
+material3 锁在 1.5 alpha 线以使用 Expressive API。另外用到 MVVM + StateFlow、Coil 3、
+Media3、commons-compress 和 junrar、Shizuku，以及 `vendor/` 下 shade 过的 bundletool。
+具体版本见 [`gradle/libs.versions.toml`](gradle/libs.versions.toml)。
 
-## 发布
+`app/src/main/java/app/local1st/files/` 下的主要目录：
 
-GitHub Actions 工作流（[`.github/workflows/release.yml`](.github/workflows/release.yml)）
-在每次推送到 `main` 时，用 GitHub 托管的 Ubuntu runner 构建签名 APK：
+```
+core/fs/       XFileSystem 背后的各个文件系统：本地、压缩包、应用、root、SAF、回收站
+core/fs/priv/  特权通道：su shell 与 Shizuku 用户服务
+core/ops/      OperationEngine 和前台服务 OpsService
+core/util/     软件包安装：PackageInstaller、AAB → APK、XAPK/OBB、签名
+ui/browser/    栏的树状态机与列表行
+ui/main/       双栏主界面与悬浮工具栏
+ui/viewer/     图片、文本、十六进制、音频和视频查看器
+```
 
-- 构建号（`versionCode`）每次运行自增（`github.run_number`）。
-- `versionName` 写在 `version.properties` 里。只要它没变，每次推送就只刷新那个滚动的
-  **`nightly`** 预发布；提升 `versionName` 才会切出新的稳定版 `vX.Y`。
-- 签名密钥和口令来自仓库 secrets：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、
-  `KEY_ALIAS`、`KEY_PASSWORD`。
+[`release.yml`](.github/workflows/release.yml) 会在每次推送到 `main` 时构建签名 APK。
+`versionCode` 取运行编号；提升 `version.properties` 里的 `versionName` 就会发布新的稳定版。
+签名读取仓库 secrets：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD`。
 
 ## 许可证
 
 [GPL-3.0-only](LICENSE)。一个能被交到 root 手里的文件管理器，
-理应用一个能让后续所有副本都保持开放的许可证 —— 你要是发布改过的 XFiles，请连源码一起发。
+理应用一个能让后续所有副本都保持开放的许可证。你要是发布改过的 XFiles，请连源码一起发。
 
 ---
 
