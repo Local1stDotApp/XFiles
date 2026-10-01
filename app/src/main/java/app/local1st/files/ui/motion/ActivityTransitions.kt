@@ -137,7 +137,8 @@ fun AppScreenSurface(
 fun rememberDisplayCornerRadius(): Dp {
     val view = LocalView.current
     val density = LocalDensity.current
-    val fallback = 28.dp
+    // Square when the display reports no radius, as before Android 12: a guessed radius
+    // rounds the page off where the screen itself has square corners.
     return remember(view, density) {
         val insets = ViewCompat.getRootWindowInsets(view)
         val radiusPx = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -149,7 +150,7 @@ fun rememberDisplayCornerRadius(): Dp {
         } else {
             0
         }
-        if (radiusPx > 0) with(density) { radiusPx.toDp() } else fallback
+        with(density) { radiusPx.toDp() }
     }
 }
 
