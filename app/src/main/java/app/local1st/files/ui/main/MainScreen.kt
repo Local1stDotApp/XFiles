@@ -108,7 +108,10 @@ fun MainScreen(vm: MainViewModel = viewModel()) {
     val otherPaneState by otherPaneController.state.collectAsStateWithLifecycle()
     val otherPaneDestination = otherPaneController.focusedDirEntry()
     val otherPaneName = paneLocationName(otherPaneDestination, otherPaneState.focusedDirId)
-    val volumeRoots = Graph.roots.mountedVolumes.collectAsStateWithLifecycle().value.map { it.path }
+    val mountedVolumes by Graph.roots.mountedVolumes.collectAsStateWithLifecycle()
+    // Same list instance until the volumes change, so the lambdas that capture it (the pane
+    // header's target chip) stay equal and let the panes skip.
+    val volumeRoots = remember(mountedVolumes) { mountedVolumes.map { it.path } }
     val binName = stringResource(R.string.recycle_bin)
     val otherPanePath = paneLocationPath(
         otherPaneDestination,

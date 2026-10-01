@@ -225,9 +225,17 @@ fun PaneView(
                 }
             }
 
+            // Only the focused path's names: expanding or collapsing a folder then leaves the
+            // header's input equal, so the breadcrumb skips instead of recomposing.
+            val focusedDirId = state.focusedDirId
+            val nodes = state.nodes
+            val crumbNames = remember(focusedDirId, nodes) {
+                val path = generateSequence(focusedDirId) { XId.parent(it) }.toHashSet()
+                nodes.filter { it.entry.id in path }.associate { it.entry.id to it.entry.name }
+            }
             PaneHeader(
                 focusedDirId = state.focusedDirId,
-                crumbNames = state.nodes.associate { it.entry.id to it.entry.name },
+                crumbNames = crumbNames,
                 active = active,
                 breadcrumbAlignment = breadcrumbAlignment,
                 headerStartPadding = headerStartPadding,
