@@ -98,6 +98,7 @@ fun AppScreenSwitcher.scrimAlpha(isDark: Boolean): Float {
 fun AppScreenSurface(
     pose: WindowPose,
     displayCornerRadius: Dp,
+    mayShowVideo: Boolean,
     content: @Composable () -> Unit,
 ) {
     val background = MaterialTheme.colorScheme.background
@@ -114,11 +115,17 @@ fun AppScreenSurface(
                 alpha = pose.alpha
                 clip = round
                 shape = if (round) RoundedCornerShape(displayCornerRadius) else RoundedCornerShape(0)
-                // Not Offscreen: a video's SurfaceView shows through a hole it clears in the
-                // window, and an offscreen layer keeps that hole to itself, so older Android
-                // shows the page background instead of the picture. Auto still goes offscreen
-                // for the closing fade.
-                compositingStrategy = CompositingStrategy.Auto
+                // Offscreen while moving: the rounded clip then cuts the finished page once
+                // instead of every draw inside it, which Android 9's renderer can't do at 60 fps.
+                // Not on a screen that can play video, nor at rest: a SurfaceView shows through
+                // a hole it clears in the window, and an offscreen layer keeps that hole to
+                // itself, so older Android shows the page background instead of the picture.
+                // Auto still goes offscreen for the closing fade.
+                compositingStrategy = if (round && !mayShowVideo) {
+                    CompositingStrategy.Offscreen
+                } else {
+                    CompositingStrategy.Auto
+                }
             }
             .background(background),
     ) {

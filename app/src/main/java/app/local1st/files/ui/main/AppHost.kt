@@ -165,6 +165,7 @@ fun AppHost(vm: MainViewModel) {
                     AppScreenSurface(
                         pose = pose,
                         displayCornerRadius = displayCornerRadius,
+                        mayShowVideo = entry.screen is AppScreen.Viewer,
                     ) {
                         AppScreenBody(vm, entry)
                     }
