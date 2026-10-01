@@ -1,5 +1,7 @@
-What's new in 1.4.0
+What's new in 1.5.0
 
-• Add location: pin folders from other apps (RSAF/rclone, Nextcloud, SMB providers) as pane roots — XFiles still has no network permission
-• USB OTG drives appear as pane roots and refresh when plugged or unplugged
-• System night mode no longer recreates the activity (Settings switches stay put)
+• Recycle Bin: deletes on internal storage, SD cards and USB drives can be restored, deleted permanently or emptied from the new Recycle Bin root
+• Use XFiles to view PDFs and text files opened from other apps (turn on in Settings)
+• Text editor opens large files: loads only what you edit, with undo/redo, Wrap lines and GBK detection
+• Folder rows show item counts and dates
+• Predictive back, and smoother screen switches on older phones
