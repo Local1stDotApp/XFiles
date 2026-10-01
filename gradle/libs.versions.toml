@@ -19,6 +19,11 @@ junrar = "8.1.1"
 media3 = "1.11.1"
 iconsExtended = "1.7.8"
 shizuku = "13.1.5"
+profileinstaller = "1.4.1"
+# Baseline Profile generation only (:baselineprofile); nothing here ships in the app.
+benchmark = "1.5.0"
+uiautomator = "2.4.0"
+androidxJunit = "1.3.0"
 # These are bundletool 1.18.3's ABI-pinned runtime deps, shaded into
 # :vendor:bundletool-shaded; re-derive from bundletool's POM when bundletool is bumped — do NOT
 # bump independently.
@@ -84,8 +89,15 @@ media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", versi
 media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 shizuku-api = { module = "dev.rikka.shizuku:api", version.ref = "shizuku" }
 shizuku-provider = { module = "dev.rikka.shizuku:provider", version.ref = "shizuku" }
+androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
+
+androidx-benchmark-macro-junit4 = { group = "androidx.benchmark", name = "benchmark-macro-junit4", version.ref = "benchmark" }
+androidx-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "uiautomator" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJunit" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-test = { id = "com.android.test", version.ref = "agp" }
+androidx-baselineprofile = { id = "androidx.baselineprofile", version.ref = "benchmark" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlinComposePlugin" }
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }

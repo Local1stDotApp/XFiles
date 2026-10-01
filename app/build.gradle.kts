@@ -4,6 +4,7 @@ import org.gradle.api.tasks.testing.Test
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.androidx.baselineprofile)
 }
 
 // versionName is human-set in version.properties; the build number (versionCode) is passed by
@@ -125,6 +126,12 @@ dependencies {
 
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
+
+    // Installs the Baseline Profile on devices that don't get it from the store (sideloaded
+    // APKs, Android 9-12); ART then compiles those paths ahead of time instead of running them
+    // interpreted until the JIT catches up. Regenerate with :app:generateBaselineProfile.
+    implementation(libs.androidx.profileinstaller)
+    baselineProfile(project(":baselineprofile"))
 
     testImplementation("junit:junit:4.13.2")
 }

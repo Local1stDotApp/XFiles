@@ -22,4 +22,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "XFiles"
 include(":app")
+include(":baselineprofile")
 include(":vendor:bundletool-shaded")
