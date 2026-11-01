@@ -10,6 +10,7 @@ import coil3.request.addLastModifiedToFileCacheKey
 import coil3.video.VideoFrameDecoder
 import app.local1st.files.core.ops.BackgroundJobs
 import app.local1st.files.core.ops.OpsService
+import app.local1st.files.core.thumb.ApkIconFetcher
 import app.local1st.files.core.thumb.AppIconFetcher
 import app.local1st.files.core.thumb.PrivFileFetcher
 import app.local1st.files.core.thumb.VideoThumbFetcher
@@ -50,6 +51,8 @@ class XFilesApp : Application(), SingletonImageLoader.Factory {
                 add(PrivFileFetcher.Factory())
                 add(PrivFileFetcher.Key())
                 add(AppIconFetcher.Factory(this@XFilesApp))
+                add(ApkIconFetcher.Factory(this@XFilesApp))
+                add(ApkIconFetcher.Key())
                 if (Build.VERSION.SDK_INT >= 28) {
                     add(AnimatedImageDecoder.Factory())
                 }
