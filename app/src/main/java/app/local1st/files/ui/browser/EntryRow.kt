@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -43,8 +42,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -52,6 +53,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
@@ -77,6 +80,13 @@ private val ChevronGapStart = 2.dp
 private val ChevronSize = 12.dp
 private val IndentWidth = ChevronGapStart + ChevronSize
 private val RowHeight = 56.dp
+
+/**
+ * Tree levels a row of [rowWidth] indents before deeper rows share the last one, as in X-plore:
+ * the gutter stays within a quarter of the row, so deep names keep their room.
+ */
+fun treeIndentColumns(rowWidth: Dp): Int =
+    (rowWidth * 0.25f / IndentWidth).toInt().coerceAtLeast(2)
 
 /** Action row shown after the pane-root list; same geometry as a depth-0 [EntryRow]. */
 @Composable
@@ -126,6 +136,8 @@ fun EntryRow(
     onToggleSelect: () -> Unit,
     enabled: Boolean = true,
     richContent: Boolean = true,
+    indentColumns: Int = Int.MAX_VALUE,
+    branch: BranchLines = BranchLines.None,
     modifier: Modifier = Modifier,
 ) {
     val entry = node.entry
@@ -153,17 +165,30 @@ fun EntryRow(
             enabled = enabled,
             selectable = selectable,
             isVolume = isVolume,
+            indentColumns = indentColumns,
             modifier = modifier,
         )
         return
     }
     val guideColor = MaterialTheme.colorScheme.outlineVariant
+    // Rows deeper than [indentColumns] stop indenting: they share the last column, and so do
+    // their lines.
+    val column = minOf(node.depth, indentColumns)
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .fillMaxWidth()
             .height(RowHeight)
+            // Tree lines, on the focused branch only (see [BranchLines]). Drawn outside the
+            // rounded clip, so a line meets the next row's instead of breaking at the corners.
+            .then(
+                if (branch == BranchLines.None) Modifier
+                else Modifier.drawWithContent {
+                    drawContent()
+                    drawBranch(node, column, indentColumns, branch, guideColor)
+                },
+            )
             .clip(RoundedCornerShape(12.dp))
             .background(background)
             .combinedClickable(
@@ -172,54 +197,7 @@ fun EntryRow(
                 onLongClick = onLongClick,
             ),
     ) {
-        // Tree guide lines + connector elbow. The ancestor spines show the full nesting path —
-        // parent, grandparent, and so on up to the root.
-        if (node.depth > 0) {
-            Canvas(
-                Modifier
-                    .width(IndentWidth * node.depth)
-                    .fillMaxHeight(),
-            ) {
-                val unit = IndentWidth.toPx()
-                val stroke = 1.dp.toPx()
-                // guides[i] tells whether the ancestor at depth i has a following sibling; that
-                // ancestor's sibling-spine sits one indent to the left, at level i-1. (guides[0]
-                // is the root — no spine.) The spine at this row's OWN level (depth-1) is the
-                // connector below — never drawn here, so a last child doesn't get a second,
-                // non-closing line over its "└".
-                node.guides.forEachIndexed { i, draw ->
-                    if (draw && i >= 1) {
-                        val gx = unit * (i - 1) + unit / 2
-                        drawLine(guideColor, Offset(gx, 0f), Offset(gx, size.height), stroke)
-                    }
-                }
-                val x = unit * (node.depth - 1) + unit / 2
-                val midY = size.height / 2
-                // Round caps extend past the end by half the stroke; stop at the
-                // column edge so the chevron's leading gap stays visible.
-                val endX = x + unit / 2 - stroke / 2f
-                if (node.isLastChild) {
-                    // Rounded "└": the vertical stops here and curves into the branch — the arc
-                    // alone marks the last item, so it uses the same tone/weight as other guides.
-                    val r = unit * 0.4f
-                    val path = Path().apply {
-                        moveTo(x, 0f)
-                        lineTo(x, midY - r)
-                        quadraticBezierTo(x, midY, x + r, midY)
-                        lineTo(endX, midY)
-                    }
-                    drawPath(
-                        path,
-                        guideColor,
-                        style = Stroke(width = stroke, cap = StrokeCap.Round),
-                    )
-                } else {
-                    // "├": the spine continues past this item to its following siblings.
-                    drawLine(guideColor, Offset(x, 0f), Offset(x, size.height), stroke)
-                    drawLine(guideColor, Offset(x, midY), Offset(endX, midY), stroke, cap = StrokeCap.Round)
-                }
-            }
-        }
+        if (column > 0) Spacer(Modifier.width(IndentWidth * column))
 
         // Expand chevron for containers, aligned space for leaves.
         if (entry.isContainer) {
@@ -388,6 +366,98 @@ private fun SelectionMark(selected: Boolean, contentDescription: String?) {
 }
 
 /**
+ * Lines of one row on the focused branch. A row's own connector sits at the middle of its
+ * column; its children's sits one column right, just under its chevron, or on its own past
+ * the indent cap.
+ */
+private fun DrawScope.drawBranch(
+    node: TreeNode,
+    column: Int,
+    indentColumns: Int,
+    branch: BranchLines,
+    color: Color,
+) {
+    // The geometry is from the row's start edge.
+    if (layoutDirection == LayoutDirection.Rtl) {
+        scale(scaleX = -1f, scaleY = 1f) { drawBranchLtr(node, column, indentColumns, branch, color) }
+    } else {
+        drawBranchLtr(node, column, indentColumns, branch, color)
+    }
+}
+
+private fun DrawScope.drawBranchLtr(
+    node: TreeNode,
+    column: Int,
+    indentColumns: Int,
+    branch: BranchLines,
+    color: Color,
+) {
+    val unit = IndentWidth.toPx()
+    val stroke = 1.dp.toPx()
+    val midY = size.height / 2
+    val line = Stroke(width = stroke, cap = StrokeCap.Round)
+    fun connectorX(depth: Int) = unit * (minOf(depth, indentColumns) - 1) + unit / 2
+
+    if (branch is BranchLines.Through) {
+        val x = connectorX(branch.level + 1)
+        drawLine(color, Offset(x, 0f), Offset(x, size.height), stroke)
+        return
+    }
+    if (branch is BranchLines.Inside) {
+        // guides[i] tells whether the ancestor at depth i has a following sibling; that
+        // ancestor's sibling-spine sits one indent to the left, at level i-1. Only ancestors
+        // inside the focused folder count. The spine at this row's OWN level is the connector
+        // below, so a last child doesn't get a second, non-closing line over its "└". Past the
+        // cap an ancestor's spine would fall on this row's connector and turn a closing "└"
+        // into "├", so the last column keeps only this row's own group.
+        node.guides.forEachIndexed { i, draw ->
+            if (draw && i > branch.focusDepth && i < indentColumns) {
+                val gx = unit * (i - 1) + unit / 2
+                drawLine(color, Offset(gx, 0f), Offset(gx, size.height), stroke)
+            }
+        }
+    }
+    if (column > 0) {
+        val x = connectorX(node.depth)
+        // Round caps extend past the end by half the stroke; stop at the
+        // column edge so the chevron's leading gap stays visible.
+        val endX = x + unit / 2 - stroke / 2f
+        if (branch == BranchLines.Path || node.isLastChild) {
+            // Rounded "└". The path's siblings are not drawn, so its folders always close.
+            val r = unit * 0.4f
+            val path = Path().apply {
+                moveTo(x, 0f)
+                lineTo(x, midY - r)
+                quadraticBezierTo(x, midY, x + r, midY)
+                lineTo(endX, midY)
+            }
+            drawPath(path, color, style = line)
+        } else {
+            // "├": the spine continues past this item to its following siblings.
+            drawLine(color, Offset(x, 0f), Offset(x, size.height), stroke)
+            drawLine(color, Offset(x, midY), Offset(endX, midY), stroke, cap = StrokeCap.Round)
+        }
+    }
+    if (node.hasChildRows) {
+        // From under the chevron down to the children's connector. Past the cap the children
+        // share this row's column, so it bends back as an S, the way X-plore does.
+        val sx = unit * column + unit / 2
+        val sy = midY + ChevronSize.toPx() / 2 + 2.dp.toPx()
+        val cx = connectorX(node.depth + 1)
+        if (cx == sx) {
+            drawLine(color, Offset(sx, sy), Offset(sx, size.height), stroke, cap = StrokeCap.Round)
+        } else {
+            val h = size.height - sy
+            val path = Path().apply {
+                moveTo(sx, sy)
+                cubicTo(sx, sy + h / 2, cx, size.height - h / 2, cx, size.height)
+            }
+            drawPath(path, color, style = line)
+        }
+    }
+}
+
+/**
  * First-draw row: same geometry and useful text, without Canvas guides, long-press machinery,
  * ripple/selection buttons, thumbnail painters, or animation nodes. The full row replaces it
  * after the lightweight list has already produced a visible frame.
@@ -401,6 +471,7 @@ private fun StartupEntryRow(
     enabled: Boolean,
     selectable: Boolean,
     isVolume: Boolean,
+    indentColumns: Int,
     modifier: Modifier,
 ) {
     val entry = node.entry
@@ -426,7 +497,8 @@ private fun StartupEntryRow(
             .background(background)
             .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
     ) {
-        if (node.depth > 0) Spacer(Modifier.width(IndentWidth * node.depth))
+        val column = minOf(node.depth, indentColumns)
+        if (column > 0) Spacer(Modifier.width(IndentWidth * column))
         if (entry.isContainer) {
             ExpandChevron(
                 expanded = node.expanded,

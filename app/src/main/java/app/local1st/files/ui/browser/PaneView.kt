@@ -3,6 +3,7 @@ package app.local1st.files.ui.browser
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -155,7 +156,12 @@ fun PaneView(
         else MaterialTheme.colorScheme.surfaceContainerLow,
         shape = RoundedCornerShape(16.dp),
     ) {
-        Box(Modifier.fillMaxSize()) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            // Rows are padded 4.dp on each side.
+            val indentColumns = treeIndentColumns(maxWidth - 8.dp)
+            val branch = remember(state.nodes, state.focusedDirId) {
+                branchLines(state.nodes, state.nodes.indexOfFirst { it.entry.id == state.focusedDirId })
+            }
             // Rows scroll edge-to-edge under the status bar and the floating breadcrumb;
             // the top inset only keeps row 0 initially clear of both.
             // IgnoringVisibility so a hidden bar in the viewer does not reflow this list;
@@ -199,6 +205,8 @@ fun PaneView(
                             },
                             enabled = !state.snapshotOnly,
                             richContent = richRowsEnabled,
+                            indentColumns = indentColumns,
+                            branch = branch.getOrElse(index) { BranchLines.None },
                             modifier = Modifier
                                 .padding(horizontal = 4.dp)
                                 .then(

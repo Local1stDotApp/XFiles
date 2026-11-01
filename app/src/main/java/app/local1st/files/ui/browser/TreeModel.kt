@@ -73,7 +73,50 @@ data class TreeNode(
     val guides: List<Boolean>,
     val isLastChild: Boolean,
     val error: String? = null,
+    /** True when the rows right below are this node's children. */
+    val hasChildRows: Boolean = false,
 )
+
+/**
+ * The tree lines one row draws. As in X-plore, only the focused folder's branch has any: the
+ * path down to it from its root, and the guides inside it. Elsewhere rows rely on indentation.
+ */
+@Immutable
+sealed interface BranchLines {
+    data object None : BranchLines
+
+    /** The path passes this row on its way from the folder at [level] to that folder's next one. */
+    data class Through(val level: Int) : BranchLines
+
+    /** A folder on the path, the focused one included. */
+    data object Path : BranchLines
+
+    /** A row inside the focused folder at [focusDepth]: only guides deeper than it are drawn. */
+    data class Inside(val focusDepth: Int) : BranchLines
+}
+
+/** The [BranchLines] of each row of [nodes] when the row at [focusIndex] is the focused folder. */
+internal fun branchLines(nodes: List<TreeNode>, focusIndex: Int): List<BranchLines> {
+    val out = MutableList<BranchLines>(nodes.size) { BranchLines.None }
+    if (focusIndex !in nodes.indices) return out
+    out[focusIndex] = BranchLines.Path
+    // Rows are in pre-order, so a row's parent is the nearest earlier row one level up.
+    var child = focusIndex
+    for (i in focusIndex - 1 downTo 0) {
+        if (nodes[child].depth == 0) break
+        if (nodes[i].depth < nodes[child].depth) {
+            out[i] = BranchLines.Path
+            val through = BranchLines.Through(nodes[i].depth)
+            for (r in i + 1 until child) out[r] = through
+            child = i
+        }
+    }
+    val focusDepth = nodes[focusIndex].depth
+    val inside = BranchLines.Inside(focusDepth)
+    var r = focusIndex + 1
+    while (r < nodes.size && nodes[r].depth > focusDepth) out[r++] = inside
+    return out
+}
 
 @Immutable
 data class PaneUiState(

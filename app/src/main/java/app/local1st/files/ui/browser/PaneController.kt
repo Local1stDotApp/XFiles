@@ -276,7 +276,7 @@ internal fun sessionRenderSnapshotFor(
     )
 }
 
-private fun SessionRenderSnapshot.toTreeNodes(): List<TreeNode> = nodes.map { node ->
+private fun SessionRenderSnapshot.toTreeNodes(): List<TreeNode> = nodes.mapIndexed { index, node ->
     TreeNode(
         entry = node.entry,
         key = node.key,
@@ -286,6 +286,7 @@ private fun SessionRenderSnapshot.toTreeNodes(): List<TreeNode> = nodes.map { no
         guides = node.guides,
         isLastChild = node.isLastChild,
         error = null,
+        hasChildRows = nodes.getOrNull(index + 1)?.depth == node.depth + 1,
     )
 }
 
@@ -1563,6 +1564,7 @@ class PaneController(
                 val isLast = index == entries.lastIndex
                 val isExpanded = e.isContainer && e.id in expanded
                 val nodeKey = "$parentKey|${e.id}"
+                val kids = if (isExpanded) children[e.id]?.let { sortedVisible(e.id, it, sort) } else null
                 out += TreeNode(
                     entry = e.withListedChildCount(children[e.id], sort.showHidden),
                     key = nodeKey,
@@ -1572,12 +1574,9 @@ class PaneController(
                     guides = guides,
                     isLastChild = isLast,
                     error = errors[e.id],
+                    hasChildRows = !kids.isNullOrEmpty(),
                 )
-                if (isExpanded) {
-                    children[e.id]?.let { kids ->
-                        visit(sortedVisible(e.id, kids, sort), depth + 1, guides + !isLast, nodeKey)
-                    }
-                }
+                if (kids != null) visit(kids, depth + 1, guides + !isLast, nodeKey)
             }
         }
         visit(roots, 0, emptyList(), "")

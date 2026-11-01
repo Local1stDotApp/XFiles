@@ -122,4 +122,38 @@ class TreeModelTest {
         assertSame(volume, volume.withListedChildCount(listed, showHidden = false))
         assertSame(file, file.withListedChildCount(null, showHidden = false))
     }
+
+    @Test
+    fun branchLinesFollowOnlyTheFocusedPath() {
+        // root
+        //   a          <- path
+        //     a1       <- passed through on the way to a2
+        //       a1x    <- passed through
+        //     a2       <- focused
+        //       f1     <- inside
+        //         f1x  <- inside
+        //     a3       <- off the branch
+        //   b          <- off the branch
+        val rows = listOf(
+            "root" to 0, "a" to 1, "a1" to 2, "a1x" to 3, "a2" to 2,
+            "f1" to 3, "f1x" to 4, "a3" to 2, "b" to 1,
+        ).map { (name, depth) ->
+            TreeNode(
+                entry = XEntry(id = "file:///$name", name = name, isDir = true),
+                key = name, depth = depth, expanded = true, loading = false,
+                guides = List(depth) { false }, isLastChild = false,
+            )
+        }
+
+        assertEquals(
+            listOf(
+                BranchLines.Path, BranchLines.Path,
+                BranchLines.Through(1), BranchLines.Through(1), BranchLines.Path,
+                BranchLines.Inside(2), BranchLines.Inside(2),
+                BranchLines.None, BranchLines.None,
+            ),
+            branchLines(rows, focusIndex = 4),
+        )
+        assertEquals(List(rows.size) { BranchLines.None }, branchLines(rows, focusIndex = -1))
+    }
 }
