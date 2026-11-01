@@ -83,7 +83,10 @@ object EntryIcons {
         EntryKind.ROOT -> Icons.Outlined.Security
         EntryKind.LOCATION -> Icons.Outlined.Cloud
         EntryKind.RECYCLE_BIN -> Icons.Outlined.DeleteOutline
-        EntryKind.ARCHIVE -> Icons.Outlined.FolderZip
+        // An installable file opens like a zip, but it is a package first.
+        EntryKind.ARCHIVE ->
+            if (FileTypes.isInstallable(entry.extension)) Icons.Outlined.Android
+            else Icons.Outlined.FolderZip
         EntryKind.DIR -> if (expanded) Icons.Outlined.FolderOpen else Icons.Outlined.Folder
         EntryKind.FILE -> forCategory(FileTypes.categoryOf(entry.name, entry.mime))
     }
