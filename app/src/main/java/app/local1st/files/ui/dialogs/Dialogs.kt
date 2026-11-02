@@ -2,9 +2,16 @@ package app.local1st.files.ui.dialogs
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -165,7 +172,15 @@ fun MainDialogs(vm: MainViewModel) {
             )
         }
 
-        is DialogRequest.EntryMenu -> ModalBottomSheet(onDismissRequest = dismiss) {
+        is DialogRequest.EntryMenu -> ModalBottomSheet(
+            onDismissRequest = dismiss,
+            // Keep the sheet below the status bar. Under it, Material3 pads the content by the
+            // part of the status bar the sheet covers, so a menu within that much of the screen's
+            // height grows while it is dragged up. AnchoredDraggableState then reports a running
+            // animation for good, and the sheet takes every touch as the start of a drag: no row
+            // can be tapped.
+            modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top)),
+        ) {
             EntryMenuContent(vm, req, dismiss)
         }
 
@@ -294,7 +309,8 @@ private fun EntryMenuContent(
         R.string.cannot_write,
         otherPaneDestination?.name ?: stringResource(R.string.this_device),
     )
-    Column(Modifier.padding(bottom = 24.dp)) {
+    // A long name can push the last rows below the sheet's full height.
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(bottom = 24.dp)) {
         if (entry != null) {
             Text(
                 entry.name,
