@@ -69,6 +69,25 @@ class LocalFileListingTest {
     }
 
     @Test
+    fun searchListingLeavesOutFolderCounts() {
+        val parent = temporaryFolder.newFolder("docs")
+        val nested = File(parent, "nested").apply { mkdir() }
+        File(nested, "c.txt").writeText("c")
+        // No extension: a typed name would ask MimeTypeMap, which JVM tests don't have.
+        File(parent, "notes").writeText("a")
+
+        val searched = fs.listForSearch(entry(parent, isDir = true))
+
+        assertEquals(-1, searched.single { it.name == "nested" }.childCountHint)
+        assertTrue(searched.single { it.name == "nested" }.isDir)
+        // Everything else matches the browser's listing.
+        assertEquals(
+            fs.list(entry(parent, isDir = true)).map { it.copy(childCountHint = -1) }.toSet(),
+            searched.toSet(),
+        )
+    }
+
+    @Test
     fun volumeRootOmitsTheRecycleBinDirectory() {
         val volume = temporaryFolder.newFolder("vol")
         File(volume, ".xfiles-trash").mkdirs()

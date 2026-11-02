@@ -291,7 +291,10 @@ fun DestinationPickerScreen(
                         runCatching { Graph.fsRegistry.forEntry(parent).mkdir(parent, name) }
                     }
                     result.fold(
-                        onSuccess = { current = it },
+                        onSuccess = {
+                            Graph.indexNewFolder(it)
+                            current = it
+                        },
                         onFailure = {
                             vm.snackbar.tryEmit(it.message ?: Graph.appContext.getString(R.string.cannot_create_folder))
                             reloadTick++

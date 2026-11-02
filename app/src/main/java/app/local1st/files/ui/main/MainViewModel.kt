@@ -1073,6 +1073,7 @@ class MainViewModel : ViewModel() {
             }
             result.fold(
                 onSuccess = {
+                    Graph.indexNewFolder(it)
                     activeCtrl.expand(parent)
                     panes.forEach { it.refresh(parent.id) }
                 },

@@ -15,6 +15,13 @@ interface XFileSystem {
     @Throws(java.io.IOException::class)
     fun list(dir: XEntry): List<XEntry>
 
+    /**
+     * [list] for a search walk. An implementation may leave out what only a browser row shows,
+     * such as [XEntry.childCountHint], when that costs extra I/O per child.
+     */
+    @Throws(java.io.IOException::class)
+    fun listForSearch(dir: XEntry): List<XEntry> = list(dir)
+
     /** Resolve an id back to an entry, or null if it doesn't exist. */
     fun stat(id: String): XEntry?
 

@@ -31,6 +31,9 @@ object Format {
             Locale.getDefault(),
         ).format(Date(epochMillis))
 
+    /** A count with the locale's digit grouping, e.g. 182,340. */
+    fun count(n: Int): String = NumberFormat.getIntegerInstance(Locale.getDefault()).format(n)
+
     /** Browser row subtitle: size or item count plus date. */
     fun details(vararg parts: String): String =
         parts.filter { it.isNotEmpty() }.joinToString(" · ")

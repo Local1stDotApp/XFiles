@@ -7,7 +7,6 @@ import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import java.io.File
 import java.nio.file.Files
-import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -39,13 +38,13 @@ class RecycleBinSearchTest {
             kind = EntryKind.DIR,
         )
 
-        val textHits = engine.search(rootEntry, "keep").toList().map { it.entry.name }
+        val textHits = engine.hits(rootEntry, "keep").map { it.entry.name }
         assertEquals(listOf("keep"), textHits)
-        assertTrue(engine.search(rootEntry, "secret").toList().isEmpty())
-        assertEquals(listOf("visible"), engine.search(rootEntry, "visible").toList().map { it.entry.name })
+        assertTrue(engine.hits(rootEntry, "secret").isEmpty())
+        assertEquals(listOf("visible"), engine.hits(rootEntry, "visible").map { it.entry.name })
         assertEquals(
             listOf(".xfiles-trash"),
-            engine.search(rootEntry, "xfiles").toList().map { it.entry.name },
+            engine.hits(rootEntry, "xfiles").map { it.entry.name },
         )
         val binEntry = XEntry(
             id = XId.file(File(root, ".xfiles-trash").absolutePath),
@@ -53,7 +52,7 @@ class RecycleBinSearchTest {
             isDir = true,
             kind = EntryKind.DIR,
         )
-        assertEquals(listOf("secret"), engine.search(binEntry, "secret").toList().map { it.entry.name })
+        assertEquals(listOf("secret"), engine.hits(binEntry, "secret").map { it.entry.name })
     }
 
     @Test
@@ -74,8 +73,8 @@ class RecycleBinSearchTest {
             kind = EntryKind.DIR,
         )
 
-        assertEquals(listOf("keep"), engine.search(rootEntry, "keep").toList().map { it.entry.name })
-        assertTrue(engine.search(rootEntry, "secret").toList().isEmpty())
+        assertEquals(listOf("keep"), engine.hits(rootEntry, "keep").map { it.entry.name })
+        assertTrue(engine.hits(rootEntry, "secret").isEmpty())
     }
 
     @Test
@@ -97,7 +96,7 @@ class RecycleBinSearchTest {
             kind = EntryKind.DIR,
         )
 
-        assertEquals(20, engine.search(rootEntry, "note").toList().size)
+        assertEquals(20, engine.hits(rootEntry, "note").size)
         assertEquals(1, calls)
     }
 
@@ -119,6 +118,6 @@ class RecycleBinSearchTest {
             kind = EntryKind.DIR,
         )
 
-        assertTrue(engine.search(rootEntry, "secret").toList().isEmpty())
+        assertTrue(engine.hits(rootEntry, "secret").isEmpty())
     }
 }

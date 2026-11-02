@@ -163,8 +163,12 @@ live preview, drag the compact control card out of the way, or go fullscreen imm
 
 ### Search
 
-Live streaming recursive search with `*`/`?` wildcards. Descends into archives, and
-reveals results in the tree on tap.
+Live streaming recursive search with `*`/`?` wildcards. Descends into archives and
+network folders, and reveals results in the tree on tap. A long search pauses after
+each ten-second round and asks whether to keep going or search to the end. Switch
+from the current folder to **All storage** to search every volume; on Android 11+
+that reads the system's file index instead of walking each folder, so results arrive
+almost at once.
 
 ### Open from other apps
 

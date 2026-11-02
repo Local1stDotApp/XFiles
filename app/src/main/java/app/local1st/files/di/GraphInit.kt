@@ -1,5 +1,6 @@
 package app.local1st.files.di
 
+import android.os.Build
 import app.local1st.files.R
 import app.local1st.files.core.fs.AppsFileSystem
 import app.local1st.files.core.fs.ArchiveFileSystem
@@ -21,6 +22,7 @@ import app.local1st.files.core.fs.priv.PrivilegedAccess
 import app.local1st.files.core.fs.priv.ShizukuGate
 import app.local1st.files.core.ops.DefaultOperationEngine
 import app.local1st.files.core.search.DefaultSearchEngine
+import app.local1st.files.core.search.MediaStoreFileIndex
 import kotlinx.coroutines.launch
 
 /** Wires concrete implementations into [Graph]. */
@@ -152,7 +154,14 @@ fun initGraph(graph: Graph) {
         Graph.appContext.cacheDir,
         trash,
     )
-    graph.searchEngine = DefaultSearchEngine(graph.fsRegistry, volumeRoots)
+    // From Android 11 MediaStore keeps every shared-storage name current, so a search of
+    // all storage reads it instead of walking each volume. Older releases only rescan it.
+    graph.fileNameIndex = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        MediaStoreFileIndex(Graph.appContext)
+    } else {
+        null
+    }
+    graph.searchEngine = DefaultSearchEngine(graph.fsRegistry, volumeRoots, index = graph.fileNameIndex)
 
     // Mirror the root-access settings into the process-wide gate consulted by the fs layer.
     // App-lifetime so file operations honor read-only mode even without a UI in the foreground.

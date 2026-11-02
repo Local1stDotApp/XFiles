@@ -109,7 +109,7 @@ The Nextcloud app holds the session; XFiles never sees the password.
 
 - XFiles still has no network permission. If the companion app is stopped, sleeping, or offline, the location is unavailable.
 - In-app image/video/hex viewers expect a local file. For a network entry, use **Open with…** / **Share** (the provider’s content URI).
-- Search under a network folder matches that folder’s children only — it will not walk a whole NAS.
+- Search under a network folder goes into its subfolders in rounds and asks before each new round, since every folder is a request through the companion app.
 - A zip sitting on the remote is not browsed as a folder until you copy it locally.
 - Move across “local ↔ remote” is copy + delete, not a server-side rename.
 

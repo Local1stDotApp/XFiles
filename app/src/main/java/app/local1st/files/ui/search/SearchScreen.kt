@@ -1,9 +1,11 @@
 package app.local1st.files.ui.search
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,6 +14,7 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
@@ -28,17 +31,25 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Folder
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,7 +67,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
+import app.local1st.files.core.search.Resume
+import app.local1st.files.core.search.SearchEvent
 import app.local1st.files.core.search.SearchHit
+import app.local1st.files.core.search.SearchOutcome
+import app.local1st.files.core.search.SearchScope
 import app.local1st.files.core.util.Format
 import app.local1st.files.di.Graph
 import app.local1st.files.ui.browser.EntryIcon
@@ -66,16 +81,17 @@ import app.local1st.files.ui.main.MainViewModel
 import app.local1st.files.ui.navigationBarsStable
 import app.local1st.files.ui.statusBarsStable
 import java.io.IOException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
 
 private const val DEBOUNCE_MS = 400L
 private const val MIN_QUERY_LENGTH = 2
 
-private enum class SearchPhase { IDLE, SEARCHING, DONE }
+private enum class SearchPhase { IDLE, SEARCHING, PAUSED, DONE }
 
 /** Full-screen recursive filename search destination. */
 @OptIn(
@@ -95,31 +111,83 @@ fun SearchScreen(
 
     // Navigation 3 retains saveable entry state while another destination is on top.
     var query by rememberSaveable { mutableStateOf("") }
+    // Every volume instead of the folder search was opened from.
+    var allStorage by rememberSaveable { mutableStateOf(false) }
+    // Chosen at a pause. Later queries on this screen then run to the end as well.
+    var toTheEnd by rememberSaveable { mutableStateOf(false) }
     val results = remember { mutableStateListOf<SearchHit>() }
     var phase by remember { mutableStateOf(SearchPhase.IDLE) }
+    var examined by remember { mutableIntStateOf(0) }
+    var paused by remember { mutableStateOf<SearchEvent.Paused?>(null) }
+    var outcome by remember { mutableStateOf<SearchOutcome?>(null) }
+    var stopped by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // Cancels the running search. Null while none runs.
+    var stop by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     LaunchedEffect(r.id) {
-        snapshotFlow { query.trim() }
-            .debounce(DEBOUNCE_MS)
-            .collectLatest { q ->
+        combine(
+            // Typing waits for a pause; a scope change searches again at once.
+            snapshotFlow { query.trim() }.debounce(DEBOUNCE_MS),
+            snapshotFlow { allStorage },
+        ) { q, all -> q to all }
+            .collectLatest { (q, all) ->
                 results.clear()
+                examined = 0
+                paused = null
+                outcome = null
+                stopped = false
                 error = null
                 if (q.length < MIN_QUERY_LENGTH) {
                     phase = SearchPhase.IDLE
                     return@collectLatest
                 }
                 phase = SearchPhase.SEARCHING
-                try {
-                    Graph.searchEngine.search(r, q)
-                        .flowOn(Dispatchers.IO)
-                        .collect { results.add(it) }
-                    phase = SearchPhase.DONE
-                } catch (e: IOException) {
-                    error = e.message ?: searchFailed
-                    phase = SearchPhase.DONE
+                coroutineScope {
+                    val job = launch {
+                        try {
+                            val scope = if (all) SearchScope.AllStorage else SearchScope.Subtree(r)
+                            Graph.searchEngine.search(scope, q, toTheEnd)
+                                .collect { event ->
+                                    when (event) {
+                                        is SearchEvent.Hits -> results.addAll(event.hits)
+                                        is SearchEvent.Progress -> examined = event.examined
+                                        is SearchEvent.Paused -> {
+                                            examined = event.examined
+                                            paused = event
+                                            phase = SearchPhase.PAUSED
+                                        }
+                                        is SearchEvent.Finished -> {
+                                            examined = event.examined
+                                            outcome = event.outcome
+                                            phase = SearchPhase.DONE
+                                        }
+                                    }
+                                }
+                        } catch (e: IOException) {
+                            error = e.message ?: searchFailed
+                            phase = SearchPhase.DONE
+                        }
+                    }
+                    stop = {
+                        job.cancel()
+                        paused = null
+                        stopped = true
+                        phase = SearchPhase.DONE
+                    }
+                    try {
+                        job.join()
+                    } finally {
+                        stop = null
+                    }
                 }
             }
+    }
+    val resume = { choice: Resume ->
+        if (choice == Resume.TO_THE_END) toTheEnd = true
+        paused?.resume(choice)
+        paused = null
+        phase = SearchPhase.SEARCHING
     }
 
     val focusRequester = remember { FocusRequester() }
@@ -174,31 +242,82 @@ fun SearchScreen(
                     keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
                 )
 
-                Text(
-                    stringResource(R.string.searching_in, r.name),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                ScopeChips(
+                    folderName = r.name,
+                    allStorage = allStorage,
+                    onAllStorageChange = { allStorage = it },
                 )
+                if (allStorage) {
+                    Text(
+                        stringResource(R.string.search_all_storage_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
 
                 when (phase) {
                     SearchPhase.SEARCHING -> Row(
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(start = 24.dp, end = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         LoadingIndicator(Modifier.size(24.dp))
                         Spacer(Modifier.width(12.dp))
                         Text(
-                            if (results.isEmpty()) stringResource(R.string.searching)
-                            else stringResource(R.string.found_so_far, results.size),
+                            when {
+                                examined > 0 -> stringResource(
+                                    R.string.search_progress,
+                                    Format.count(examined),
+                                    Format.count(results.size),
+                                )
+                                results.isEmpty() -> stringResource(R.string.searching)
+                                else -> stringResource(R.string.found_so_far, results.size)
+                            },
+                            style = MaterialTheme.typography.labelMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { stop?.invoke() }) {
+                            Text(stringResource(R.string.search_stop))
+                        }
+                    }
+                    SearchPhase.PAUSED -> Column(
+                        Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            stringResource(
+                                R.string.search_paused,
+                                Format.count(examined),
+                                Format.count(results.size),
+                            ),
                             style = MaterialTheme.typography.labelMedium,
                         )
+                        Spacer(Modifier.height(8.dp))
+                        // Wraps where a translation makes the pair wider than the screen.
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            FilledTonalButton(onClick = { resume(Resume.NEXT_ROUND) }) {
+                                Text(stringResource(R.string.search_keep_going))
+                            }
+                            OutlinedButton(onClick = { resume(Resume.TO_THE_END) }) {
+                                Text(stringResource(R.string.search_to_the_end))
+                            }
+                        }
                     }
                     SearchPhase.DONE -> Text(
                         when {
                             error != null -> error.orEmpty()
+                            stopped -> stringResource(
+                                R.string.search_stopped,
+                                Format.count(results.size),
+                            )
+                            outcome == SearchOutcome.TOO_MANY_HITS -> stringResource(
+                                R.string.search_too_many,
+                                Format.count(results.size),
+                            )
                             results.size == 1 -> stringResource(R.string.one_result)
                             else -> stringResource(R.string.results, results.size)
                         },
@@ -226,7 +345,10 @@ fun SearchScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         SearchPhase.SEARCHING -> LoadingIndicator()
-                        SearchPhase.DONE -> if (error == null) {
+                        // The bar above says how far it got and offers the way on.
+                        SearchPhase.PAUSED -> {}
+                        // A stopped search did not look everywhere, so "no results" is not known.
+                        SearchPhase.DONE -> if (error == null && !stopped) {
                             Text(
                                 stringResource(R.string.no_results_for, query.trim()),
                                 style = MaterialTheme.typography.bodyMedium,
@@ -253,6 +375,49 @@ fun SearchScreen(
                 }
             }
         }
+    }
+}
+
+/** Where to search: the folder search was opened from, or every volume. */
+@Composable
+private fun ScopeChips(
+    folderName: String,
+    allStorage: Boolean,
+    onAllStorageChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FilterChip(
+            selected = !allStorage,
+            onClick = { onAllStorageChange(false) },
+            label = { Text(folderName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            leadingIcon = {
+                Icon(
+                    Icons.Outlined.Folder,
+                    contentDescription = null,
+                    modifier = Modifier.size(FilterChipDefaults.IconSize),
+                )
+            },
+            // A long folder name shrinks this chip, never the other one.
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        FilterChip(
+            selected = allStorage,
+            onClick = { onAllStorageChange(true) },
+            label = { Text(stringResource(R.string.search_all_storage), maxLines = 1) },
+            leadingIcon = {
+                Icon(
+                    Icons.Outlined.Storage,
+                    contentDescription = null,
+                    modifier = Modifier.size(FilterChipDefaults.IconSize),
+                )
+            },
+        )
     }
 }
 

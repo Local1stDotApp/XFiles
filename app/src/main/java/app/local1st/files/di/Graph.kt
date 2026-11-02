@@ -7,11 +7,14 @@ import app.local1st.files.core.fs.LegacySafAccess
 import app.local1st.files.core.fs.RootsRepository
 import app.local1st.files.core.fs.SafLocationActions
 import app.local1st.files.core.fs.TrashStore
+import app.local1st.files.core.fs.XEntry
+import app.local1st.files.core.fs.XId
 import app.local1st.files.core.ops.OperationEngine
 import app.local1st.files.core.prefs.Favorite
 import app.local1st.files.core.prefs.SafLocation
 import app.local1st.files.core.prefs.SessionState
 import app.local1st.files.core.prefs.SettingsRepo
+import app.local1st.files.core.search.FileNameIndex
 import app.local1st.files.core.search.SearchEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -85,6 +88,16 @@ object Graph {
     lateinit var trash: TrashStore
     lateinit var opEngine: OperationEngine
     lateinit var searchEngine: SearchEngine
+
+    /** What a search of all storage reads instead of walking. Null below Android 11. */
+    var fileNameIndex: FileNameIndex? = null
+
+    /** Lets a search of all storage find [folder], a folder the user just made. */
+    fun indexNewFolder(folder: XEntry) {
+        if (folder.scheme != XId.SCHEME_FILE) return
+        val path = folder.localPath ?: return
+        fileNameIndex?.addFolder(path)
+    }
 
     /** One process-start ViewModel may use the preload; later instances must read current state. */
     fun claimStartupSession(): StartupSessionLoad? {

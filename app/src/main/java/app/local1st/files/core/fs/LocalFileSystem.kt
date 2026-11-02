@@ -61,7 +61,15 @@ class LocalFileSystem(
 
     override val scheme: String = XId.SCHEME_FILE
 
-    override fun list(dir: XEntry): List<XEntry> {
+    override fun list(dir: XEntry): List<XEntry> = listing(dir, countChildren = true)
+
+    /**
+     * No child counts: each one is another readdir of every child folder, which the walk
+     * then reads again when it descends.
+     */
+    override fun listForSearch(dir: XEntry): List<XEntry> = listing(dir, countChildren = false)
+
+    private fun listing(dir: XEntry, countChildren: Boolean): List<XEntry> {
         val file = File(dir.path)
         // A trashed directory symlink must not be walked: its children are the live
         // target, and those paths still look like the bin so Delete would unlink them.
@@ -70,8 +78,8 @@ class LocalFileSystem(
         }
         val children = file.listFiles()
         if (children == null) {
-            safListing(file)?.let { return it }
-            return privilegedListing(file, dir)
+            safListing(file, countChildren)?.let { return it }
+            return privilegedListing(file, dir, countChildren)
         }
         val roots = volumeRoots()
         // Inside the bin the children are the files the user is restoring or moving.
@@ -85,26 +93,27 @@ class LocalFileSystem(
             }
             .map { child ->
                 val (attrs, symlink) = readChildAttrs(child)
-                toEntry(child, attrs, countChildren = true, listedSymlink = symlink)
+                toEntry(child, attrs, countChildren = countChildren, listedSymlink = symlink)
             }
         // File.list can be a non-null empty array while the grant still has the tree.
         // A move copies this listing and then deletes the source.
         val seen = fromFile.mapTo(HashSet()) { it.name.lowercase(Locale.ROOT) }
-        return fromFile + grantOnlyEntries(file, seen)
+        return fromFile + grantOnlyEntries(file, seen, countChildren)
     }
 
     /**
      * [File.listFiles] is null for a secondary-volume directory parked by moveDocument.
      * A stored grant can still list it. Null means there is no such grant.
      */
-    private fun safListing(dirFile: File): List<XEntry>? {
+    private fun safListing(dirFile: File, countChildren: Boolean): List<XEntry>? {
         val docs = grantedChildren(dirFile) ?: return null
-        return grantOnlyEntries(dirFile, emptySet(), docs)
+        return grantOnlyEntries(dirFile, emptySet(), countChildren, docs)
     }
 
     private fun grantOnlyEntries(
         dirFile: File,
         seenLower: Set<String>,
+        countChildren: Boolean,
         docs: List<Pair<String, Boolean>> = grantedChildren(dirFile).orEmpty(),
     ): List<XEntry> {
         val roots = volumeRoots()
@@ -125,7 +134,7 @@ class LocalFileSystem(
             }
             if (nodeSurvivedDelete(child)) {
                 val (attrs, symlink) = readChildAttrs(child)
-                toEntry(child, attrs, countChildren = isDir, listedSymlink = symlink)
+                toEntry(child, attrs, countChildren = countChildren && isDir, listedSymlink = symlink)
             } else {
                 XEntry(
                     id = XId.file(child.absolutePath),
@@ -149,15 +158,16 @@ class LocalFileSystem(
      * The children come back with root:// ids on purpose: every later operation on them
      * (open, copy, thumbnail) then routes to the same transport instead of failing again.
      */
-    private fun privilegedListing(file: File, dir: XEntry): List<XEntry> {
+    private fun privilegedListing(file: File, dir: XEntry, countChildren: Boolean): List<XEntry> {
         val directError = IOException(
             if (file.exists()) "Cannot read ${dir.name}"
             else "Folder not found: ${dir.name}",
         )
         val fallback = privilegedFallback ?: throw directError
         if (!PrivilegedAccess.usable()) throw directError
+        val privilegedDir = dir.copy(id = XId.root(file.absolutePath))
         return try {
-            fallback.list(dir.copy(id = XId.root(file.absolutePath)))
+            if (countChildren) fallback.list(privilegedDir) else fallback.listForSearch(privilegedDir)
         } catch (e: IOException) {
             // Keep the message the user's action actually produced, but carry the privileged
             // failure as the cause so a dead transport is still diagnosable.
