@@ -24,8 +24,8 @@ internal class ObservedFileSystem(
     private val inner: XFileSystem,
     private val onList: (XEntry) -> Unit,
 ) : XFileSystem by inner {
-    override fun listForSearch(dir: XEntry): List<XEntry> {
+    override fun listForSearch(dir: XEntry, fromOwnListing: Boolean): List<XEntry> {
         onList(dir)
-        return inner.listForSearch(dir)
+        return inner.listForSearch(dir, fromOwnListing)
     }
 }

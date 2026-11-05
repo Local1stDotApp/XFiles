@@ -120,4 +120,30 @@ class RecycleBinSearchTest {
 
         assertTrue(engine.hits(rootEntry, "secret").isEmpty())
     }
+
+    @Test
+    fun searchDoesNotWalkASymlinkIntoTheBinBelowTheRoot() = runBlocking {
+        val root = temporaryFolder.newFolder("vol")
+        val bin = File(root, ".xfiles-trash")
+        val bucket = File(bin, "files/abc-00000001").apply { mkdirs() }
+        File(bucket, "secret").writeText("b")
+        // Two levels down, where the walk opens a folder without checking it again.
+        val nested = File(root, "a/b").apply { mkdirs() }
+        File(nested, "secret-kept").writeText("c")
+        Files.createSymbolicLink(File(nested, "to-bucket").toPath(), bucket.toPath())
+        Files.createSymbolicLink(File(nested, "to-bin").toPath(), bin.toPath())
+        val roots = listOf(root.absolutePath)
+        val engine = DefaultSearchEngine(
+            FsRegistry().apply { register(LocalFileSystem(volumeRoots = { roots })) },
+            volumeRoots = { roots },
+        )
+        val rootEntry = XEntry(
+            id = XId.file(root.absolutePath),
+            name = root.name,
+            isDir = true,
+            kind = EntryKind.DIR,
+        )
+
+        assertEquals(listOf("secret-kept"), engine.hits(rootEntry, "secret").map { it.entry.name })
+    }
 }

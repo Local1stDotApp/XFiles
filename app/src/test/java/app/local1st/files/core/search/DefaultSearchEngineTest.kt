@@ -4,6 +4,7 @@ import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.FsRegistry
 import app.local1st.files.core.fs.LocalFileSystem
 import app.local1st.files.core.fs.XEntry
+import app.local1st.files.core.fs.XFileSystem
 import app.local1st.files.core.fs.XId
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -58,6 +59,36 @@ class DefaultSearchEngineTest {
         kind = EntryKind.DIR,
         localPath = file.absolutePath,
     )
+
+    @Test
+    fun onlyAFolderItsOwnFileSystemListedSkipsItsChecks() = runBlocking {
+        val root = temporaryFolder.newFolder("vol")
+        File(root, "a/b").mkdirs()
+        val rootRow = dir(root)
+        val checksSkipped = mutableMapOf<String, Boolean>()
+        val local = LocalFileSystem()
+        val files = object : XFileSystem by local {
+            override fun listForSearch(dir: XEntry, fromOwnListing: Boolean): List<XEntry> {
+                checksSkipped[dir.name] = fromOwnListing
+                return local.listForSearch(dir, fromOwnListing)
+            }
+        }
+        // Lists a local folder the way the Recycle Bin lists its items: as file:// rows.
+        val bin = object : XFileSystem by local {
+            override val scheme = XId.SCHEME_TRASH
+
+            override fun listForSearch(dir: XEntry, fromOwnListing: Boolean) = listOf(rootRow)
+        }
+        val engine = DefaultSearchEngine(FsRegistry().apply { register(files); register(bin) })
+        val expected = mapOf("vol" to false, "a" to true, "b" to true)
+
+        engine.hits(rootRow, "nothing")
+        assertEquals(expected, checksSkipped)
+
+        checksSkipped.clear()
+        engine.hits(XEntry(id = XId.TRASH_ROOT, name = "Bin", isDir = true), "nothing")
+        assertEquals(expected, checksSkipped)
+    }
 
     @Test
     fun aPausedWalkContinuesWhereItStopped() = runBlocking {

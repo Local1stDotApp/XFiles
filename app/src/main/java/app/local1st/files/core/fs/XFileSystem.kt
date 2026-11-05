@@ -18,9 +18,12 @@ interface XFileSystem {
     /**
      * [list] for a search walk. An implementation may leave out what only a browser row shows,
      * such as [XEntry.childCountHint], when that costs extra I/O per child.
+     *
+     * [fromOwnListing] says this file system's own [listForSearch] of the parent returned
+     * [dir], so a check it made on that row need not run again.
      */
     @Throws(java.io.IOException::class)
-    fun listForSearch(dir: XEntry): List<XEntry> = list(dir)
+    fun listForSearch(dir: XEntry, fromOwnListing: Boolean = false): List<XEntry> = list(dir)
 
     /** Resolve an id back to an entry, or null if it doesn't exist. */
     fun stat(id: String): XEntry?

@@ -35,9 +35,9 @@ class AllStorageSearchTest {
         val roots = volumes.map { it.absolutePath }
         val local = LocalFileSystem(volumeRoots = { roots })
         val fs = object : XFileSystem by local {
-            override fun listForSearch(dir: XEntry): List<XEntry> {
+            override fun listForSearch(dir: XEntry, fromOwnListing: Boolean): List<XEntry> {
                 listed += dir.path
-                return local.listForSearch(dir) + extra(dir)
+                return local.listForSearch(dir, fromOwnListing) + extra(dir)
             }
         }
         return DefaultSearchEngine(

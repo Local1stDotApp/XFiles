@@ -1465,11 +1465,22 @@ object TrashPaths {
             }.getOrDefault(false)
             return crossesUnresolvedVolumeBin(lexicalInside, link)
         }
-        val canonicalRoots = volumeRoots.map { root ->
+        val resolvedInside = isInsideVolumeBin(canonical, canonicalRoots(volumeRoots))
+        return lexicalInside != resolvedInside
+    }
+
+    /** The last volume list resolved, and its realpaths. A search checks it once per folder. */
+    @Volatile
+    private var resolvedRoots: Pair<List<String>, List<String>>? = null
+
+    /** Realpaths of [volumeRoots], resolved again only when the list changes. */
+    private fun canonicalRoots(volumeRoots: List<String>): List<String> {
+        resolvedRoots?.let { (roots, canonical) -> if (roots == volumeRoots) return canonical }
+        val canonical = volumeRoots.map { root ->
             runCatching { java.io.File(root).canonicalPath }.getOrDefault(root)
         }
-        val resolvedInside = isInsideVolumeBin(canonical, canonicalRoots)
-        return lexicalInside != resolvedInside
+        resolvedRoots = volumeRoots.toList() to canonical
+        return canonical
     }
 
     /**

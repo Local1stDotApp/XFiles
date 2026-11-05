@@ -4,6 +4,7 @@ import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.FsRegistry
 import app.local1st.files.core.fs.TrashPaths
 import app.local1st.files.core.fs.XEntry
+import app.local1st.files.core.fs.XFileSystem
 import app.local1st.files.core.fs.XId
 import java.io.IOException
 import java.util.Locale
@@ -44,6 +45,9 @@ class DefaultSearchEngine(
         /** Lowercased folder paths a name can match but the walk does not enter. */
         val skipped: Set<String> = emptySet(),
     )
+
+    /** A folder waiting to be opened. [listedBy] is null for a root of the walk. */
+    private class Queued(val dir: XEntry, val listedBy: XFileSystem?)
 
     /** Counts and round timing shared by every part of one search. */
     private inner class Run(toTheEnd: Boolean) {
@@ -141,13 +145,13 @@ class DefaultSearchEngine(
         rules: Rules,
         run: Run,
     ): Boolean {
-        val queue = ArrayDeque<XEntry>()
+        val queue = ArrayDeque<Queued>()
         val visitedContainers = HashSet<String>()
         for (root in roots) {
             if (root.isContainer && !isDeniedPath(root, rules.allowBin, mounts) &&
                 visitedContainers.add(containerKey(root))
             ) {
-                queue.addLast(root)
+                queue.addLast(Queued(root, listedBy = null))
             }
         }
 
@@ -160,12 +164,15 @@ class DefaultSearchEngine(
                 if (answer.await() == Resume.TO_THE_END) run.pauses = false
                 run.roundStart = clock()
             }
-            val dir = queue.removeFirst()
+            val next = queue.removeFirst()
+            val dir = next.dir
             // Opening a folder counts too, not just the names it lists. Breadth-first, the last
             // levels are often all empty folders, and the count would stand still through them.
             run.examined++
+            val fs = registry.forEntry(dir)
             val children = try {
-                registry.forEntry(dir).listForSearch(dir)
+                // A row another file system listed, such as a bin item, still gets every check.
+                fs.listForSearch(dir, fromOwnListing = next.listedBy === fs)
             } catch (_: IOException) {
                 continue // inaccessible directory: skip and keep walking
             }
@@ -186,7 +193,7 @@ class DefaultSearchEngine(
 
                 // Queued in listing order, so each level comes out in the order it was listed.
                 if (shouldDescend(child, rules, mounts) && visitedContainers.add(containerKey(child))) {
-                    queue.addLast(child)
+                    queue.addLast(Queued(child, listedBy = fs))
                 }
             }
             if (batch.isNotEmpty()) emit(SearchEvent.Hits(batch))

@@ -66,14 +66,20 @@ class LocalFileSystem(
     /**
      * No child counts: each one is another readdir of every child folder, which the walk
      * then reads again when it descends.
+     *
+     * A folder [fromOwnListing] skips the bin checks. [toEntry] already made them on its row,
+     * and their realpath would otherwise run once for every folder the walk opens.
      */
-    override fun listForSearch(dir: XEntry): List<XEntry> = listing(dir, countChildren = false)
+    override fun listForSearch(dir: XEntry, fromOwnListing: Boolean): List<XEntry> =
+        listing(dir, countChildren = false, checked = fromOwnListing)
 
-    private fun listing(dir: XEntry, countChildren: Boolean): List<XEntry> {
+    private fun listing(dir: XEntry, countChildren: Boolean, checked: Boolean = false): List<XEntry> {
         val file = File(dir.path)
         // A trashed directory symlink must not be walked: its children are the live
         // target, and those paths still look like the bin so Delete would unlink them.
-        if (isBinSymlink(file) || TrashPaths.crossesVolumeBin(file.absolutePath, volumeRoots())) {
+        if (!checked &&
+            (isBinSymlink(file) || TrashPaths.crossesVolumeBin(file.absolutePath, volumeRoots()))
+        ) {
             return emptyList()
         }
         val children = file.listFiles()

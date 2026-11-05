@@ -424,6 +424,18 @@ class LocalFileListingTest {
     }
 
     @Test
+    fun binCheckSeesAVolumeMountedSinceTheLastCheck() {
+        val a = temporaryFolder.newFolder("a")
+        val b = temporaryFolder.newFolder("b")
+        val bin = File(b, ".xfiles-trash").apply { mkdirs() }
+        val link = File(a, "link").apply { Files.createSymbolicLink(toPath(), bin.toPath()) }
+
+        assertFalse(TrashPaths.crossesVolumeBin(link.absolutePath, listOf(a.absolutePath)))
+        // The volumes' realpaths are kept between checks. A new list must not reuse them.
+        assertTrue(TrashPaths.crossesVolumeBin(link.absolutePath, listOf(a.absolutePath, b.absolutePath)))
+    }
+
+    @Test
     fun emptyMountListDoesNotWalkOrDeleteThroughABinDirectorySymlink() {
         val root = temporaryFolder.newFolder("vol")
         val live = File(root, "DCIM").apply { mkdirs() }
