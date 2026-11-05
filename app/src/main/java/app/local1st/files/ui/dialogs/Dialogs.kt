@@ -13,10 +13,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -42,6 +44,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.local1st.files.R
 import app.local1st.files.core.fs.DeleteDisposition
@@ -97,7 +100,8 @@ fun MainDialogs(vm: MainViewModel) {
             AlertDialog(
                 onDismissRequest = dismiss,
                 title = { Text(stringResource(title)) },
-                text = { Text(message) },
+                // Three long names can outgrow the dialog.
+                text = { Text(message, Modifier.verticalScroll(rememberScrollState())) },
                 confirmButton = {
                     Button(onClick = {
                         vm.performDelete(req.entries, req.mode, req.explicitPermanent, req.trashableIds)
@@ -158,17 +162,24 @@ fun MainDialogs(vm: MainViewModel) {
             val detailPath = req.entry.localPath ?: req.entry.id.substringAfter("://")
             val detailLocation = detailLocationOf(req.entry, detailPath, detailRoots, detailBin)
             AlertDialog(
-            onDismissRequest = dismiss,
-            title = { Text(req.entry.name) },
-            text = {
-                Column {
-                    Text(stringResource(R.string.location, detailLocation))
-                    if (!req.entry.isDir) Text(stringResource(R.string.size, Format.bytes(req.entry.size)))
-                    Text(stringResource(R.string.modified, Format.dateTime(req.entry.mtime)))
-                    req.entry.mime?.let { Text(stringResource(R.string.file_type, it)) }
-                }
-            },
-            confirmButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.close)) } },
+                onDismissRequest = dismiss,
+                // The name heads the text, styled as the title, so it scrolls with the details.
+                // The title slot never shrinks: a long name there pushed Close off the dialog.
+                text = {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        Text(
+                            req.entry.name,
+                            style = MaterialTheme.typography.headlineSmall,
+                            color = AlertDialogDefaults.titleContentColor,
+                            modifier = Modifier.padding(bottom = 16.dp),
+                        )
+                        Text(stringResource(R.string.location, detailLocation))
+                        if (!req.entry.isDir) Text(stringResource(R.string.size, Format.bytes(req.entry.size)))
+                        Text(stringResource(R.string.modified, Format.dateTime(req.entry.mtime)))
+                        req.entry.mime?.let { Text(stringResource(R.string.file_type, it)) }
+                    }
+                },
+                confirmButton = { TextButton(onClick = dismiss) { Text(stringResource(R.string.close)) } },
             )
         }
 
@@ -271,7 +282,8 @@ private fun NameDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
+        // A title can name a folder. Uncapped, a long name pushes the field and buttons out.
+        title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
         text = {
             OutlinedTextField(
                 value = value,

@@ -2,9 +2,12 @@ package app.local1st.files.ui.dialogs
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.AlertDialog
@@ -130,7 +133,8 @@ fun OpsHost() {
                     onDismissRequest = {},
                     title = { Text(stringResource(R.string.name_conflict)) },
                     text = {
-                        Column {
+                        // A long name can push "Apply to all" out of the dialog.
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
                             Text(stringResource(R.string.already_exists, c.existingName))
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -142,7 +146,12 @@ fun OpsHost() {
                         }
                     },
                     confirmButton = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        // Wraps where a large font or a long translation makes the three wider
+                        // than the dialog. A Row squeezed the last button into a column of letters.
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.End),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
                             TextButton(onClick = {
                                 op.resolveConflict(ConflictResolution(ConflictChoice.SKIP, applyToAll))
                             }) { Text(stringResource(R.string.skip)) }
