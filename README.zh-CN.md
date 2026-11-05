@@ -46,31 +46,47 @@
 ### 双栏树形浏览
 
 X-plore 的招牌：两栏互不干扰 —— 宽屏左右并排，手机上是可滑动切换的分页。
-文件夹**原地展开**成树，带缩进引导线，每一栏各自有一个悬浮的面包屑胶囊。
-手机顶部还会一直显示隐藏栏的目标目录，点一下就能切换过去。
+文件夹**原地展开**成树，显示子项数量，并沿当前聚焦文件夹的分支绘制缩进引导线；
+每一栏各自有一个悬浮的面包屑胶囊。手机顶部还会一直显示隐藏栏的目标目录，点一下就能切换过去。
 
 压缩包在树里跟普通文件夹没两样 —— 面包屑会直接钻进 `project.zip` 里去。
 
-### 树里直接出缩略图
+### 树内缩略图与应用图标
 
 图片和视频首帧就地渲染。视频帧只按缩略图尺寸抽取一次并落盘缓存，重启后立即可见；
-加载过程中会先显示图标占位，视频还会叠一个播放角标。
+加载过程中会先显示图标占位，视频还会叠一个播放角标。`.apk` 和拆分包（`.apks` /
+`.apkm` / `.xapk`）直接显示包内应用的真实图标（同样落盘缓存），`Android/data`
+下的应用目录也会带上对应应用的图标。
 
 ### 文件操作
 
 通过右侧边缘的勾选圈多选。**另一栏就是复制、移动、压缩和解压的目的地**：
 先在另一栏打开目标目录，再回来源栏直接执行。需要临时选择其他位置时，仍可使用
-长按菜单里的 `Copy to…` / `Move to…`。内置存储、SD 卡和 USB 上的删除会把文件移入回收站，之后可以还原。清空回收站，以及在 Root 或网络位置上的删除，会永久移除。此外还有重命名、新建文件夹。
-系统已挂载的 USB OTG（U 盘、移动硬盘、读卡器）会作为栏根出现在内置存储和 SD 卡旁边，插拔后自动更新。
-Android 8–10 上，对 SD 卡、USB 等第二存储卷的写入通过一次性的 SAF 授权自动完成。
+长按菜单里的「复制到…」/「移动到…」。
 
-**添加位置**（首页或设置）可以把其他应用提供的文档树变成栏根——RSAF（rclone）、CIFS Documents Provider、Nextcloud，或任何 `DocumentsProvider`。复制和移动走系统 IPC；XFiles 仍然没有 `INTERNET` 权限，联网的是对方应用。
-如果选中的是本机已有的存储路径，会改成收藏，避免出现重复的根。
-逐步说明：[把网络位置加进 XFiles](https://xfiles.local1st.app/zh/add-location)
+在内置存储、SD 卡和 U 盘上删除文件会先移入**回收站**，随时可以还原；清空回收站，
+或在 Root、网络位置下删除，则会彻底移除。此外还支持重命名、新建文件夹和新建文本文件。
+
+这些都跑在后台引擎上，带进度（Expressive 的波浪进度条）、可取消，冲突时可选
+跳过 / 覆盖 / 两个都留。耗时的复制、移动、压缩和解压在 App 退到后台后会由**前台服务**
+继续执行，常驻通知里带取消按钮并持有 wake lock，空闲时服务自行停止。
+
+### 存储与网络位置
+
+系统已挂载的 USB OTG（U 盘、移动硬盘、读卡器）会作为栏根出现在内置存储和 SD 卡旁边，
+插拔后自动更新。Android 8–10 上，对 SD 卡、USB 等第二存储卷的写入通过一次性的 SAF 授权自动完成。
+
+**添加位置**（每栏底部或设置页）可以把其他应用提供的文档树变成栏根 —— RSAF（rclone）、
+CIFS Documents Provider、Nextcloud，或任何 `DocumentsProvider`。复制和移动走系统 IPC；
+XFiles 仍然没有 `INTERNET` 权限，联网的是对方应用。如果选中的是本机已有的存储路径，
+会改成收藏，避免出现重复的根。逐步说明：
+[把网络位置加进 XFiles](https://xfiles.local1st.app/zh/add-location)
 （[文稿](docs/add-location.zh-CN.md)）。
 
-这些都跑在后台引擎上，带进度（Expressive 的波浪进度条）、可取消，
-冲突时可选 跳过 / 覆盖 / 两个都留。
+### 压缩包当文件夹
+
+zip/jar/apk、7z、tar(.gz/.bz2/.xz)、rar 都能只读浏览；想解压就复制出来。
+能装的东西在树里点一下就能装 —— 见下文。
 
 ### 高性能 zip
 
@@ -78,16 +94,6 @@ Android 8–10 上，对 SD 卡、USB 等第二存储卷的写入通过一次性
 `ParallelScatterZipCreator`，已压缩过的媒体文件直接 STORE）。
 解压时每个 worker 各持一个 `ZipFile` 句柄，从共享队列里取活。
 已防 Zip-Slip；临时空间不够时自动退回单线程流式处理。
-
-### 前台服务
-
-耗时的复制/移动/压缩/解压在 App 退到后台后继续跑，常驻通知里带取消按钮，
-并持有 wake lock。空闲时服务自行停止。
-
-### 压缩包当文件夹
-
-zip/jar/apk、7z、tar(.gz/.bz2/.xz)、rar 都能只读浏览；想解压就复制出来。
-能装的东西在树里点一下就能装 —— 见下文。
 
 ### 应用管理
 
@@ -112,8 +118,8 @@ XAPK 附带的 **OBB** 扩展文件会放到游戏期望的位置），甚至原
 
 ### Root 与 Shizuku
 
-默认打开。存储根列表里会有一个 **Root**（`/`）入口 —— 设置里关掉 **Root access** 即可藏掉。
-旁边还有个独立的 **Read-only** 开关（同样默认打开），会挡掉所有需要特权的写操作，
+默认打开。存储根列表里会有一个 **Root**（`/`）入口 —— 设置里关掉「Root 访问」即可隐藏。
+旁边还有个独立的「只读」开关（同样默认打开），会挡掉所有需要特权的写操作，
 让你能进去看，但没法把系统搞坏。
 
 背后有两种可互换的通道，设置里可以自选（也可以留在自动）：
@@ -122,42 +128,43 @@ XAPK 附带的 **OBB** 扩展文件会放到游戏期望的位置），甚至原
   `app`、`app-private`、`dalvik-cache` —— 这些目录普通应用连列出来都做不到 ——
   在 `/data`、`/system` 等目录下 list/read/write/mkdir/rename/delete。
 - **[Shizuku](https://shizuku.rikka.app/)** —— 不需要 root：XFiles 绑定一个以
-  shell（ADB）权限运行的 Shizuku 用户服务，拿到的是真实的文件描述符。
-  设置页会一步步引导安装和授权。
+  shell（ADB）权限运行的 Shizuku 用户服务，拿到的是真实的文件描述符。设置页会一步步引导安装和授权。
+  没有 `su` 时，Shizuku 仍然可以列出 `/`，并进入 adb shell 能看见的地方
+  （`/system`、`/proc`、`/storage`、`Android/data`），而 `/data` 和 `/data/data`
+  仍需超级用户权限才能进入。
 
 只要有通道可用，普通文件访问被拒的地方它就会悄悄顶上 —— 最典型的是
 **`Android/data`** 和 **`Android/obb`**，打开跟普通文件夹没两样。
 缩略图、查看器、甚至视频播放在特权路径上都照常工作。
-打开 **Root** 时，有 `su` 就走超级用户。没有的话，Shizuku 仍然可以列出 `/`，
-并进入 adb shell 能看见的地方（`/system`、`/proc`、`/storage`、`Android/data`）。
-`/data` 和 `/data/data` 仍然要有超级用户才能进。
-
-设置页里还有其余的偏好项 —— 主题、动态取色、显示隐藏文件、文件夹优先、排序字段和升降序。
 
 ### 查看器
 
-图片查看器（分页 + 双指缩放）、可编辑保存的文本查看器、按需分页的十六进制查看器、
-音频播放器，以及一个自研的视频播放器（Media3/ExoPlayer），支持**逐帧精确定位**。
+内置 **PDF 查看器**、**图片查看器**（左右翻页 + 双指缩放）、按需分页的**十六进制查看器**、
+**音频播放器**、支持大文件按需分段加载编辑的**文本查看与编辑器**（含撤销/重做、自动换行与 GBK
+编码识别），以及支持**逐帧精确定位**的**视频播放器**（Media3/ExoPlayer）。
 
-点一下时间读数，它就变成帧计数器 —— 当前帧、总帧数和真实帧率 —— 然后可以 ±1 帧步进；
-在画面上滑动可按时间或按帧拖动并实时预览；那张紧凑的控制卡片可以拖走；也能全屏沉浸播放。
+在视频播放器里，点一下时间读数就会变成帧计数器 —— 当前帧、总帧数和真实帧率 —— 然后可以 ±1 帧步进；
+在画面上滑动可按时间或按帧拖动并实时预览；那张紧凑的控制卡片可以随时拖走；也能全屏沉浸播放。
 
 ### 搜索
 
-流式实时递归搜索，支持 `*` / `?` 通配符。会钻进压缩包和网络文件夹里找，点结果可在树中定位。搜得久时每 10 秒停一下，问你继续搜还是搜完为止。可从当前文件夹切到 **所有存储**，搜遍每个存储卷；Android 11+ 上直接读系统的文件索引，不必逐个文件夹遍历，几乎即时出结果。
+流式实时递归搜索，支持 `*` / `?` 通配符。会钻进压缩包和网络文件夹里找，点结果可在树中定位。
+搜得久时每 10 秒停一下，问你继续搜还是搜完为止。可从当前文件夹切到「所有存储」，搜遍每个存储卷；
+Android 11+ 上直接读系统的文件索引，不必逐个文件夹遍历，几乎即时出结果。
 
 ### 从其他应用打开
 
-默认关闭，XFiles 不会抢任何默认打开方式。设置里有三个自愿开启的开关，分别把
-XFiles 注册进系统的**压缩包**、**图片**、**视频**打开方式列表 —— 开了之后，
-在别的应用里"用 XFiles 打开"，压缩包直接进树形浏览，图片、视频直接进对应查看器。
+默认关闭，XFiles 不会抢任何默认打开方式。设置里有五个自愿开启的开关，分别把
+XFiles 注册进系统的**压缩包**、**图片**、**视频**、**PDF** 和**文本文件**打开方式列表 —— 开了之后，
+在别的应用里「用 XFiles 打开」，压缩包直接进树形浏览，其余文件直接进对应查看器。
 
 ### Material 3 Expressive
 
 `MaterialExpressiveTheme` + expressive 动效、动态取色（Android 12+）、
-浅色/深色/跟随系统、悬浮工具栏、`LoadingIndicator` / `LinearWavyProgressIndicator`。
-真正的边到边：没有顶部 app bar —— 内容从状态栏底下滚过去，上面盖一层渐变蒙版，
-只留悬浮的面包屑和设置按钮。
+浅色/深色/跟随系统、悬浮底栏、`LoadingIndicator` / `LinearWavyProgressIndicator`，
+以及 Activity 级预测性返回动画（`Navigation 3`）。真正的边到边：没有顶部 app bar ——
+内容从状态栏底下滚过去，上面盖一层渐变蒙版，只留悬浮的面包屑胶囊。设置页还提供显示隐藏文件、
+文件夹优先、排序字段和升降序等偏好项。
 
 ### 18 种语言
 
@@ -190,11 +197,11 @@ XFiles 注册进系统的**压缩包**、**图片**、**视频**打开方式列�
 
 | 层 | 选型 |
 |---|---|
-| 语言 / UI | Kotlin、Jetpack Compose（BOM 2026.09.00）、material3 **1.5.0-alpha28**（Expressive API） |
-| 构建 | AGP 9.4.1（内置 Kotlin，不用 KGP）、Gradle 9.7.1、compileSdk 37 / target 37 / min 26 |
+| 语言 / UI | Kotlin、Jetpack Compose（BOM 2026.09.00）、material3 **1.5.0-alpha28**（Expressive API）、Navigation 3（预测性返回） |
+| 构建 | AGP 9.4.1（内置 Kotlin，不用 KGP）、Gradle 9.7.1、compileSdk 37 / target 37 / min 26、Baseline Profile（`:baselineprofile` + `ProfileInstaller`） |
 | 架构 | MVVM + StateFlow，手写 DI 组合根（`di/Graph`）；app 模块 + 一个 shaded bundletool vendor 模块 |
 | 持久化 | DataStore Preferences |
-| 媒体 / 图片 | Coil 3（GIF，自定义 fetcher：应用图标、落盘缓存的视频缩略图）、Media3 ExoPlayer |
+| 媒体 / 图片 | Coil 3（GIF，自定义 fetcher：应用图标、APK/拆分包图标、落盘缓存的视频缩略图）、Media3 ExoPlayer |
 | 压缩包 | java.util.zip、commons-compress（+xz）、junrar |
 | 特权访问 | Shizuku 13.1.5（用户服务、真实文件描述符）· `su` shell |
 | 软件包安装 | PackageInstaller 会话 · 内置 bundletool 1.18.3 · ARSCLib（进程内 aapt2）· 极简自签名器 |
@@ -207,12 +214,12 @@ XFiles 注册进系统的**压缩包**、**图片**、**视频**打开方式列�
 app/src/main/java/app/local1st/files/
 ├── core/
 │   ├── fs/        XEntry 模型、XId id 方案、XFileSystem + FsRegistry、
-│   │   │          Local/Archive/Apps/Root 文件系统、存储根、旧版 SAF 写入
+│   │   │          Local/Archive/Apps/Root/Saf/Trash 文件系统、存储根、旧版 SAF 写入
 │   │   └── priv/  特权通道 —— su shell 与 Shizuku 用户服务（真实文件描述符）
 │   ├── ops/       OperationEngine（复制/移动/删除/压缩 + 冲突处理）、OpsService
 │   ├── search/    递归 SearchEngine
 │   ├── prefs/     DataStore 设置
-│   ├── thumb/     Coil fetcher：应用图标、落盘缓存的视频缩略图
+│   ├── thumb/     Coil fetcher：应用与 APK/拆分包图标、落盘缓存的视频缩略图
 │   └── util/      格式化、mime/类别映射、intent；软件包安装 ——
 │                  PackageInstaller 会话、AAB→APK（bundletool）、XAPK/OBB、
 │                  进程内 aapt2（ARSCLib）、自签名
@@ -221,18 +228,20 @@ app/src/main/java/app/local1st/files/
     ├── browser/   PaneController（树状态机）、PaneView、EntryRow
     ├── components/ 共享 Compose 组件（tooltip、预测性返回）
     ├── main/      MainViewModel、MainScreen（双栏 + 悬浮工具栏）、PermissionGate
-    ├── dialogs/   重命名/新建文件夹/删除/压缩/详情、操作进度 + 冲突
-    ├── viewer/    图片 / 文本 / 十六进制查看器、音频播放器、逐帧视频播放器
+    ├── dialogs/   重命名/新建文件夹/新建文件/删除/压缩/详情、操作进度 + 冲突
+    ├── viewer/    PDF / 图片 / 文本 / 十六进制查看器、音频播放器、逐帧视频播放器
     ├── search/    搜索浮层
     ├── settings/  设置页
     ├── appinfo/   应用详情浮层
     └── theme/     MaterialExpressiveTheme 配置
 
+baselineprofile/            Baseline Profile 生成模块（:baselineprofile），用于 AOT 预编译
 vendor/bundletool-shaded/   把 bundletool 1.18.3 及其锁定依赖 shade 成一个 jar 的 Gradle 模块
 ```
 
 条目 id 是类 URI 的字符串：`file:///abs/path`、
-`zip:///abs/archive.zip!/inner/path`、`apps://package.name`、`root:///abs/path`。
+`zip:///abs/archive.zip!/inner/path`、`apps://package.name`、`root:///abs/path`、
+`saf://{locationId}/…`、`trash://{volumeId}/…`。
 
 ## 构建与运行
 
