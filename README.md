@@ -46,42 +46,59 @@ Requires **Android 8.0 (API 26)** or newer. On first launch, grant *All files ac
 ### Dual-pane tree browser
 
 X-plore's signature: two independent panes — side-by-side on wide screens, a swipeable
-pager on phones. Folders expand **in place** as a tree with indent guide lines, and each
-pane carries its own floating breadcrumb pill. On phones, a target chip at the top keeps
-the hidden pane's folder visible and switches to that pane when tapped.
+pager on phones. Folders expand **in place** as a tree with item counts and branch guide
+lines along the focused folder, and each pane carries its own floating breadcrumb pill.
+On phones, a target chip at the top keeps the hidden pane's folder visible and switches
+to that pane when tapped.
 
 Archives sit in the tree like any other folder — the breadcrumb descends straight into
 `project.zip`.
 
-### Thumbnails in the tree
+### Thumbnails & app icons in the tree
 
 Images and video poster frames render inline. Video frames are extracted once at
 thumbnail size and disk-cached, so they are instant after a restart, with a play badge
-and an icon fallback while loading.
+and an icon fallback while loading. `.apk` files and split bundles (`.apks` / `.apkm` /
+`.xapk`) wear the launcher icon of the package inside (also disk-cached), and app
+folders under `Android/data` show their owning app's icon.
 
 ### File operations
 
 Multi-select via right-edge checkmarks. **The other pane is the destination** for
 copy, move, zip and extract: set its folder, return to the source pane, then run the
-operation directly. `Copy to…`/`Move to…` in the long-press menu remain available when
-you want a one-off explicit destination. Delete on internal storage, an SD card, or a USB
-drive moves the files to the Recycle Bin, where they can be restored. Empty Recycle Bin,
-and delete under Root or a network location, remove them permanently. Plus rename and
-new folder. Mounted USB
-OTG drives appear as pane roots next to internal storage and SD cards, and the list
-updates when a drive is plugged or unplugged. On Android 8–10, writes to SD cards, USB
-drives and other secondary volumes work through a one-time SAF grant.
+operation directly. `Copy to…` / `Move to…` in the long-press menu remain available when
+you want a one-off explicit destination.
 
-**Add location** (home screen or Settings) grants a document tree from another app —
-RSAF (rclone), CIFS Documents Provider, Nextcloud, or any `DocumentsProvider` — and
-pins it as a pane root. Copy and move then stream through the system; XFiles still has
-no `INTERNET` permission, so the other app is what actually talks to the network. A
-tree that is already local storage is pinned as a favorite instead of a duplicate root.
-Step-by-step: [Add a network location](https://xfiles.local1st.app/add-location)
-([source](docs/add-location.md)).
+Deleting on internal storage, an SD card, or a USB drive moves files to the volume's
+**Recycle Bin** for easy restore; emptying the bin — or deleting under Root or a network
+location — removes them permanently. Also supports rename, new folder, and new text file.
 
 A background engine drives it all with progress (the wavy Expressive indicator),
-cancellation, and Skip / Overwrite / Keep-both conflict resolution.
+cancellation, and Skip / Overwrite / Keep-both conflict resolution. Long copy, move, zip
+and extract operations keep running in a **foreground service** when the app is
+backgrounded, shown in an ongoing notification with a Cancel action and a wake lock; the
+service self-stops when idle.
+
+### Storage & network locations
+
+Mounted USB OTG drives appear as pane roots next to internal storage and SD cards, and
+the list updates automatically when a drive is plugged or unplugged. On Android 8–10,
+writes to SD cards, USB drives and other secondary volumes work through a one-time SAF
+grant.
+
+**Add location** (at the bottom of each pane or in Settings) grants a document tree from
+another app — RSAF (rclone), CIFS Documents Provider, Nextcloud, or any
+`DocumentsProvider` — and pins it as a pane root. Copy and move then stream through the
+system; XFiles still has no `INTERNET` permission, so the other app is what actually
+talks to the network. A tree that is already local storage is pinned as a favorite
+instead of a duplicate root. Step-by-step:
+[Add a network location](https://xfiles.local1st.app/add-location)
+([source](docs/add-location.md)).
+
+### Archives as folders
+
+Browse zip/jar/apk, 7z, tar(.gz/.bz2/.xz) and rar read-only; extract by copying out.
+Anything installable installs from right there — see below.
 
 ### High-performance zip
 
@@ -89,17 +106,6 @@ Creation deflates every entry across all CPU cores (commons-compress
 `ParallelScatterZipCreator`, STORE for already-compressed media). Extraction runs one
 `ZipFile` handle per worker off a shared queue. Zip-Slip guarded; falls back to
 single-threaded streaming when temp space is tight.
-
-### Foreground service
-
-Long copy/move/zip/extract operations keep running when the app is backgrounded, shown
-in an ongoing notification with a Cancel action and a wake lock. The service self-stops
-when idle.
-
-### Archives as folders
-
-Browse zip/jar/apk, 7z, tar(.gz/.bz2/.xz) and rar read-only; extract by copying out.
-Anything installable installs from right there — see below.
 
 ### App manager
 
@@ -139,27 +145,25 @@ auto):
   list/read/write/mkdir/rename/delete under `/data`, `/system`, …
 - **[Shizuku](https://shizuku.rikka.app/)** — no root required: XFiles binds a Shizuku
   user service running at shell (ADB) privilege that hands over real file descriptors.
-  Settings walks you through setup and permission.
+  Settings walks you through setup and permission. Without `su`, Shizuku can still list
+  `/` and browse what the adb shell can see (`/system`, `/proc`, `/storage`,
+  `Android/data`), while `/data` and `/data/data` stay closed until superuser is granted.
 
 Whichever transport is live also kicks in transparently where plain file access is
 denied — most notably **`Android/data`** and **`Android/obb`**, which open like any
 other folder. Thumbnails, viewers and even video playback work on privileged paths.
-Opening **Root** uses `su` when it is available. Without it, Shizuku can still
-list `/` and browse what the adb shell can see (`/system`, `/proc`, `/storage`,
-`Android/data`). `/data` and `/data/data` stay closed until superuser is granted.
-
-The settings screen carries the rest of the preferences too — theme, dynamic color,
-hidden files, folders-first, sort key and direction.
 
 ### Viewers
 
-An image viewer (pager + pinch zoom), a text viewer with edit/save, a hex viewer with
-on-demand paging, an audio player, and a custom video player (Media3/ExoPlayer) with
-**frame-accurate stepping**.
+Built-in **PDF viewer**, **image viewer** (pager + pinch zoom), **hex viewer** with
+on-demand paging, **audio player**, **text viewer & editor** (loads large files in
+on-demand stretches rather than all at once, with undo/redo, line wrap and GBK
+detection), and a **video player** (Media3/ExoPlayer) with **frame-accurate stepping**.
 
-Tap the time readout to swap it for a frame counter — current frame, total, and the real
-frame rate — then step ±1 frame, swipe on the picture to scrub by time or frames with
-live preview, drag the compact control card out of the way, or go fullscreen immersive.
+In the video player, tap the time readout to swap it for a frame counter — current frame,
+total, and the real frame rate — then step ±1 frame, swipe on the picture to scrub by
+time or frames with live preview, drag the compact control card out of the way, or go
+fullscreen immersive.
 
 ### Search
 
@@ -172,17 +176,19 @@ almost at once.
 
 ### Open from other apps
 
-Off by default so XFiles never hijacks anything. Three opt-in toggles in Settings
-register XFiles with the system resolver for **archives**, **images** and **videos** —
-after that, "open with XFiles" from any app lands in the archive tree or the right
-viewer.
+Off by default so XFiles never hijacks anything. Five opt-in toggles in Settings
+register XFiles with the system resolver for **archives**, **images**, **videos**,
+**PDFs** and **text files** — after that, "open with XFiles" from any app lands in the
+archive tree or the right viewer.
 
 ### Material 3 Expressive
 
 `MaterialExpressiveTheme` + expressive motion, dynamic color (Android 12+),
-light/dark/system, floating toolbar, `LoadingIndicator` / `LinearWavyProgressIndicator`.
+light/dark/system, floating bottom toolbar, `LoadingIndicator` /
+`LinearWavyProgressIndicator`, and Activity-style predictive back (`Navigation 3`).
 True edge-to-edge: no top app bar — content scrolls under the status bar behind a
-gradient scrim, with floating breadcrumb and settings buttons.
+gradient scrim, with a floating breadcrumb pill. Settings also covers hidden files,
+folders-first, sort key and direction.
 
 ### 18 languages
 
@@ -216,11 +222,11 @@ That last row is enforced by the OS, not by policy — verify it yourself in
 
 | Layer | Choice |
 |---|---|
-| Language / UI | Kotlin, Jetpack Compose (BOM 2026.09.00), material3 **1.5.0-alpha28** (Expressive APIs) |
-| Build | AGP 9.4.1 (built-in Kotlin, no KGP), Gradle 9.7.1, compileSdk 37 / target 37 / min 26 |
+| Language / UI | Kotlin, Jetpack Compose (BOM 2026.09.00), material3 **1.5.0-alpha28** (Expressive APIs), Navigation 3 (predictive back) |
+| Build | AGP 9.4.1 (built-in Kotlin, no KGP), Gradle 9.7.1, compileSdk 37 / target 37 / min 26, Baseline Profile (`:baselineprofile` + `ProfileInstaller`) |
 | Architecture | MVVM + StateFlow, manual DI composition root (`di/Graph`); app module + a shaded bundletool vendor module |
 | Persistence | DataStore Preferences |
-| Media/Images | Coil 3 (GIF, custom fetchers: app icons, disk-cached video thumbnails), Media3 ExoPlayer |
+| Media/Images | Coil 3 (GIF, custom fetchers: app icons, APK/bundle icons, disk-cached video thumbnails), Media3 ExoPlayer |
 | Archives | java.util.zip, commons-compress (+xz), junrar |
 | Privileged access | Shizuku 13.1.5 (user service, real fds) · `su` shell |
 | Package install | PackageInstaller sessions · vendored bundletool 1.18.3 · ARSCLib (in-process aapt2) · minimal self-signed signer |
@@ -234,12 +240,12 @@ Expressive APIs are `internal` in the 1.4.0 stable release.
 app/src/main/java/app/local1st/files/
 ├── core/
 │   ├── fs/        XEntry model, XId id scheme, XFileSystem + FsRegistry,
-│   │   │          Local/Archive/Apps/Root filesystems, storage roots, legacy SAF writes
+│   │   │          Local/Archive/Apps/Root/Saf/Trash filesystems, storage roots, legacy SAF writes
 │   │   └── priv/  privileged transports — su shell & Shizuku user service (real fds)
 │   ├── ops/       OperationEngine (copy/move/delete/compress + conflicts), OpsService
 │   ├── search/    recursive SearchEngine
 │   ├── prefs/     DataStore settings
-│   ├── thumb/     Coil fetchers: app icons, disk-cached video thumbnails
+│   ├── thumb/     Coil fetchers: app & APK/bundle icons, disk-cached video thumbnails
 │   └── util/      formatters, mime/category mapping, intents; package install —
 │                  PackageInstaller sessions, AAB→APKs (bundletool), XAPK/OBB,
 │                  in-process aapt2 (ARSCLib), self-signed signing
@@ -248,18 +254,20 @@ app/src/main/java/app/local1st/files/
     ├── browser/   PaneController (tree state machine), PaneView, EntryRow
     ├── components/ shared Compose bits (tooltips, predictive back)
     ├── main/      MainViewModel, MainScreen (dual pane + floating toolbar), PermissionGate
-    ├── dialogs/   rename/new-folder/delete/zip/details, ops progress + conflicts
-    ├── viewer/    image / text / hex viewers, audio player, frame-accurate video player
+    ├── dialogs/   rename/new-folder/new-file/delete/zip/details, ops progress + conflicts
+    ├── viewer/    PDF / image / text / hex viewers, audio player, frame-accurate video player
     ├── search/    search overlay
     ├── settings/  settings screen
     ├── appinfo/   app details overlay
     └── theme/     MaterialExpressiveTheme setup
 
+baselineprofile/            Baseline Profile generator (:baselineprofile) for AOT compilation
 vendor/bundletool-shaded/   Gradle module shading bundletool 1.18.3 + its pinned deps
 ```
 
 Entry ids are URI-like strings: `file:///abs/path`,
-`zip:///abs/archive.zip!/inner/path`, `apps://package.name`, `root:///abs/path`.
+`zip:///abs/archive.zip!/inner/path`, `apps://package.name`, `root:///abs/path`,
+`saf://{locationId}/…`, `trash://{volumeId}/…`.
 
 ## Build & run
 
