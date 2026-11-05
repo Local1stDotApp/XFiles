@@ -938,7 +938,7 @@ class DefaultOperationEngine(
         val ext = if (dot > 0) name.substring(dot) else ""
         var i = 1
         while (true) {
-            val candidate = "$stem ($i)$ext"
+            val candidate = numberedName(stem, i, ext)
             if (candidate !in taken) return candidate
             i++
         }

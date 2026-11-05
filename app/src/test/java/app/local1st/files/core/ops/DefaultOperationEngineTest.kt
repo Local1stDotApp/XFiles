@@ -3,6 +3,7 @@ package app.local1st.files.core.ops
 import app.local1st.files.core.fs.DocumentsBackend
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.FsRegistry
+import app.local1st.files.core.fs.LocalFileSystem
 import app.local1st.files.core.fs.MemoryDocumentsBackend
 import app.local1st.files.core.fs.SafFileSystem
 import app.local1st.files.core.fs.XEntry
@@ -11,6 +12,7 @@ import app.local1st.files.core.fs.XId
 import app.local1st.files.core.prefs.SafLocation
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -144,6 +146,38 @@ class DefaultOperationEngineTest {
         assertTrue(event.message, event.message.contains("Cannot move"))
         assertTrue(destFs.list(dest).isEmpty())
         assertEquals(listOf("keep.txt"), fs.list(root).map { it.name })
+    }
+
+    @Test
+    fun keepBothShortensANameWithNoRoomForTheNumber() {
+        val local = LocalFileSystem()
+        val engine = DefaultOperationEngine(
+            scope,
+            FsRegistry().apply { register(local) },
+            temporaryFolder.newFolder(),
+        )
+        // 255 bytes each, the longest a name can be. No extension: a typed name would ask
+        // MimeTypeMap, which JVM tests don't have.
+        val fileName = "a".repeat(255)
+        val dirName = "d".repeat(255)
+        val src = temporaryFolder.newFolder("src")
+        val dest = temporaryFolder.newFolder("dest")
+        File(src, fileName).writeText("new")
+        File(src, "$dirName/inside").apply { parentFile!!.mkdir() }.writeText("x")
+        File(dest, fileName).writeText("old")
+        File(dest, dirName).mkdir()
+        fun entry(file: File) = checkNotNull(local.stat(XId.file(file.absolutePath)))
+
+        val event = runCopy(
+            engine,
+            FileOp.Copy(listOf(entry(File(src, fileName)), entry(File(src, dirName))), entry(dest)),
+            ConflictResolution(ConflictChoice.RENAME),
+        )
+
+        assertTrue(event.message, event.success)
+        assertEquals("old", File(dest, fileName).readText())
+        assertEquals("new", File(dest, "a".repeat(251) + " (1)").readText())
+        assertEquals("x", File(dest, "d".repeat(251) + " (1)/inside").readText())
     }
 
     private fun engine(fs: SafFileSystem): DefaultOperationEngine {

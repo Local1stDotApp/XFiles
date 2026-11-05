@@ -4,6 +4,7 @@ import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.TrashPaths
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
+import java.text.BreakIterator
 
 /** A long-running file operation submitted to the [OperationEngine]. */
 sealed interface FileOp {
@@ -115,7 +116,43 @@ internal fun uniqueExtractFolderName(
     var name = desired
     var i = 1
     while (name in taken || (volumeRoot && name.equals(TrashPaths.DIR_NAME, ignoreCase = true))) {
-        name = "$desired ($i)".also { i++ }
+        name = numberedName(desired, i).also { i++ }
     }
     return name
+}
+
+/**
+ * The longest name every local file system here takes: ext4 and f2fs count 255 bytes of UTF-8,
+ * and FAT counts 255 UTF-16 units, which such a name never exceeds.
+ */
+internal const val MAX_NAME_BYTES = 255
+
+/**
+ * "[stem] ([number])[ext]". A name near [MAX_NAME_BYTES] has no room for the number, and
+ * creating it would fail, so the stem is cut short between two characters until it fits.
+ */
+internal fun numberedName(stem: String, number: Int, ext: String = ""): String {
+    val suffix = " ($number)$ext"
+    val room = MAX_NAME_BYTES - suffix.utf8Size()
+    // An extension that leaves no room for the stem is cut as part of it.
+    if (room <= 0 && ext.isNotEmpty()) return numberedName(stem + ext, number)
+    if (stem.utf8Size() <= room) return stem + suffix
+    return cutBetweenCharacters(stem, room).trimEnd() + suffix
+}
+
+private fun String.utf8Size(): Int = encodeToByteArray().size
+
+/** The longest start of [text] within [maxBytes] of UTF-8 that keeps each character whole. */
+private fun cutBetweenCharacters(text: String, maxBytes: Int): String {
+    val characters = BreakIterator.getCharacterInstance().apply { setText(text) }
+    var end = 0
+    var bytes = 0
+    var next = characters.next()
+    while (next != BreakIterator.DONE) {
+        bytes += text.substring(end, next).utf8Size()
+        if (bytes > maxBytes) break
+        end = next
+        next = characters.next()
+    }
+    return text.substring(0, end)
 }
