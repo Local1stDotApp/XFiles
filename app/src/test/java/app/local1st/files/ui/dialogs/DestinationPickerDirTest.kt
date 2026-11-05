@@ -73,13 +73,24 @@ class DestinationPickerDirTest {
             badge = "Internal · DCIM",
             localPath = binPath,
         )
-        assertEquals("Internal · DCIM", detailLocationOf(bin, binPath, roots, "Recycle Bin"))
+        assertEquals("Internal · DCIM", detailLocationOf(bin, roots, "Recycle Bin"))
 
         val volumeRow = internal.copy(badge = "12 GB free")
-        assertEquals(volumeRow.id, detailLocationOf(volumeRow, volume, roots, "Recycle Bin"))
+        assertEquals(volume, detailLocationOf(volumeRow, roots, "Recycle Bin"))
 
         val unlabeled = bin.copy(badge = null)
-        assertEquals("Recycle Bin/photo.jpg", detailLocationOf(unlabeled, binPath, roots, "Recycle Bin"))
+        assertEquals("Recycle Bin/photo.jpg", detailLocationOf(unlabeled, roots, "Recycle Bin"))
+    }
+
+    @Test
+    fun detailsShowAPathNotAnId() {
+        val roots = listOf("/storage/emulated/0")
+        val photo = "/storage/emulated/0/DCIM/photo.jpg"
+        val file = XEntry(id = XId.file(photo), name = "photo.jpg", isDir = false, localPath = photo)
+        assertEquals(photo, detailLocationOf(file, roots, "Recycle Bin"))
+
+        val superuser = XEntry(id = XId.root("/data/local/tmp"), name = "tmp", isDir = true, badge = "root")
+        assertEquals("/data/local/tmp", detailLocationOf(superuser, roots, "Recycle Bin"))
     }
 
     @Test

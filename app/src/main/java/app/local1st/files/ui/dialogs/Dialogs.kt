@@ -159,8 +159,7 @@ fun MainDialogs(vm: MainViewModel) {
         is DialogRequest.Details -> {
             val detailRoots = Graph.roots.mountedVolumes.collectAsState().value.map { it.path }
             val detailBin = stringResource(R.string.recycle_bin)
-            val detailPath = req.entry.localPath ?: req.entry.id.substringAfter("://")
-            val detailLocation = detailLocationOf(req.entry, detailPath, detailRoots, detailBin)
+            val detailLocation = detailLocationOf(req.entry, detailRoots, detailBin)
             AlertDialog(
                 onDismissRequest = dismiss,
                 // The name heads the text, styled as the title, so it scrolls with the details.

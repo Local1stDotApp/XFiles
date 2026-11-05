@@ -428,16 +428,13 @@ internal fun searchHitLocation(parentId: String, volumeRoots: List<String>, binN
 }
 
 /**
- * Details location. A bin row's badge is the original folder; every other badge
- * (free space, root mode, "Not available") is not where the entry is.
+ * Details location: the entry's path, without the scheme its id starts with. A bin row's
+ * badge is the original folder; every other badge (free space, root mode, "Not available")
+ * is not where the entry is.
  */
-internal fun detailLocationOf(
-    entry: XEntry,
-    path: String,
-    volumeRoots: List<String>,
-    binName: String,
-): String {
-    val binLabel = visibleBinLabel(path, volumeRoots, binName) ?: return entry.id
+internal fun detailLocationOf(entry: XEntry, volumeRoots: List<String>, binName: String): String {
+    val path = entry.localPath ?: entry.path
+    val binLabel = visibleBinLabel(path, volumeRoots, binName) ?: return path
     return entry.badge?.takeIf { it.isNotBlank() } ?: binLabel
 }
 
