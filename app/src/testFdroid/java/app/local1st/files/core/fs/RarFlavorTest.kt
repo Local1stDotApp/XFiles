@@ -1,6 +1,7 @@
 package app.local1st.files.core.fs
 
 import java.io.File
+import java.io.IOException
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Rule
@@ -22,11 +23,31 @@ class RarFlavorTest {
 
     @Test
     fun fdroidFlavor_readsEveryRarThroughLibarchive() {
-        val solid = File(temporaryFolder.root, "solid.rar")
-        javaClass.getResourceAsStream("/rar/test_read_format_rar4_solid_encrypted.rar")!!.use { input ->
-            solid.outputStream().use { input.copyTo(it) }
-        }
+        assertFalse(RarArchives.readsItself(fixture("test_read_format_rar4_solid_encrypted.rar")))
+        assertFalse(RarArchives.readsItself(fixture("rar2-unix-owner.rar")))
+    }
 
-        assertFalse(RarArchives.readsItself(solid))
+    @Test
+    fun rar2Archive_failsWithAnErrorInsteadOfReadingGarbage() {
+        val archive = fixture("rar2-unix-owner.rar")
+        val fileSystem = ArchiveFileSystem(mimeOf = { null })
+        val root = XEntry(
+            id = XId.file(archive.absolutePath),
+            name = archive.name,
+            isDir = false,
+            kind = EntryKind.ARCHIVE,
+            localPath = archive.absolutePath,
+        )
+
+        // libarchive trips over the RAR 2 block after the member, or failing that its data.
+        assertThrows(IOException::class.java) {
+            fileSystem.list(root).forEach { entry -> fileSystem.openIn(entry).use { it.readBytes() } }
+        }
+    }
+
+    private fun fixture(name: String): File {
+        val target = File(temporaryFolder.root, name)
+        javaClass.getResourceAsStream("/rar/$name")!!.use { input -> target.outputStream().use { input.copyTo(it) } }
+        return target
     }
 }

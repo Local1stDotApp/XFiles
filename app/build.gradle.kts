@@ -41,9 +41,9 @@ android {
     }
 
     // F-Droid ships only free software and counts junrar's UnRAR licence as non-free. Both
-    // flavors read archives natively; the full flavor also keeps junrar for the one kind
-    // libarchive can't read, solid RAR 4. GitHub releases and Google Play ship the full flavor.
-    // See docs/fdroid.md.
+    // flavors read archives natively; the full flavor also keeps junrar for what libarchive
+    // can't read, archives made by RAR 2.x and older. GitHub releases and Google Play ship the
+    // full flavor. See docs/fdroid.md.
     flavorDimensions += "distribution"
     productFlavors {
         create("full") {
@@ -162,7 +162,8 @@ dependencies {
     implementation(libs.coil.video)
     implementation(libs.coil.gif)
 
-    // Solid RAR 4 only (see productFlavors above): junrar is pure Java but under the UnRAR licence.
+    // RAR 2.x and older only (see productFlavors above): junrar is pure Java but under the UnRAR
+    // licence.
     "fullImplementation"(libs.junrar)
     // Carries bundletool and ARSCLib, both relocated under app.local1st.files.vendor.
     implementation(project(path = ":vendor:bundletool-shaded", configuration = "shadedRuntimeElements"))

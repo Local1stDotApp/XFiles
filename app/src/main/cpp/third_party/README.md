@@ -2,7 +2,10 @@
 
 libxfarchive (`../CMakeLists.txt`) is built from these upstream releases. Each directory keeps
 only the files the build compiles, the headers they include, and the project's licence;
-`update.sh` re-creates them from the release tarballs. Nothing here is modified.
+`update.sh` re-creates them from the release tarballs. One file is modified: libarchive's RAR 4
+reader, `libarchive/archive_read_support_format_rar.c`, by `patches/libarchive-rar4.patch`,
+which `update.sh` applies. It reads solid RAR 4 archives and filters in PPMd blocks; the patch's
+header lists the changes.
 
 | Directory | Project | Version | Tarball SHA-256 | Licence |
 |---|---|---|---|---|
@@ -21,6 +24,8 @@ extract them, and run
 
     ./update.sh <libarchive-x.y.z> <zstd-x.y.z> <xz-x.y.z> <bzip2-x.y.z> <lz4-x.y.z>
 
-then update this table, rebuild, and run the unit tests (`ArchiveFormatsTest`, `RarReadingTest`).
+then update this table, rebuild, and run the unit tests (`ArchiveFormatsTest`, `RarReadingTest`,
+`SolidRar4Test`). If the RAR patch no longer applies, merge it by hand and regenerate it with
+`diff -u` against the upstream file.
 Security fixes in libarchive's format readers are the main reason to update; read its release
 notes for the readers listed above.

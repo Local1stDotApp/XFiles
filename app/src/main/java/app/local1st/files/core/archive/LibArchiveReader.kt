@@ -98,11 +98,15 @@ internal class LibArchiveReader private constructor(private var handle: Long) : 
     private fun requireOpen(): Long = handle.takeIf { it != 0L } ?: throw IOException("Archive closed")
 
     companion object {
-        /** Opens [volumes] (several only for a multi-volume RAR) with the FORMAT_* mask [formats]. */
-        fun open(volumes: List<File>, formats: Int): LibArchiveReader {
+        /**
+         * Opens [volumes] (several only for a multi-volume RAR) with the FORMAT_* mask [formats].
+         * [forData] is for reading entries rather than listing them: in a solid RAR 4 archive,
+         * the members skipped on the way are then decoded, as the ones after them need.
+         */
+        fun open(volumes: List<File>, formats: Int, forData: Boolean): LibArchiveReader {
             NativeArchive.ensureLoaded()
             val paths = Array(volumes.size) { volumes[it].path.toByteArray() }
-            return LibArchiveReader(NativeArchive.open(paths, formats))
+            return LibArchiveReader(NativeArchive.open(paths, formats, forData))
         }
     }
 }

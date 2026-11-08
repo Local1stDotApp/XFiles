@@ -16,15 +16,18 @@ decode-only zstd, liblzma, bzip2 and lz4, and a random-access zip reader of our 
 built from the sources vendored in `app/src/main/cpp/third_party`, whose README lists the
 upstream versions and licences. So the two product flavors differ only in one corner of RAR:
 
-| Flavor | Ships as | Solid RAR 4, RAR 1.4 |
+| Flavor | Ships as | RAR 1.4 to 2.x (the 1990s) |
 |---|---|---|
 | `full` | GitHub releases, Google Play | junrar (pure Java) |
 | `fdroid` | F-Droid | not supported: they fail to open with an error |
 
-libarchive reads RAR 4 and RAR5, multi-volume sets and solid RAR5 included, but it gives up on
-**solid RAR 4** archives (WinRAR's "Create solid archive") at their second member, and it doesn't
-know RAR 1.4 at all. The full flavor hands those two to junrar; `RarVolumes.isBeyondLibarchive`
-spots them from the first bytes.
+libarchive reads RAR 4 and RAR5, multi-volume sets and solid archives included. Upstream it gives
+up on **solid RAR 4** (WinRAR's "Create solid archive") at the second member and on filters in
+PPMd blocks; `third_party/patches/libarchive-rar4.patch` adds both, written from libarchive's
+own code without UnRAR's (`SolidRar4Test`). What libarchive can't read is older: it decodes every
+RAR 4 member with the RAR 2.9 algorithm, so archives made by **RAR 1.5 to 2.x** fail, and it
+doesn't know **RAR 1.4** at all. The full flavor hands those to junrar;
+`RarVolumes.isBeyondLibarchive` spots them from the headers.
 
 Neither flavor can read encrypted entries, since there is no password prompt; opening one fails
 with an error.
@@ -32,10 +35,10 @@ with an error.
 The difference lives in `RarArchives`, one copy per flavor: `app/src/full/…` wraps junrar, and
 `app/src/fdroid/…` declines. `testFdroid`'s `RarFlavorTest` fails if junrar ever reaches the
 fdroid classpath; `testFull`'s checks which archives junrar gets. The JVM tests build
-libxfarchive for the host (`:app:buildHostNative`), so `ArchiveFormatsTest` and `RarReadingTest`
-run the native readers in both flavors. CI builds `:app:assembleFdroidRelease` on every push and
-keeps the APK as the `XFiles-<build>-fdroid-apk` artifact, so a change that breaks F-Droid's
-build fails there first.
+libxfarchive for the host (`:app:buildHostNative`), so `ArchiveFormatsTest`, `RarReadingTest`
+and `SolidRar4Test` run the native readers in both flavors. CI builds `:app:assembleFdroidRelease`
+on every push and keeps the APK as the `XFiles-<build>-fdroid-apk` artifact, so a change that
+breaks F-Droid's build fails there first.
 
 Build it locally with `./gradlew :app:assembleFdroidRelease`.
 
@@ -109,8 +112,9 @@ Builds:
     ndk: 29.0.14206865
 
 MaintainerNotes: |-
-  The fdroid flavor leaves out junrar (UnRAR licence), which the full flavor keeps for solid
-  RAR 4. Archives are read by native code built from source (app/src/main/cpp), hence ndk.
+  The fdroid flavor leaves out junrar (UnRAR licence), which the full flavor keeps for archives
+  made by RAR 2.x and older. Archives are read by native code built from source
+  (app/src/main/cpp, libarchive with a patch for solid RAR 4), hence ndk.
   versionCode is read from version.properties at each tag (UpdateCheckData).
 
 AutoUpdateMode: Version

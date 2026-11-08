@@ -88,8 +88,8 @@ XFiles 仍然没有 `INTERNET` 权限，联网的是对方应用。如果选中�
 只读浏览，一遍解压：zip 及其同类（jar、apk、zipx、分包 APK）、7z、rar、iso、cpio、ar/deb，
 压缩或未压缩的 tar（gz、bz2、xz、zst、lz4、lz、lzma、Z），以及这些格式的单文件压缩包。
 全部由原生库读取；zip 条目支持存储、deflate、Deflate64、bzip2、LZMA、XZ、zstd、PPMd，
-以及 PKZIP 早期的 shrink、implode。不支持加密条目。F-Droid 版打不开固实（solid）RAR 4
-和 RAR 1.4，见 [docs/fdroid.md](docs/fdroid.md)。
+以及 PKZIP 早期的 shrink、implode。不支持加密条目。F-Droid 版打不开 RAR 2.x 及更早版本
+（上世纪 90 年代）做的压缩包，见 [docs/fdroid.md](docs/fdroid.md)。
 能装的东西在树里点一下就能装 —— 见下文。
 
 ### 高性能 zip
@@ -205,7 +205,7 @@ XFiles 注册进系统的**压缩包**、**图片**、**视频**、**PDF** 和**
 | 架构 | MVVM + StateFlow，手写 DI 组合根（`di/Graph`）；app 模块 + 一个 shaded bundletool vendor 模块 |
 | 持久化 | DataStore Preferences |
 | 媒体 / 图片 | Coil 3（GIF，自定义 fetcher：应用图标、APK/拆分包图标、落盘缓存的视频缩略图）、Media3 ExoPlayer |
-| 压缩包 | libxfarchive（`app/src/main/cpp`，NDK）：libarchive 3.8 的只读子集，配 zstd、liblzma、bzip2、lz4 解码器，加上我们自己的随机访问 zip 读取器；写 zip 用系统 zlib。固实 RAR 4 用 junrar（`full` 变体） |
+| 压缩包 | libxfarchive（`app/src/main/cpp`，NDK）：libarchive 3.8 的只读子集，配 zstd、liblzma、bzip2、lz4 解码器，加上我们自己的随机访问 zip 读取器；写 zip 用系统 zlib。RAR 2.x 及更早版本用 junrar（`full` 变体） |
 | 特权访问 | Shizuku 13.1.5（用户服务、真实文件描述符）· `su` shell |
 | 软件包安装 | PackageInstaller 会话 · 内置 bundletool 1.18.3 · ARSCLib（进程内 aapt2）· 极简自签名器 |
 
@@ -240,7 +240,7 @@ app/src/main/java/app/local1st/files/
 
 app/src/main/cpp/           libxfarchive：CMake 工程、JNI、zip 读取器；third_party/ 放内置的
                             libarchive、zstd、xz、bzip2、lz4 源码（见其中的 README）
-app/src/full/               RarArchives：固实 RAR 4 交给 junrar：full 变体（GitHub、Play）
+app/src/full/               RarArchives：RAR 2.x 及更早版本交给 junrar：full 变体（GitHub、Play）
 app/src/fdroid/             RarArchives：没有兜底：fdroid 变体（docs/fdroid.md）
 baselineprofile/            Baseline Profile 生成模块（:baselineprofile），用于 AOT 预编译
 vendor/bundletool-shaded/   把 bundletool 1.18.3 及其锁定依赖 shade 成一个 jar 的 Gradle 模块
@@ -262,7 +262,7 @@ adb install -r app/build/outputs/apk/full/debug/app-full-debug.apk
 首次启动请授予"所有文件访问权限"（App 会直接跳到系统设置页）。
 
 GitHub Releases 和 Google Play 发的是 `full` 变体。F-Droid 构建的是 `fdroid`
-（`:app:assembleFdroidDebug`）：同一个应用，只是不带 junrar，所以读不了固实 RAR 4
+（`:app:assembleFdroidDebug`）：同一个应用，只是不带 junrar，所以读不了 RAR 2.x 及更早版本的压缩包
 （[原因](docs/fdroid.md)）。
 
 ## 发布

@@ -64,8 +64,13 @@ static int enable(struct archive *a, jint formats) {
     return ok;
 }
 
-/* Opens the archive (several paths for a multi-volume RAR). formats is a FORMAT_* mask. */
-JNIEXPORT jlong XF_JNI(open)(JNIEnv *env, jclass clazz, jobjectArray paths, jint formats) {
+/*
+ * Opens the archive (several paths for a multi-volume RAR). formats is a FORMAT_* mask. With
+ * decode_skipped, members passed over on the way to the one read are decoded where later ones
+ * continue them (solid RAR 4), so those can be read; listing leaves it off.
+ */
+JNIEXPORT jlong XF_JNI(open)(JNIEnv *env, jclass clazz, jobjectArray paths, jint formats,
+                             jboolean decode_skipped) {
     jsize count = paths != NULL ? (*env)->GetArrayLength(env, paths) : 0;
     char **list;
     reader *r;
@@ -85,6 +90,11 @@ JNIEXPORT jlong XF_JNI(open)(JNIEnv *env, jclass clazz, jobjectArray paths, jint
         return 0;
     }
     if (!enable(r->a, formats)) {
+        throw_archive(env, r->a);
+        goto fail;
+    }
+    if (decode_skipped && (formats & FORMAT_RAR) &&
+        archive_read_set_format_option(r->a, "rar", "solid_skip", "decode") != ARCHIVE_OK) {
         throw_archive(env, r->a);
         goto fail;
     }

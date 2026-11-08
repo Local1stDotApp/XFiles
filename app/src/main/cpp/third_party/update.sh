@@ -81,6 +81,10 @@ for f in $LA_SOURCES; do
   headers_under "$LA/libarchive" "$LA/libarchive/$f.c" "${LA_FLAGS[@]}"
 done | sort -u | while read -r h; do copy_rel "$LA/libarchive" "$h" "$HERE/libarchive"; done
 cp "$LA/COPYING" "$HERE/libarchive/COPYING"
+# Our changes to libarchive (README.md). A patch that no longer applies needs merging by hand.
+for p in "$HERE"/patches/libarchive-*.patch; do
+  patch -s -p1 -d "$HERE/libarchive" < "$p"
+done
 
 echo "zstd"
 rm -rf "$HERE/zstd" && mkdir -p "$HERE/zstd/lib"

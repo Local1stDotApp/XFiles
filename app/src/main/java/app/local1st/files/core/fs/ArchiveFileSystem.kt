@@ -22,7 +22,7 @@ import java.io.RandomAccessFile
  * its random-access zip reader; 7z, RAR, tar (plain or compressed with gzip, bzip2, xz, zstd,
  * lz4, lzip, lzma or compress), ISO 9660, cpio and ar/deb by its libarchive; and single-file
  * compressed streams as one-file pseudo-archives. The full flavor's [RarArchives] still reads
- * solid RAR 4 archives, which libarchive can't.
+ * archives made by RAR 2.x and older, which libarchive can't.
  *
  * Each archive is parsed once into an in-memory tree of [Node]s, cached in a small
  * LRU keyed by archive path + file mtime + length, so re-listing directories and
@@ -142,7 +142,7 @@ class ArchiveFileSystem(
                 RarArchives.forEachFile(archiveFile) { rawName, index, input ->
                     target(rawName, index)?.let { visit(it.innerPath, input) }
                 }
-            else -> openLibArchive(archiveFile, format).use { reader ->
+            else -> openLibArchive(archiveFile, format, forData = true).use { reader ->
                 while (true) {
                     val e = reader.next() ?: break
                     if (!e.isFile) continue
@@ -339,7 +339,7 @@ class ArchiveFileSystem(
     }
 
     private fun parseLibArchive(archiveFile: File, format: ArchiveFormat, builder: TreeBuilder) {
-        openLibArchive(archiveFile, format).use { reader ->
+        openLibArchive(archiveFile, format, forData = false).use { reader ->
             while (true) {
                 val e = reader.next() ?: break
                 // Files and folders only; links and devices have no bytes to browse.
@@ -409,7 +409,7 @@ class ArchiveFileSystem(
         index: Int,
         rawName: String,
     ): InputStream {
-        val reader = openLibArchive(archiveFile, format)
+        val reader = openLibArchive(archiveFile, format, forData = true)
         try {
             while (true) {
                 val e = reader.next() ?: break
@@ -427,13 +427,13 @@ class ArchiveFileSystem(
         }
     }
 
-    private fun openLibArchive(archiveFile: File, format: ArchiveFormat): LibArchiveReader {
+    private fun openLibArchive(archiveFile: File, format: ArchiveFormat, forData: Boolean): LibArchiveReader {
         val volumes = if (format == ArchiveFormat.RAR) RarVolumes.volumesOf(archiveFile) else listOf(archiveFile)
-        return LibArchiveReader.open(volumes, format.formats)
+        return LibArchiveReader.open(volumes, format.formats, forData)
     }
 
     private fun openSingleCompressed(archiveFile: File): InputStream {
-        val reader = LibArchiveReader.open(listOf(archiveFile), ArchiveFormat.SINGLE.formats)
+        val reader = LibArchiveReader.open(listOf(archiveFile), ArchiveFormat.SINGLE.formats, forData = true)
         try {
             // The raw reader takes any bytes; only a decompression filter makes it an archive.
             if (reader.next() == null || reader.filter == 0) {

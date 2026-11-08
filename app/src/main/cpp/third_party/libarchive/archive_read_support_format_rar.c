@@ -217,6 +217,9 @@ struct lzss
   unsigned char *window;
   int mask;
   int64_t position;
+  /* Window offset of position 0. A member's positions start at 0, but in a solid
+   * archive its data continues the window where the member before it ended. */
+  int64_t base;
 };
 
 struct data_block_offsets
@@ -352,6 +355,22 @@ struct rar
   unsigned int lastlowoffset;
   unsigned int numlowoffsetrepeats;
   char start_new_table;
+  /* The current member's end-of-data marker has been decoded. */
+  char member_end_seen;
+
+  /*
+   * Solid archives (MHD_SOLID): a member flagged FHD_SOLID continues the decoder state
+   * (window, tables, PPMd model, filters) where the compressed member before it ended.
+   */
+  /* The last compressed member was decoded to its end, so the next one can continue it. */
+  char solid_ready;
+  /* This member continues members that were skipped without being decoded. */
+  char solid_unreadable;
+  /* This member is empty and its data is an end-of-data marker still to be decoded. */
+  char solid_marker_pending;
+  /* Option solid_skip=decode: skipping a member decodes it, so later members stay
+   * readable. Without it, skipping is fast but leaves them unreadable. */
+  char solid_skip_decodes;
 
   /* Filters */
   struct rar_filters filters;
@@ -431,6 +450,11 @@ static int make_table(struct archive_read *, struct huffman_code *);
 static int make_table_recurse(struct archive_read *, struct huffman_code *, int,
                               struct huffman_table_entry *, int, int);
 static int expand(struct archive_read *, int64_t *);
+static int expand_ppmd(struct archive_read *, int64_t *);
+static int expand_any(struct archive_read *, int64_t *);
+static int read_member_end(struct archive_read *);
+static void read_empty_member(struct archive_read *);
+static int ppmd_decode(struct archive_read *);
 static int copy_from_lzss_window_to_unp(struct archive_read *, const void **,
                                         int64_t, size_t);
 static const void *rar_read_ahead(struct archive_read *, size_t, ssize_t *);
@@ -644,7 +668,7 @@ lzss_size(struct lzss *lzss)
 static inline int
 lzss_offset_for_position(struct lzss *lzss, int64_t pos)
 {
-  return (int)(pos & lzss->mask);
+  return (int)((pos + lzss->base) & lzss->mask);
 }
 
 static inline unsigned char *
@@ -897,6 +921,10 @@ archive_read_format_rar_options(struct archive_read *a,
     }
     return (ret);
   }
+  if (strcmp(key, "solid_skip") == 0) {
+    rar->solid_skip_decodes = val != NULL && strcmp(val, "decode") == 0;
+    return (ARCHIVE_OK);
+  }
 
   /* Note: The "warn" return is just to inform the options
    * supervisor that we didn't handle it.  It will generate
@@ -1113,6 +1141,8 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
   }
 
   *buff = NULL;
+  if (rar->solid_marker_pending)
+    read_empty_member(a);
   if (rar->entry_eof || rar->offset_seek >= rar->unp_size) {
     *size = 0;
     *offset = rar->offset;
@@ -1130,11 +1160,19 @@ archive_read_format_rar_read_data(struct archive_read *a, const void **buff,
   case COMPRESS_METHOD_NORMAL:
   case COMPRESS_METHOD_GOOD:
   case COMPRESS_METHOD_BEST:
+    if (rar->solid_unreadable) {
+      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                        "RAR solid member can't be read without the members before it");
+      return (ARCHIVE_FAILED);
+    }
     ret = read_data_compressed(a, buff, size, offset, 0);
-    if (ret != ARCHIVE_OK && ret != ARCHIVE_WARN) {
+    if (ret == ARCHIVE_EOF && (rar->main_flags & MHD_SOLID)) {
+      /* The next member may continue this one's PPMd model. */
+    } else if (ret != ARCHIVE_OK && ret != ARCHIVE_WARN) {
       __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
       rar->start_new_table = 1;
       rar->ppmd_valid = 0;
+      rar->solid_ready = 0;
     }
     break;
 
@@ -1153,6 +1191,26 @@ archive_read_format_rar_read_data_skip(struct archive_read *a)
   struct rar *rar = a->format->data;
   int64_t bytes_skipped;
   int ret;
+
+  /* The members after this one may continue its decoder state, so with solid_skip=decode
+   * the rest of it is decoded and dropped instead of skipped. */
+  if (rar->solid_marker_pending && rar->solid_skip_decodes)
+    read_empty_member(a);
+  if ((rar->main_flags & MHD_SOLID) && rar->solid_skip_decodes && !rar->entry_eof &&
+      !rar->solid_unreadable && rar->compression_method != COMPRESS_METHOD_STORE &&
+      rar->unp_size > 0)
+  {
+    const void *buff;
+    size_t size;
+    int64_t offset;
+
+    do
+      ret = archive_read_format_rar_read_data(a, &buff, &size, &offset);
+    while (ret == ARCHIVE_OK || ret == ARCHIVE_WARN);
+    if (ret == ARCHIVE_FATAL)
+      return (ret);
+    /* After a failure the rest of the member is skipped below. */
+  }
 
   if (rar->bytes_unconsumed > 0) {
       /* Consume as much as the decompressor actually used. */
@@ -1360,6 +1418,24 @@ archive_read_format_rar_cleanup(struct archive_read *a)
   return (ARCHIVE_OK);
 }
 
+/* Gives the next member a decoder of its own, as in a non-solid archive. */
+static void
+reset_decoder(struct rar *rar)
+{
+  rar->lzss.position = 0;
+  rar->lzss.base = 0;
+  rar->dictionary_size = 0;
+  rar->is_ppmd_block = 0;
+  rar->start_new_table = 1;
+  memset(rar->lengthtable, 0, sizeof(rar->lengthtable));
+  __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
+  rar->ppmd_valid = 0;
+  rar->ppmd_escape = 2;
+  rar->lastlength = rar->lastoffset = 0;
+  memset(rar->oldoffset, 0, sizeof(rar->oldoffset));
+  rar->lastlowoffset = rar->numlowoffsetrepeats = 0;
+}
+
 static int
 read_header(struct archive_read *a, struct archive_entry *entry,
             char head_type)
@@ -1409,32 +1485,24 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   crc32_computed = __archive_crc32(0, (const unsigned char *)p + 2, 7 - 2);
   __archive_read_consume(a, 7);
 
-  if (!(rar->file_flags & FHD_SOLID))
-  {
-    rar->compression_method = 0;
-    rar->packed_size = 0;
-    rar->unp_size = 0;
-    rar->mtime = 0;
-    rar->ctime = 0;
-    rar->atime = 0;
-    rar->arctime = 0;
-    rar->mode = 0;
-    memset(&rar->salt, 0, sizeof(rar->salt));
-    rar->atime = 0;
-    rar->ansec = 0;
-    rar->ctime = 0;
-    rar->cnsec = 0;
-    rar->mtime = 0;
-    rar->mnsec = 0;
-    rar->arctime = 0;
-    rar->arcnsec = 0;
-  }
-  else
-  {
-    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                      "RAR solid archive support unavailable");
-    return (ARCHIVE_FATAL);
-  }
+  /* A solid member's metadata is its own; only its decoder state carries over (below). */
+  rar->compression_method = 0;
+  rar->packed_size = 0;
+  rar->unp_size = 0;
+  rar->mtime = 0;
+  rar->ctime = 0;
+  rar->atime = 0;
+  rar->arctime = 0;
+  rar->mode = 0;
+  memset(&rar->salt, 0, sizeof(rar->salt));
+  rar->atime = 0;
+  rar->ansec = 0;
+  rar->ctime = 0;
+  rar->cnsec = 0;
+  rar->mtime = 0;
+  rar->mnsec = 0;
+  rar->arctime = 0;
+  rar->arcnsec = 0;
 
   if ((h = __archive_read_ahead(a, (size_t)header_size - 7, NULL)) == NULL)
   {
@@ -1808,9 +1876,8 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   }
 
   rar->bytes_uncopied = rar->bytes_unconsumed = 0;
-  rar->lzss.position = rar->offset = 0;
+  rar->offset = 0;
   rar->offset_seek = 0;
-  rar->dictionary_size = 0;
   rar->offset_outgoing = 0;
   rar->br.cache_avail = 0;
   rar->br.avail_in = 0;
@@ -1818,16 +1885,49 @@ read_header(struct archive_read *a, struct archive_entry *entry,
   rar->crc_calculated = 0;
   rar->entry_eof = 0;
   rar->valid = 1;
-  rar->is_ppmd_block = 0;
-  rar->start_new_table = 1;
   free(rar->unp_buffer);
   rar->unp_buffer = NULL;
   rar->unp_offset = 0;
   rar->unp_buffer_size = UNP_BUFFER_SIZE;
-  memset(rar->lengthtable, 0, sizeof(rar->lengthtable));
-  __archive_ppmd7_functions.Ppmd7_Free(&rar->ppmd7_context);
-  rar->ppmd_valid = rar->ppmd_eod = 0;
+  rar->ppmd_eod = 0;
+  rar->member_end_seen = 0;
+  rar->solid_unreadable = 0;
+  rar->solid_marker_pending = 0;
   rar->filters.filterstart = INT64_MAX;
+
+  if (!(rar->main_flags & MHD_SOLID))
+    reset_decoder(rar);
+  else if (rar->compression_method != COMPRESS_METHOD_STORE)
+  {
+    /* Stored members are not part of the solid stream; compressed ones are. */
+    if (rar->file_flags & FHD_SOLID)
+    {
+      /* The data continues the window where the last compressed member ended. */
+      rar->solid_unreadable = !rar->solid_ready;
+      if (rar->lzss.window != NULL)
+        rar->lzss.base = (rar->lzss.base + rar->lzss.position) & rar->lzss.mask;
+      rar->lzss.position = 0;
+    }
+    else
+    {
+      /* The first member of a solid archive or of a solid group. */
+      reset_decoder(rar);
+      rar->solid_ready = 1;
+    }
+    /*
+     * An empty member's data depends on what the last member left pending. With new
+     * tables due, it holds nothing to decode and the next member still starts with
+     * them. Otherwise it is an LZ end-of-data marker, whose last bit decides that for
+     * the next member, so it is decoded (read_empty_member()).
+     */
+    if (rar->unp_size > 0)
+      rar->solid_ready = 0;
+    else if (!rar->start_new_table && !rar->solid_unreadable)
+    {
+      rar->solid_marker_pending = 1;
+      rar->solid_ready = 0;
+    }
+  }
 
   archive_entry_set_mtime(entry, rar->mtime, rar->mnsec);
   archive_entry_set_ctime(entry, rar->ctime, rar->cnsec);
@@ -2057,7 +2157,7 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
   struct rar *rar = a->format->data;
   int64_t start, end;
   size_t bs;
-  int ret = (ARCHIVE_OK), sym, code, lzss_offset, length, i;
+  int ret = (ARCHIVE_OK);
 
   do {
     if (!rar->valid)
@@ -2089,8 +2189,11 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
       goto ending_block;
     }
 
-    if (rar->ppmd_eod ||
-       (rar->dictionary_size && rar->offset >= rar->unp_size))
+    /* The member ends at its size, or at its end-of-data marker once everything
+     * decoded before the marker has gone out. */
+    if ((rar->dictionary_size && rar->offset >= rar->unp_size) ||
+        (rar->member_end_seen && rar->bytes_uncopied == 0 &&
+         rar->filters.filterstart == INT64_MAX))
     {
       if (rar->unp_offset > 0) {
         /*
@@ -2116,11 +2219,19 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
         return (ARCHIVE_FAILED);
 #endif
       }
+      /* The next solid member continues after this one's end-of-data marker, which
+       * decoding may have stopped short of. */
+      if (rar->main_flags & MHD_SOLID)
+      {
+        rar->solid_ready = read_member_end(a) == ARCHIVE_OK;
+        if (!rar->solid_ready) /* this member is fine; the next one will say */
+          archive_clear_error(&a->archive);
+      }
       rar->entry_eof = 1;
       return (ARCHIVE_EOF);
     }
 
-    if (!rar->is_ppmd_block && rar->dictionary_size && rar->bytes_uncopied > 0)
+    if (rar->dictionary_size && rar->bytes_uncopied > 0)
     {
       if (rar->bytes_uncopied > (rar->unp_buffer_size - rar->unp_offset))
         bs = rar->unp_buffer_size - rar->unp_offset;
@@ -2151,6 +2262,14 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
       continue;
     }
 
+    /* Past the end-of-data marker only a filter or copying may be left. */
+    if (rar->member_end_seen)
+    {
+      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                        "Bad RAR file data");
+      return (ARCHIVE_FAILED);
+    }
+
     if (!rar->br.next_in &&
       (ret = rar_br_preparation(a, &(rar->br))) < ARCHIVE_WARN)
       return (ret);
@@ -2159,83 +2278,25 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
 
     if (rar->is_ppmd_block)
     {
-      if ((sym = __archive_ppmd7_functions.Ppmd7_DecodeSymbol(
-        &rar->ppmd7_context, &rar->range_dec.p)) < 0)
-      {
-        archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                          "Invalid symbol");
-        return (ARCHIVE_FAILED);
-      }
-      if(sym != rar->ppmd_escape)
-      {
-        lzss_emit_literal(rar, sym);
-        rar->bytes_uncopied++;
-      }
-      else
-      {
-        if ((code = __archive_ppmd7_functions.Ppmd7_DecodeSymbol(
-          &rar->ppmd7_context, &rar->range_dec.p)) < 0)
-        {
+      start = rar->offset;
+      end = start + rar->dictionary_size;
+      /* As below, leave room for the longest match: 255 + 32 bytes. */
+      if (rar->dictionary_size > 288)
+        end -= 288;
+      if (rar->filters.filterstart < end)
+        end = rar->filters.filterstart;
+
+      ret = expand_ppmd(a, &end);
+      if (ret != ARCHIVE_OK)
+        return (ret);
+
+      rar->bytes_uncopied = end - start;
+      rar->filters.lastend = end;
+      if (rar->filters.lastend != rar->filters.filterstart && rar->bytes_uncopied == 0 &&
+          !rar->start_new_table && !rar->member_end_seen) {
           archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                            "Invalid symbol");
+                            "Internal error extracting RAR file");
           return (ARCHIVE_FAILED);
-        }
-
-        switch(code)
-        {
-          case 0:
-            rar->start_new_table = 1;
-            return read_data_compressed(a, buff, size, offset, looper);
-
-          case 2:
-            rar->ppmd_eod = 1;/* End Of ppmd Data. */
-            continue;
-
-          case 3:
-            archive_set_error(&a->archive, ARCHIVE_ERRNO_MISC,
-                              "Parsing filters is unsupported");
-            return (ARCHIVE_FAILED);
-
-          case 4:
-            lzss_offset = 0;
-            for (i = 2; i >= 0; i--)
-            {
-              if ((code = __archive_ppmd7_functions.Ppmd7_DecodeSymbol(
-                &rar->ppmd7_context, &rar->range_dec.p)) < 0)
-              {
-                archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                                  "Invalid symbol");
-                return (ARCHIVE_FAILED);
-              }
-              lzss_offset |= code << (i * 8);
-            }
-            if ((length = __archive_ppmd7_functions.Ppmd7_DecodeSymbol(
-              &rar->ppmd7_context, &rar->range_dec.p)) < 0)
-            {
-              archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                                "Invalid symbol");
-              return (ARCHIVE_FAILED);
-            }
-            lzss_emit_match(rar, lzss_offset + 2, length + 32);
-            rar->bytes_uncopied += length + 32;
-            break;
-
-          case 5:
-            if ((length = __archive_ppmd7_functions.Ppmd7_DecodeSymbol(
-              &rar->ppmd7_context, &rar->range_dec.p)) < 0)
-            {
-              archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                                "Invalid symbol");
-              return (ARCHIVE_FAILED);
-            }
-            lzss_emit_match(rar, 1, length + 4);
-            rar->bytes_uncopied += length + 4;
-            break;
-
-         default:
-           lzss_emit_literal(rar, sym);
-           rar->bytes_uncopied++;
-        }
       }
     }
     else
@@ -2265,7 +2326,9 @@ read_data_compressed(struct archive_read *a, const void **buff, size_t *size,
 
       rar->bytes_uncopied = end - start;
       rar->filters.lastend = end;
-      if (rar->filters.lastend != rar->filters.filterstart && rar->bytes_uncopied == 0) {
+      /* Switching to PPMd or reaching the end-of-data marker may come with no new bytes. */
+      if (rar->filters.lastend != rar->filters.filterstart && rar->bytes_uncopied == 0 &&
+          !rar->is_ppmd_block && !rar->member_end_seen) {
           /* Broken RAR files cause this case.
           * NOTE: If this case were possible on a normal RAR file
           * we would find out where it was actually bad and
@@ -2306,7 +2369,7 @@ parse_codes(struct archive_read *a)
   struct rar *rar = a->format->data;
   int i, j, val, n, r;
   unsigned char bitlengths[MAX_SYMBOLS], zerocount, ppmd_flags;
-  unsigned int maxorder;
+  unsigned int maxorder, ppmd_memory = 0;
   struct huffman_code precode;
   struct rar_br *br = &(rar->br);
 
@@ -2326,15 +2389,17 @@ parse_codes(struct archive_read *a)
     ppmd_flags = rar_br_bits(br, 7);
     rar_br_consume(br, 7);
 
-    /* Memory is allocated in MB */
+    /* Memory is allocated in MB. It is the model's, not the window's: the window keeps
+     * its size and contents, which PPMd matches and later LZ blocks refer to. */
     if (ppmd_flags & 0x20)
     {
       if (!rar_br_read_ahead(a, br, 8))
         goto truncated_data;
-      rar->dictionary_size = (rar_br_bits(br, 8) + 1) << 20;
+      ppmd_memory = (rar_br_bits(br, 8) + 1) << 20;
       rar_br_consume(br, 8);
     }
 
+    /* Without a new one, the escape character stays what the last block made it. */
     if (ppmd_flags & 0x40)
     {
       if (!rar_br_read_ahead(a, br, 8))
@@ -2342,8 +2407,6 @@ parse_codes(struct archive_read *a)
       rar->ppmd_escape = rar->ppmd7_context.InitEsc = rar_br_bits(br, 8);
       rar_br_consume(br, 8);
     }
-    else
-      rar->ppmd_escape = 2;
 
     if (ppmd_flags & 0x20)
     {
@@ -2368,14 +2431,14 @@ parse_codes(struct archive_read *a)
       rar->range_dec.Stream = &rar->bytein;
       __archive_ppmd7_functions.Ppmd7_Construct(&rar->ppmd7_context);
 
-      if (rar->dictionary_size == 0) {
+      if (ppmd_memory == 0) {
         archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
                           "Invalid zero dictionary size");
         return (ARCHIVE_FAILED);
       }
 
       if (!__archive_ppmd7_functions.Ppmd7_Alloc(&rar->ppmd7_context,
-        rar->dictionary_size))
+        ppmd_memory))
       {
         archive_set_error(&a->archive, ENOMEM,
                           "Out of memory");
@@ -2556,7 +2619,9 @@ parse_codes(struct archive_read *a)
     void *new_window;
     unsigned int new_size;
 
-    if (rar->unp_size >= DICTIONARY_MAX_SIZE)
+    /* In a solid archive, matches reach back into the members before this one, as far as
+     * any dictionary allows, and the window is kept from member to member. */
+    if (rar->unp_size >= DICTIONARY_MAX_SIZE || (rar->main_flags & MHD_SOLID))
       new_size = DICTIONARY_MAX_SIZE;
     else
       new_size = rar_fls((unsigned int)rar->unp_size) << 1;
@@ -2998,10 +3063,13 @@ expand(struct archive_read *a, int64_t *end)
 
       if(newfile)
       {
+        /* End of the member's data. The bit after it tells whether the next solid
+         * member starts with new tables or keeps these. */
         if (!rar_br_read_ahead(a, br, 1))
           goto truncated_data;
         rar->start_new_table = rar_br_bits(br, 1);
         rar_br_consume(br, 1);
+        rar->member_end_seen = 1;
         *end = lzss_position(&rar->lzss);
         return (ARCHIVE_OK);
       }
@@ -3145,6 +3213,170 @@ bad_data:
   archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
                     "Bad RAR file data");
   return (ARCHIVE_FAILED);
+}
+
+/* The next PPMd symbol, or -1 with the error set. */
+static int
+ppmd_decode(struct archive_read *a)
+{
+  struct rar *rar = a->format->data;
+  int sym;
+
+  sym = __archive_ppmd7_functions.Ppmd7_DecodeSymbol(&rar->ppmd7_context,
+    &rar->range_dec.p);
+  if (sym < 0)
+    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT, "Invalid symbol");
+  else if (!rar->valid)
+    sym = -1; /* ppmd_read() ran out of data and said so */
+  return (sym);
+}
+
+/*
+ * expand() for PPMd blocks: decodes into the window until it reaches *end. It returns
+ * early, with *end where it stopped, at the end of the block (start_new_table is then set)
+ * and at the end of the member's data (member_end_seen).
+ */
+static int
+expand_ppmd(struct archive_read *a, int64_t *end)
+{
+  struct rar *rar = a->format->data;
+  int sym, code, length, lzss_offset, i;
+
+  if (rar->filters.filterstart < *end)
+    *end = rar->filters.filterstart;
+
+  while (lzss_position(&rar->lzss) < *end)
+  {
+    if ((sym = ppmd_decode(a)) < 0)
+      return (ARCHIVE_FAILED);
+    if (sym != rar->ppmd_escape)
+    {
+      lzss_emit_literal(rar, (uint8_t)sym);
+      continue;
+    }
+    if ((code = ppmd_decode(a)) < 0)
+      return (ARCHIVE_FAILED);
+    switch (code)
+    {
+      case 0:
+        /* End of the block; new tables follow, PPMd or LZ. */
+        rar->start_new_table = 1;
+        *end = lzss_position(&rar->lzss);
+        return (ARCHIVE_OK);
+
+      case 2:
+        /* End of the member's data. A next solid member starts with a block header. */
+        rar->ppmd_eod = 1;
+        rar->member_end_seen = 1;
+        rar->start_new_table = 1;
+        *end = lzss_position(&rar->lzss);
+        return (ARCHIVE_OK);
+
+      case 3:
+        /* A filter, its bytes coded by the model as well. */
+        if (!read_filter(a, end))
+        {
+          archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                            "Bad RAR file data");
+          return (ARCHIVE_FAILED);
+        }
+        break;
+
+      case 4:
+        lzss_offset = 0;
+        for (i = 2; i >= 0; i--)
+        {
+          if ((code = ppmd_decode(a)) < 0)
+            return (ARCHIVE_FAILED);
+          lzss_offset |= code << (i * 8);
+        }
+        if ((length = ppmd_decode(a)) < 0)
+          return (ARCHIVE_FAILED);
+        lzss_emit_match(rar, lzss_offset + 2, length + 32);
+        break;
+
+      case 5:
+        if ((length = ppmd_decode(a)) < 0)
+          return (ARCHIVE_FAILED);
+        lzss_emit_match(rar, 1, length + 4);
+        break;
+
+      default:
+        lzss_emit_literal(rar, (uint8_t)sym);
+    }
+  }
+  return (ARCHIVE_OK);
+}
+
+/* Decodes until *end through PPMd and LZ blocks alike, as a filter's block needs. */
+static int
+expand_any(struct archive_read *a, int64_t *end)
+{
+  struct rar *rar = a->format->data;
+  int64_t limit;
+  int ret;
+
+  for (;;)
+  {
+    if (rar->filters.filterstart < *end)
+      *end = rar->filters.filterstart;
+    if (lzss_position(&rar->lzss) >= *end)
+      return (ARCHIVE_OK);
+    if (rar->member_end_seen)
+    {
+      *end = lzss_position(&rar->lzss);
+      return (ARCHIVE_OK);
+    }
+    if (rar->start_new_table && (ret = parse_codes(a)) < ARCHIVE_WARN)
+      return (ret);
+    limit = *end;
+    ret = rar->is_ppmd_block ? expand_ppmd(a, &limit) : expand(a, &limit);
+    if (ret != ARCHIVE_OK)
+      return (ret);
+  }
+}
+
+/*
+ * Decodes past the member's last byte up to its end-of-data marker, if decoding stopped
+ * short of it. The next solid member continues from after the marker: in LZ blocks the
+ * bit after it tells whether new tables follow, and in PPMd blocks decoding the marker
+ * updates the model. Anything but the marker there is an error.
+ */
+static int
+read_member_end(struct archive_read *a)
+{
+  struct rar *rar = a->format->data;
+  int64_t end, before;
+  int ret;
+
+  while (!rar->member_end_seen)
+  {
+    if (!rar->br.next_in &&
+      (ret = rar_br_preparation(a, &(rar->br))) < ARCHIVE_WARN)
+      return (ret);
+    if (rar->start_new_table && (ret = parse_codes(a)) < ARCHIVE_WARN)
+      return (ret);
+    before = lzss_position(&rar->lzss);
+    end = before + 1;
+    ret = rar->is_ppmd_block ? expand_ppmd(a, &end) : expand(a, &end);
+    if (ret != ARCHIVE_OK)
+      return (ret);
+    if (lzss_position(&rar->lzss) != before)
+      return (ARCHIVE_FAILED);
+  }
+  return (ARCHIVE_OK);
+}
+
+/* Decodes the end-of-data marker that makes up an empty solid member's data. */
+static void
+read_empty_member(struct archive_read *a)
+{
+  struct rar *rar = a->format->data;
+
+  rar->solid_marker_pending = 0;
+  rar->solid_ready = read_member_end(a) == ARCHIVE_OK;
+  if (!rar->solid_ready) /* the member itself is fine; the next one will say */
+    archive_clear_error(&a->archive);
 }
 
 static int
@@ -3459,7 +3691,7 @@ run_filters(struct archive_read *a)
 
   filters->filterstart = INT64_MAX;
   tend = (int64_t)end;
-  ret = expand(a, &tend);
+  ret = expand_any(a, &tend);
   if (ret != ARCHIVE_OK)
     return 0;
 
@@ -3923,6 +4155,16 @@ rar_decode_byte(struct archive_read *a, uint8_t *byte)
 {
   struct rar *rar = a->format->data;
   struct rar_br *br = &(rar->br);
+  int sym;
+
+  /* In a PPMd block, a filter's bytes come from the model. */
+  if (rar->is_ppmd_block)
+  {
+    if ((sym = ppmd_decode(a)) < 0)
+      return 0;
+    *byte = (uint8_t)sym;
+    return 1;
+  }
   if (!rar_br_read_ahead(a, br, 8))
     return 0;
   *byte = (uint8_t)rar_br_bits(br, 8);
