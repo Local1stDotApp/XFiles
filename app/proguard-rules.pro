@@ -1,8 +1,5 @@
-# Apache Commons Compress optional codecs resolved reflectively
--dontwarn org.apache.commons.compress.**
--dontwarn org.tukaani.xz.**
+# junrar (full flavor) references optional classes it never loads on Android.
 -dontwarn com.github.junrar.**
--keep class org.tukaani.xz.** { *; }
 
 # Shizuku's provider is instantiated by the framework, and P1 invokes the compiled AIDL
 # interfaces directly because Shizuku.newProcess is private in API 13.1.5.

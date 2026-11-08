@@ -85,15 +85,18 @@ XFiles 仍然没有 `INTERNET` 权限，联网的是对方应用。如果选中�
 
 ### 压缩包当文件夹
 
-zip/jar/apk、7z、tar(.gz/.bz2/.xz)、rar 都能只读浏览；想解压就复制出来。
+只读浏览，一遍解压：zip 及其同类（jar、apk、zipx、分包 APK）、7z、rar、iso、cpio、ar/deb，
+压缩或未压缩的 tar（gz、bz2、xz、zst、lz4、lz、lzma、Z），以及这些格式的单文件压缩包。
+全部由原生库读取；zip 条目支持存储、deflate、Deflate64、bzip2、LZMA、XZ、zstd、PPMd，
+以及 PKZIP 早期的 shrink、implode。不支持加密条目。F-Droid 版打不开固实（solid）RAR 4
+和 RAR 1.4，见 [docs/fdroid.md](docs/fdroid.md)。
 能装的东西在树里点一下就能装 —— 见下文。
 
 ### 高性能 zip
 
-打包时用所有 CPU 核心并行压缩每个条目（commons-compress 的
-`ParallelScatterZipCreator`，已压缩过的媒体文件直接 STORE）。
-解压时每个 worker 各持一个 `ZipFile` 句柄，从共享队列里取活。
-已防 Zip-Slip；临时空间不够时自动退回单线程流式处理。
+打包时用所有 CPU 核心并行压缩条目；已压缩过的媒体文件直接 STORE，从源文件直接写进 zip，
+不经过任何临时文件。解压时只解析一次中央目录，然后每个 worker 一个原生条目流，从共享队列里取活，
+各自按偏移读自己的条目。每个条目都校验 CRC。已防 Zip-Slip；打包时临时空间不够会自动退回单线程流式处理。
 
 ### 应用管理
 
@@ -202,7 +205,7 @@ XFiles 注册进系统的**压缩包**、**图片**、**视频**、**PDF** 和**
 | 架构 | MVVM + StateFlow，手写 DI 组合根（`di/Graph`）；app 模块 + 一个 shaded bundletool vendor 模块 |
 | 持久化 | DataStore Preferences |
 | 媒体 / 图片 | Coil 3（GIF，自定义 fetcher：应用图标、APK/拆分包图标、落盘缓存的视频缩略图）、Media3 ExoPlayer |
-| 压缩包 | java.util.zip、commons-compress（+xz）、junrar |
+| 压缩包 | libxfarchive（`app/src/main/cpp`，NDK）：libarchive 3.8 的只读子集，配 zstd、liblzma、bzip2、lz4 解码器，加上我们自己的随机访问 zip 读取器；写 zip 用系统 zlib。固实 RAR 4 用 junrar（`full` 变体） |
 | 特权访问 | Shizuku 13.1.5（用户服务、真实文件描述符）· `su` shell |
 | 软件包安装 | PackageInstaller 会话 · 内置 bundletool 1.18.3 · ARSCLib（进程内 aapt2）· 极简自签名器 |
 
@@ -235,6 +238,10 @@ app/src/main/java/app/local1st/files/
     ├── appinfo/   应用详情浮层
     └── theme/     MaterialExpressiveTheme 配置
 
+app/src/main/cpp/           libxfarchive：CMake 工程、JNI、zip 读取器；third_party/ 放内置的
+                            libarchive、zstd、xz、bzip2、lz4 源码（见其中的 README）
+app/src/full/               RarArchives：固实 RAR 4 交给 junrar：full 变体（GitHub、Play）
+app/src/fdroid/             RarArchives：没有兜底：fdroid 变体（docs/fdroid.md）
 baselineprofile/            Baseline Profile 生成模块（:baselineprofile），用于 AOT 预编译
 vendor/bundletool-shaded/   把 bundletool 1.18.3 及其锁定依赖 shade 成一个 jar 的 Gradle 模块
 ```
@@ -246,21 +253,29 @@ vendor/bundletool-shaded/   把 bundletool 1.18.3 及其锁定依赖 shade 成�
 ## 构建与运行
 
 ```bash
-./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:assembleFullDebug
+adb install -r app/build/outputs/apk/full/debug/app-full-debug.apk
 ```
 
-需要 JDK 17+ 和装了 platform 37 的 Android SDK。
+需要 JDK 17+ 和装了 platform 37 的 Android SDK。第一次构建会往 SDK 里装 NDK 29.0.14206865
+和 CMake 3.31.6，用来编原生压缩库；JVM 单元测试会把同一个库编成电脑端版本，需要 C 编译器。
 首次启动请授予"所有文件访问权限"（App 会直接跳到系统设置页）。
+
+GitHub Releases 和 Google Play 发的是 `full` 变体。F-Droid 构建的是 `fdroid`
+（`:app:assembleFdroidDebug`）：同一个应用，只是不带 junrar，所以读不了固实 RAR 4
+（[原因](docs/fdroid.md)）。
 
 ## 发布
 
 GitHub Actions 工作流（[`.github/workflows/release.yml`](.github/workflows/release.yml)）
 在每次推送到 `main` 时，用 GitHub 托管的 Ubuntu runner 构建签名 APK：
 
-- 构建号（`versionCode`）每次运行自增（`github.run_number`）。
-- `versionName` 写在 `version.properties` 里。只要它没变，每次推送就只刷新那个滚动的
-  **`nightly`** 预发布；提升 `versionName` 才会切出新的稳定版 `vX.Y`。
+- `versionName` 和 `versionCode` 都写在 `version.properties` 里。只要 `versionName` 没变，
+  每次推送就只刷新那个滚动的 **`nightly`** 预发布，它的 `versionCode` 是这个数加上自上个
+  正式版以来的提交数。
+- 要切新的稳定版 `vX.Y`：提升 `versionName`，并在同一个提交里把 `versionCode` 调到比
+  nightly 的构建号更大（更小的话 CI 会拒绝）。之后构建这个 tag 得到的就是这个
+  `versionCode`，F-Droid 正是靠它发现新版本。
 - 签名密钥和口令来自仓库 secrets：`KEYSTORE_BASE64`、`KEYSTORE_PASSWORD`、
   `KEY_ALIAS`、`KEY_PASSWORD`。
 

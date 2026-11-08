@@ -97,15 +97,21 @@ instead of a duplicate root. Step-by-step:
 
 ### Archives as folders
 
-Browse zip/jar/apk, 7z, tar(.gz/.bz2/.xz) and rar read-only; extract by copying out.
+Browse read-only, and extract in one pass: zip and its relatives (jar, apk, zipx, split-APK
+bundles), 7z, rar, iso, cpio, ar/deb, tar compressed or not (gz, bz2, xz, zst, lz4, lz, lzma, Z),
+and single compressed files of each of those kinds. A native library reads them all; zip entries
+can be stored, deflated, Deflate64, bzip2, LZMA, XZ, zstd, PPMd, or one of the old PKZIP methods
+(shrink, implode). Encrypted entries aren't supported. The F-Droid build can't open solid RAR 4
+or RAR 1.4 archives; see [docs/fdroid.md](docs/fdroid.md).
 Anything installable installs from right there — see below.
 
 ### High-performance zip
 
-Creation deflates every entry across all CPU cores (commons-compress
-`ParallelScatterZipCreator`, STORE for already-compressed media). Extraction runs one
-`ZipFile` handle per worker off a shared queue. Zip-Slip guarded; falls back to
-single-threaded streaming when temp space is tight.
+Creation deflates entries across all CPU cores and STOREs already-compressed media, which goes
+straight from its source into the zip without being staged anywhere. Extraction parses the
+central directory once, then runs one native entry stream per worker off a shared queue, each
+reading its own entries at their own offsets. Every entry's CRC is checked. Zip-Slip guarded;
+creation falls back to single-threaded streaming when temp space is tight.
 
 ### App manager
 
@@ -228,7 +234,7 @@ That last row is enforced by the OS, not by policy — verify it yourself in
 | Architecture | MVVM + StateFlow, manual DI composition root (`di/Graph`); app module + a shaded bundletool vendor module |
 | Persistence | DataStore Preferences |
 | Media/Images | Coil 3 (GIF, custom fetchers: app icons, APK/bundle icons, disk-cached video thumbnails), Media3 ExoPlayer |
-| Archives | java.util.zip, commons-compress (+xz), junrar |
+| Archives | libxfarchive (`app/src/main/cpp`, NDK): a read-only libarchive 3.8 subset with zstd, liblzma, bzip2 and lz4 decoders, plus our own random-access zip reader; zip writing on the platform's zlib. junrar for solid RAR 4 (`full` flavor) |
 | Privileged access | Shizuku 13.1.5 (user service, real fds) · `su` shell |
 | Package install | PackageInstaller sessions · vendored bundletool 1.18.3 · ARSCLib (in-process aapt2) · minimal self-signed signer |
 
@@ -262,6 +268,10 @@ app/src/main/java/app/local1st/files/
     ├── appinfo/   app details overlay
     └── theme/     MaterialExpressiveTheme setup
 
+app/src/main/cpp/           libxfarchive: CMake project, JNI, zip reader; third_party/ holds the
+                            vendored libarchive, zstd, xz, bzip2 and lz4 sources (README there)
+app/src/full/               RarArchives: junrar for solid RAR 4: full flavor (GitHub, Play)
+app/src/fdroid/             RarArchives: no fallback: fdroid flavor (docs/fdroid.md)
 baselineprofile/            Baseline Profile generator (:baselineprofile) for AOT compilation
 vendor/bundletool-shaded/   Gradle module shading bundletool 1.18.3 + its pinned deps
 ```
@@ -273,22 +283,30 @@ Entry ids are URI-like strings: `file:///abs/path`,
 ## Build & run
 
 ```bash
-./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:assembleFullDebug
+adb install -r app/build/outputs/apk/full/debug/app-full-debug.apk
 ```
 
-Requires JDK 17+ and an Android SDK with platform 37. On first launch grant
-"All files access" (the app deep-links to the system page).
+Requires JDK 17+ and an Android SDK with platform 37. The first build installs NDK 29.0.14206865
+and CMake 3.31.6 into the SDK for the native archive library; the JVM unit tests build the same
+library for the host and need a C compiler. On first launch grant "All files access" (the app
+deep-links to the system page).
+
+GitHub releases and Google Play ship the `full` flavor. `fdroid` (`:app:assembleFdroidDebug`) is
+what F-Droid builds: the same app without junrar, so without solid RAR 4
+([why](docs/fdroid.md)).
 
 ## Releases
 
 A GitHub Actions workflow ([`.github/workflows/release.yml`](.github/workflows/release.yml))
 builds a signed APK on every push to `main` on GitHub-hosted Ubuntu runners:
 
-- The build number (`versionCode`) increments each run (`github.run_number`).
-- `versionName` lives in `version.properties`. While it's unchanged, each push just
-  refreshes a single rolling **`nightly`** prerelease with the latest build. Bump
-  `versionName` to cut a new stable `vX.Y` release.
+- `versionName` and `versionCode` live in `version.properties`. While `versionName` is
+  unchanged, each push just refreshes a single rolling **`nightly`** prerelease, whose
+  `versionCode` adds the number of commits since the last release.
+- To cut a new stable `vX.Y` release, bump `versionName`. In the same commit, raise
+  `versionCode` above the nightly's build number; CI refuses a lower one. The tag then builds
+  to exactly that `versionCode`, which is how F-Droid picks up releases.
 - Signing keys/passwords come from repo secrets: `KEYSTORE_BASE64`,
   `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`.
 

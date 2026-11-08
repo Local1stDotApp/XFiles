@@ -1,8 +1,10 @@
 package app.local1st.files.core.fs
 
-import com.github.junrar.Archive
+import app.local1st.files.core.archive.ArchivePaths
+import app.local1st.files.core.archive.LibArchiveReader
+import app.local1st.files.core.archive.NativeArchive
+import app.local1st.files.core.archive.NativeZip
 import app.local1st.files.core.util.FileTypes
-import java.io.BufferedInputStream
 import java.io.Closeable
 import java.io.File
 import java.io.FileInputStream
@@ -11,20 +13,16 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.io.RandomAccessFile
-import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry
-import org.apache.commons.compress.archivers.sevenz.SevenZFile
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
-import org.apache.commons.compress.archivers.zip.ZipFile
-import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
-import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
-import org.apache.commons.compress.compressors.xz.XZCompressorInputStream
 
 /**
  * Read-only browsing of archive files as virtual folders.
  *
- * Serves every `zip://<archive>!/<inner>` id regardless of the actual archive format:
- * zip/jar/apk (java.util.zip), 7z (commons-compress), tar and compressed tar
- * (commons-compress), rar (junrar), plus single-file gz/bz2/xz pseudo-archives.
+ * Serves every `zip://<archive>!/<inner>` id regardless of the actual archive format, all read
+ * by libxfarchive (native code): zip and its relatives (jar, apk, zipx, split-APK bundles) by
+ * its random-access zip reader; 7z, RAR, tar (plain or compressed with gzip, bzip2, xz, zstd,
+ * lz4, lzip, lzma or compress), ISO 9660, cpio and ar/deb by its libarchive; and single-file
+ * compressed streams as one-file pseudo-archives. The full flavor's [RarArchives] still reads
+ * solid RAR 4 archives, which libarchive can't.
  *
  * Each archive is parsed once into an in-memory tree of [Node]s, cached in a small
  * LRU keyed by archive path + file mtime + length, so re-listing directories and
@@ -37,6 +35,8 @@ class ArchiveFileSystem(
     private val grantStamp: (File) -> Pair<Long, Long>? = { null },
     /** Bytes of an archive [File] cannot see. Null when there is no grant stream. */
     private val openGrant: (File) -> InputStream? = { null },
+    /** MIME type by file name; the JVM tests swap out Android's lookup. */
+    private val mimeOf: (String) -> String? = FileTypes::mimeOf,
 ) : XFileSystem {
 
     override val scheme: String = XId.SCHEME_ZIP
@@ -90,19 +90,66 @@ class ArchiveFileSystem(
             ?: throw IOException("Entry not found in ${archiveFile.name}: /$innerPath")
         if (node.isDir) throw IOException("Cannot open a folder as a file: ${node.name}")
         val rawName = node.rawName ?: node.innerPath
-        return when (val format = formatOf(archiveFile.name)) {
-            ArchiveFormat.ZIP -> openZipEntry(archiveFile, rawName)
-            ArchiveFormat.SEVEN_Z -> openSevenZEntry(archiveFile, rawName, node.size)
-            ArchiveFormat.RAR -> openRarEntry(archiveFile, rawName, node.size)
-            ArchiveFormat.TAR,
-            ArchiveFormat.TAR_GZ,
-            ArchiveFormat.TAR_BZ2,
-            ArchiveFormat.TAR_XZ,
-            -> openTarEntry(archiveFile, format, rawName)
-            ArchiveFormat.GZ,
-            ArchiveFormat.BZ2,
-            ArchiveFormat.XZ,
-            -> openSingleCompressed(archiveFile, format)
+        return try {
+            when (val format = formatOf(archiveFile.name)) {
+                ArchiveFormat.ZIP -> openZipEntry(archiveFile, node.index)
+                ArchiveFormat.RAR -> if (RarArchives.readsItself(archiveFile)) {
+                    RarArchives.openEntry(archiveFile, rawName, node.index)
+                } else {
+                    openLibArchiveEntry(archiveFile, format, node.index, rawName)
+                }
+                ArchiveFormat.SINGLE -> openSingleCompressed(archiveFile)
+                else -> openLibArchiveEntry(archiveFile, format, node.index, rawName)
+            }
+        } catch (e: Exception) {
+            throw e.asCannotOpen(archiveFile)
+        }
+    }
+
+    /**
+     * Streams every file in the archive behind [archive] (its own entry or any entry inside it)
+     * once, in archive order. [visit] gets each file's inner path, as [list] shows it, and a
+     * stream that is only valid during the call. One pass: extracting a tar.xz or a solid 7z
+     * decodes it once, instead of once per file.
+     */
+    fun forEachFile(archive: XEntry, visit: (innerPath: String, input: InputStream) -> Unit) {
+        val archivePath = if (XId.schemeOf(archive.id) == XId.SCHEME_ZIP) {
+            XId.zipArchivePath(archive.id)
+        } else {
+            archive.localPath ?: archive.path
+        }
+        val archiveFile = requireArchiveFile(archivePath)
+        val tree = treeFor(archiveFile)
+        val format = formatOf(archiveFile.name)
+        /** The node an archive entry fills, unless a later entry or a folder took its place. */
+        fun target(rawName: String, index: Int): Node? {
+            val node = tree.byPath[ArchivePaths.normalize(rawName)] ?: return null
+            return node.takeIf { !it.isDir && it.index == index }
+        }
+        when {
+            format == ArchiveFormat.ZIP -> NativeZip.open(archiveFile).use { zip ->
+                for (zipEntry in zip.entries) {
+                    if (zipEntry.isDirectory) continue
+                    val node = target(zipEntry.name, zipEntry.index) ?: continue
+                    zip.openEntry(zipEntry.index).use { visit(node.innerPath, it) }
+                }
+            }
+            format == ArchiveFormat.SINGLE -> {
+                val node = tree.root.children.values.firstOrNull() ?: return
+                openSingleCompressed(archiveFile).use { visit(node.innerPath, it) }
+            }
+            format == ArchiveFormat.RAR && RarArchives.readsItself(archiveFile) ->
+                RarArchives.forEachFile(archiveFile) { rawName, index, input ->
+                    target(rawName, index)?.let { visit(it.innerPath, input) }
+                }
+            else -> openLibArchive(archiveFile, format).use { reader ->
+                while (true) {
+                    val e = reader.next() ?: break
+                    if (!e.isFile) continue
+                    val node = target(entryName(e, archiveFile), e.ordinal) ?: continue
+                    visit(node.innerPath, reader.entryStream())
+                }
+            }
         }
     }
 
@@ -124,24 +171,33 @@ class ArchiveFileSystem(
     // Formats
     // ---------------------------------------------------------------------------------------
 
-    private enum class ArchiveFormat { ZIP, SEVEN_Z, RAR, TAR, TAR_GZ, TAR_BZ2, TAR_XZ, GZ, BZ2, XZ }
+    /** How an archive is read; compression layers are found by content, not by name. */
+    private enum class ArchiveFormat(val formats: Int) {
+        ZIP(0),
+        SEVEN_Z(NativeArchive.FORMAT_7ZIP),
+        RAR(NativeArchive.FORMAT_RAR),
+        TAR(NativeArchive.FORMAT_TAR),
+        ISO(NativeArchive.FORMAT_ISO9660),
+        CPIO(NativeArchive.FORMAT_CPIO),
+        AR(NativeArchive.FORMAT_AR),
+
+        /** One compressed file (.gz, .xz, …): an archive holding just that file. */
+        SINGLE(NativeArchive.FORMAT_RAW),
+    }
 
     private fun formatOf(fileName: String): ArchiveFormat {
         val n = fileName.lowercase()
+        val ext = n.substringAfterLast('.', "")
         return when {
-            n.endsWith(".tar") -> ArchiveFormat.TAR
-            n.endsWith(".tar.gz") || n.endsWith(".tgz") -> ArchiveFormat.TAR_GZ
-            n.endsWith(".tar.bz2") || n.endsWith(".tbz2") -> ArchiveFormat.TAR_BZ2
-            n.endsWith(".tar.xz") || n.endsWith(".txz") -> ArchiveFormat.TAR_XZ
-            n.endsWith(".zip") || n.endsWith(".jar") || n.endsWith(".apk") ||
-                n.endsWith(".aab") ||
-                n.substringAfterLast('.', "") in FileTypes.apkBundleExtensions ->
-                ArchiveFormat.ZIP
-            n.endsWith(".7z") -> ArchiveFormat.SEVEN_Z
-            n.endsWith(".rar") -> ArchiveFormat.RAR
-            n.endsWith(".gz") -> ArchiveFormat.GZ
-            n.endsWith(".bz2") -> ArchiveFormat.BZ2
-            n.endsWith(".xz") -> ArchiveFormat.XZ
+            n.endsWith(".tar") || TAR_SUFFIXES.any { n.endsWith(it) } -> ArchiveFormat.TAR
+            ext in TAR_EXTENSIONS -> ArchiveFormat.TAR
+            ext in ZIP_EXTENSIONS || ext in FileTypes.apkBundleExtensions -> ArchiveFormat.ZIP
+            ext == "7z" -> ArchiveFormat.SEVEN_Z
+            ext == "rar" -> ArchiveFormat.RAR
+            ext == "iso" -> ArchiveFormat.ISO
+            ext == "cpio" -> ArchiveFormat.CPIO
+            ext == "ar" || ext == "deb" -> ArchiveFormat.AR
+            ext in SINGLE_EXTENSIONS -> ArchiveFormat.SINGLE
             else -> throw IOException("Unsupported archive type: $fileName")
         }
     }
@@ -157,8 +213,10 @@ class ArchiveFileSystem(
         var isDir: Boolean,
         var size: Long = -1L,
         var mtime: Long = 0L,
-        /** Exact entry name as stored in the archive, used to reopen the entry later. */
+        /** Exact entry name as stored in the archive. */
         var rawName: String? = null,
+        /** The entry's position in the archive, used to reopen it; -1 for implied folders. */
+        var index: Int = -1,
     ) {
         val children = LinkedHashMap<String, Node>()
     }
@@ -189,19 +247,12 @@ class ArchiveFileSystem(
         val format = formatOf(archiveFile.name)
         val builder = TreeBuilder(archiveFile.name, archiveFile.lastModified())
         try {
-            when (format) {
-                ArchiveFormat.ZIP -> parseZip(archiveFile, builder)
-                ArchiveFormat.SEVEN_Z -> parseSevenZ(archiveFile, builder)
-                ArchiveFormat.RAR -> parseRar(archiveFile, builder)
-                ArchiveFormat.TAR,
-                ArchiveFormat.TAR_GZ,
-                ArchiveFormat.TAR_BZ2,
-                ArchiveFormat.TAR_XZ,
-                -> parseTar(archiveFile, format, builder)
-                ArchiveFormat.GZ,
-                ArchiveFormat.BZ2,
-                ArchiveFormat.XZ,
-                -> parseSingleCompressed(archiveFile, format, builder)
+            when {
+                format == ArchiveFormat.ZIP -> parseZip(archiveFile, builder)
+                format == ArchiveFormat.SINGLE -> parseSingleCompressed(archiveFile, builder)
+                format == ArchiveFormat.RAR && RarArchives.readsItself(archiveFile) ->
+                    RarArchives.list(archiveFile, builder::add)
+                else -> parseLibArchive(archiveFile, format, builder)
             }
         } catch (e: Exception) {
             throw IOException("Cannot open archive ${archiveFile.name}", e)
@@ -214,14 +265,14 @@ class ArchiveFileSystem(
         private val root = Node(name = rootName, innerPath = "", isDir = true, mtime = rootMtime)
         private val byPath = HashMap<String, Node>().apply { put("", root) }
 
-        fun add(rawName: String, isDir: Boolean, size: Long, mtime: Long) {
-            val normalized = normalizeInnerPath(rawName)
+        fun add(rawName: String, isDir: Boolean, size: Long, mtime: Long, index: Int) {
+            val normalized = ArchivePaths.normalize(rawName)
             if (normalized.isEmpty()) return
             val segments = normalized.split('/')
             var current = root
             val pathSoFar = StringBuilder()
-            for ((index, segment) in segments.withIndex()) {
-                val isLast = index == segments.lastIndex
+            for ((i, segment) in segments.withIndex()) {
+                val isLast = i == segments.lastIndex
                 if (pathSoFar.isNotEmpty()) pathSoFar.append('/')
                 pathSoFar.append(segment)
                 val segmentIsDir = !isLast || isDir
@@ -239,6 +290,7 @@ class ArchiveFileSystem(
                 if (isLast) {
                     child.rawName = rawName
                     child.mtime = mtime
+                    child.index = index
                     if (!child.isDir) child.size = size
                 }
                 current = child
@@ -254,7 +306,7 @@ class ArchiveFileSystem(
         isDir = node.isDir,
         size = if (node.isDir) -1L else node.size,
         mtime = node.mtime,
-        mime = if (node.isDir) null else FileTypes.mimeOf(node.name),
+        mime = if (node.isDir) null else mimeOf(node.name),
         hidden = node.name.startsWith("."),
         canRead = true,
         canWrite = false,
@@ -273,73 +325,47 @@ class ArchiveFileSystem(
     // ---------------------------------------------------------------------------------------
 
     private fun parseZip(archiveFile: File, builder: TreeBuilder) {
-        newZipFile(archiveFile).use { zip ->
-            val entries = zip.entries
-            while (entries.hasMoreElements()) {
-                val e = entries.nextElement()
+        NativeZip.open(archiveFile).use { zip ->
+            for (e in zip.entries) {
                 builder.add(
                     rawName = e.name,
                     isDir = e.isDirectory,
                     size = e.size,
                     mtime = e.time.takeIf { it > 0 } ?: 0L,
+                    index = e.index,
                 )
             }
         }
     }
 
-    private fun parseSevenZ(archiveFile: File, builder: TreeBuilder) {
-        SevenZFile.builder().setFile(archiveFile).get().use { sevenZ ->
-            var e = sevenZ.nextEntry
-            while (e != null) {
+    private fun parseLibArchive(archiveFile: File, format: ArchiveFormat, builder: TreeBuilder) {
+        openLibArchive(archiveFile, format).use { reader ->
+            while (true) {
+                val e = reader.next() ?: break
+                // Files and folders only; links and devices have no bytes to browse.
+                if (!e.isDirectory && !e.isFile) continue
                 builder.add(
-                    rawName = sevenZEntryName(e, archiveFile),
+                    rawName = entryName(e, archiveFile),
                     isDir = e.isDirectory,
                     size = if (e.isDirectory) -1L else e.size,
-                    mtime = if (e.hasLastModifiedDate) e.lastModifiedDate.time else 0L,
-                )
-                e = sevenZ.nextEntry
-            }
-        }
-    }
-
-    private fun parseRar(archiveFile: File, builder: TreeBuilder) {
-        Archive(archiveFile).use { rar ->
-            for (header in rar.fileHeaders) {
-                builder.add(
-                    rawName = header.fileName,
-                    isDir = header.isDirectory,
-                    size = if (header.isDirectory) -1L else header.fullUnpackSize,
-                    mtime = header.mTime?.time ?: 0L,
+                    mtime = e.mtime.takeIf { it > 0 } ?: 0L,
+                    index = e.ordinal,
                 )
             }
         }
     }
 
-    private fun parseTar(archiveFile: File, format: ArchiveFormat, builder: TreeBuilder) {
-        openTarStream(archiveFile, format).use { tarIn ->
-            var e = tarIn.nextEntry
-            while (e != null) {
-                // Skip special entries (links, devices); browsing shows files and dirs only.
-                if (e.isDirectory || e.isFile) {
-                    builder.add(
-                        rawName = e.name,
-                        isDir = e.isDirectory,
-                        size = if (e.isDirectory) -1L else e.size,
-                        mtime = e.lastModifiedDate?.time ?: 0L,
-                    )
-                }
-                e = tarIn.nextEntry
-            }
-        }
-    }
-
-    private fun parseSingleCompressed(archiveFile: File, format: ArchiveFormat, builder: TreeBuilder) {
-        // Opening the stream validates the magic bytes so corrupt files fail at list() time.
-        openSingleCompressed(archiveFile, format).close()
+    private fun parseSingleCompressed(archiveFile: File, builder: TreeBuilder) {
+        // Opening the stream checks that the file really is compressed, so a corrupt or
+        // mislabeled file fails at list() time.
+        openSingleCompressed(archiveFile).close()
         val name = archiveFile.name.substringBeforeLast('.').ifEmpty { archiveFile.name }
-        val sizeHint = if (format == ArchiveFormat.GZ) gzipSizeHint(archiveFile) else -1L
-        builder.add(rawName = name, isDir = false, size = sizeHint, mtime = archiveFile.lastModified())
+        val sizeHint = if (isGzip(archiveFile)) gzipSizeHint(archiveFile) else -1L
+        builder.add(rawName = name, isDir = false, size = sizeHint, mtime = archiveFile.lastModified(), index = 0)
     }
+
+    private fun isGzip(archiveFile: File): Boolean =
+        archiveFile.name.lowercase().endsWith(".gz")
 
     /** Uncompressed size from the gzip ISIZE trailer (mod 2^32, so only a hint). */
     private fun gzipSizeHint(archiveFile: File): Long {
@@ -363,124 +389,66 @@ class ArchiveFileSystem(
     // Per-format entry streaming
     // ---------------------------------------------------------------------------------------
 
-    private fun openZipEntry(archiveFile: File, rawName: String): InputStream {
-        val zip = try {
-            newZipFile(archiveFile)
-        } catch (e: Exception) {
-            throw e.asCannotOpen(archiveFile)
-        }
+    private fun openZipEntry(archiveFile: File, index: Int): InputStream {
+        val zip = NativeZip.open(archiveFile)
         try {
-            val zipEntry = zip.getEntry(rawName)
-            if (zipEntry == null || zipEntry.isDirectory) {
-                throw IOException("Entry not found in ${archiveFile.name}: $rawName")
-            }
-            val base = zip.getInputStream(zipEntry)
-                ?: throw IOException("Entry not found in ${archiveFile.name}: $rawName")
-            return ResourceClosingInputStream(base, zip)
+            return ResourceClosingInputStream(zip.openEntry(index), zip)
         } catch (e: Exception) {
             closeQuietly(zip)
-            throw e.asCannotOpen(archiveFile)
+            throw e
         }
     }
 
-    private fun openSevenZEntry(archiveFile: File, rawName: String, knownSize: Long): InputStream {
-        // Stream the entry (SevenZFile.read serves the current entry's bytes) instead of
-        // buffering it whole, so large members can be copied/extracted out of the archive.
-        // Viewers apply their own preview caps.
-        val sevenZ = try {
-            SevenZFile.builder().setFile(archiveFile).get()
-        } catch (e: Exception) {
-            throw e.asCannotOpen(archiveFile)
-        }
+    /**
+     * Walks to entry [index] and streams it. A name check guards against an archive that
+     * changed since it was listed.
+     */
+    private fun openLibArchiveEntry(
+        archiveFile: File,
+        format: ArchiveFormat,
+        index: Int,
+        rawName: String,
+    ): InputStream {
+        val reader = openLibArchive(archiveFile, format)
         try {
-            var e = sevenZ.nextEntry
-            while (e != null) {
-                if (!e.isDirectory && sevenZEntryName(e, archiveFile) == rawName) {
-                    return ResourceClosingInputStream(SevenZEntryInputStream(sevenZ), sevenZ)
+            while (true) {
+                val e = reader.next() ?: break
+                if (e.ordinal < index) continue
+                if (e.ordinal == index && e.isFile && entryName(e, archiveFile) == rawName) {
+                    if (e.isEncrypted) throw IOException("$rawName is password-protected")
+                    return reader.detachEntryStream()
                 }
-                e = sevenZ.nextEntry
+                break
             }
             throw IOException("Entry not found in ${archiveFile.name}: $rawName")
         } catch (e: Exception) {
-            closeQuietly(sevenZ)
-            throw e.asCannotOpen(archiveFile)
+            closeQuietly(reader)
+            throw e
         }
     }
 
-    /** Adapts a positioned [SevenZFile] to a pull [InputStream] over the current entry. */
-    private class SevenZEntryInputStream(private val sevenZ: SevenZFile) : InputStream() {
-        override fun read(): Int = sevenZ.read()
-        override fun read(b: ByteArray, off: Int, len: Int): Int = sevenZ.read(b, off, len)
-        override fun close() = sevenZ.close()
+    private fun openLibArchive(archiveFile: File, format: ArchiveFormat): LibArchiveReader {
+        val volumes = if (format == ArchiveFormat.RAR) RarVolumes.volumesOf(archiveFile) else listOf(archiveFile)
+        return LibArchiveReader.open(volumes, format.formats)
     }
 
-    private fun openRarEntry(archiveFile: File, rawName: String, knownSize: Long): InputStream {
-        val rar = try {
-            Archive(archiveFile)
-        } catch (e: Exception) {
-            throw e.asCannotOpen(archiveFile)
-        }
+    private fun openSingleCompressed(archiveFile: File): InputStream {
+        val reader = LibArchiveReader.open(listOf(archiveFile), ArchiveFormat.SINGLE.formats)
         try {
-            val header = rar.fileHeaders.firstOrNull { !it.isDirectory && it.fileName == rawName }
-                ?: throw IOException("Entry not found in ${archiveFile.name}: $rawName")
-            // getInputStream streams via a background thread; no full-file buffering.
-            return ResourceClosingInputStream(rar.getInputStream(header), rar)
-        } catch (e: Exception) {
-            closeQuietly(rar)
-            throw e.asCannotOpen(archiveFile)
-        }
-    }
-
-    private fun openTarEntry(archiveFile: File, format: ArchiveFormat, rawName: String): InputStream {
-        var tarIn: TarArchiveInputStream? = null
-        try {
-            tarIn = openTarStream(archiveFile, format)
-            var e = tarIn.nextEntry
-            while (e != null) {
-                if (e.isFile && e.name == rawName) {
-                    // Positioned at the entry: reads yield its bytes and EOF at the entry end.
-                    return tarIn
-                }
-                e = tarIn.nextEntry
+            // The raw reader takes any bytes; only a decompression filter makes it an archive.
+            if (reader.next() == null || reader.filter == 0) {
+                throw IOException("${archiveFile.name} is not compressed data")
             }
-            throw IOException("Entry not found in ${archiveFile.name}: $rawName")
+            return reader.detachEntryStream()
         } catch (e: Exception) {
-            tarIn?.let { closeQuietly(it) }
-            throw e.asCannotOpen(archiveFile)
+            closeQuietly(reader)
+            throw e
         }
     }
 
-    private fun openTarStream(archiveFile: File, format: ArchiveFormat): TarArchiveInputStream {
-        val raw = BufferedInputStream(FileInputStream(archiveFile), STREAM_BUFFER_SIZE)
-        try {
-            val plain = when (format) {
-                ArchiveFormat.TAR -> raw
-                ArchiveFormat.TAR_GZ -> GzipCompressorInputStream(raw, true)
-                ArchiveFormat.TAR_BZ2 -> BZip2CompressorInputStream(raw, true)
-                ArchiveFormat.TAR_XZ -> XZCompressorInputStream(raw, true)
-                else -> throw IllegalArgumentException("Not a tar format: $format")
-            }
-            return TarArchiveInputStream(plain)
-        } catch (e: Exception) {
-            closeQuietly(raw)
-            throw e.asCannotOpen(archiveFile)
-        }
-    }
-
-    private fun openSingleCompressed(archiveFile: File, format: ArchiveFormat): InputStream {
-        val raw = BufferedInputStream(FileInputStream(archiveFile), STREAM_BUFFER_SIZE)
-        try {
-            return when (format) {
-                ArchiveFormat.GZ -> GzipCompressorInputStream(raw, true)
-                ArchiveFormat.BZ2 -> BZip2CompressorInputStream(raw, true)
-                ArchiveFormat.XZ -> XZCompressorInputStream(raw, true)
-                else -> throw IllegalArgumentException("Not a single-file format: $format")
-            }
-        } catch (e: Exception) {
-            closeQuietly(raw)
-            throw e.asCannotOpen(archiveFile)
-        }
-    }
+    /** 7z can store a single unnamed entry; fall back to the archive's own base name. */
+    private fun entryName(entry: LibArchiveReader.Entry, archiveFile: File): String =
+        entry.path.ifEmpty { archiveFile.name.substringBeforeLast('.').ifEmpty { archiveFile.name } }
 
     // ---------------------------------------------------------------------------------------
     // Helpers
@@ -505,7 +473,8 @@ class ArchiveFileSystem(
 
     private fun requireArchiveFile(path: String): File {
         val file = File(path)
-        // File.isFile and ZipFile follow links. A bin symlink must not open the live target.
+        // File.isFile and the native readers follow links. A bin symlink must not open the
+        // live target.
         if (followsIntoBin(path)) {
             throw IOException("Cannot open ${file.name}")
         }
@@ -513,7 +482,7 @@ class ArchiveFileSystem(
         return stageGrantArchive(file) ?: throw IOException("Archive not found: ${file.name}")
     }
 
-    /** ZipFile needs a real file. Reuse a staged copy only while size and mtime match. */
+    /** The native readers need a real file. Reuse a staged copy only while size and mtime match. */
     private fun stageGrantArchive(file: File): File? {
         val path = file.absolutePath
         val stamp = grantStamp(file)
@@ -554,23 +523,11 @@ class ArchiveFileSystem(
     /** Compound tar suffixes must survive; format detection reads the staged name. */
     private fun stageSuffix(name: String): String {
         val lower = name.lowercase()
-        val compound = listOf(".tar.gz", ".tar.bz2", ".tar.xz").firstOrNull { lower.endsWith(it) }
+        val compound = TAR_SUFFIXES.firstOrNull { lower.endsWith(it) }
         if (compound != null) return compound
         val suffix = name.substringAfterLast('.', "")
         return if (suffix.isNotEmpty() && suffix.length <= 8 && '.' !in suffix) ".$suffix" else ".bin"
     }
-
-    /** Android's ZipFile rejects duplicate names; Commons Compress safely exposes the first one. */
-    private fun newZipFile(archiveFile: File): ZipFile = try {
-        ZipFile.builder().setFile(archiveFile).get()
-    } catch (_: IllegalArgumentException) {
-        // Legacy ZIPs with non-UTF-8 entry names; Latin-1 accepts any byte sequence.
-        ZipFile.builder().setFile(archiveFile).setCharset(Charsets.ISO_8859_1).get()
-    }
-
-    /** 7z can store a single unnamed entry; fall back to the archive's own base name. */
-    private fun sevenZEntryName(entry: SevenZArchiveEntry, archiveFile: File): String =
-        entry.name ?: archiveFile.name.substringBeforeLast('.').ifEmpty { archiveFile.name }
 
     private fun readOnly(): IOException = IOException("Archives are read-only")
 
@@ -585,7 +542,7 @@ class ArchiveFileSystem(
         }
     }
 
-    /** Forwards reads to [base]; closing also closes [alsoClose] (e.g. the backing ZipFile). */
+    /** Forwards reads to [base]; closing also closes [alsoClose] (e.g. the backing archive). */
     private class ResourceClosingInputStream(
         base: InputStream,
         private val alsoClose: Closeable,
@@ -601,13 +558,18 @@ class ArchiveFileSystem(
 
     private companion object {
         const val MAX_CACHED_ARCHIVES = 8
-        const val STREAM_BUFFER_SIZE = 64 * 1024
 
-        /** Normalizes separators and strips empty/`.`/`..` segments. */
-        fun normalizeInnerPath(rawName: String): String =
-            rawName.replace('\\', '/')
-                .split('/')
-                .filter { it.isNotEmpty() && it != "." && it != ".." }
-                .joinToString("/")
+        val ZIP_EXTENSIONS = setOf("zip", "zipx", "jar", "apk", "aab")
+
+        /** Compressed tars named with one extension. */
+        val TAR_EXTENSIONS = setOf("tgz", "taz", "tbz", "tbz2", "txz", "tzst", "tlz")
+
+        /** Compressed tars named with two. */
+        val TAR_SUFFIXES = listOf(
+            ".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst", ".tar.lz4", ".tar.lz", ".tar.lzma", ".tar.z",
+        )
+
+        /** One compressed file each. */
+        val SINGLE_EXTENSIONS = setOf("gz", "bz2", "xz", "zst", "lz4", "lz", "lzma", "z")
     }
 }

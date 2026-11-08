@@ -45,8 +45,9 @@ class ArchiveFileSystemTest {
         val entries = fileSystem.list(archiveEntry)
 
         assertEquals(listOf("duplicate"), entries.map(XEntry::name))
+        // The later entry wins, as when extracting, and its size is the one listed.
         val contents = fileSystem.openIn(entries.single()).bufferedReader().use { it.readText() }
-        assertEquals("first", contents)
+        assertEquals("later", contents)
     }
 
     @Test

@@ -57,8 +57,9 @@ from anyone, of any age.
 ## Third parties
 
 XFiles contains no third-party SDKs that collect data. It bundles open-source libraries
-(Jetpack Compose, Coil, Apache Commons Compress, Media3/ExoPlayer, junrar) purely as
-local code — none of them are given network access, because the app has none.
+(Jetpack Compose, Coil, Media3/ExoPlayer, libarchive, zstd, xz, bzip2, lz4, and junrar in the
+GitHub and Play builds) purely as local code — none of them are given network access, because
+the app has none.
 
 ## Changes to this policy
 

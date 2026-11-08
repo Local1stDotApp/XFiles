@@ -28,6 +28,22 @@ class FileTypesTest {
             "sample.gz",
             "sample.bz2",
             "sample.xz",
+            "sample.zipx",
+            "sample.tar.zst",
+            "sample.tzst",
+            "sample.zst",
+            "sample.tar.lz4",
+            "sample.lz4",
+            "sample.tar.lz",
+            "sample.lz",
+            "sample.tlz",
+            "sample.lzma",
+            "sample.tar.Z",
+            "sample.Z",
+            "sample.iso",
+            "sample.cpio",
+            "sample.ar",
+            "sample.deb",
         )
 
         supported.forEach { assertTrue("Expected support for $it", FileTypes.isSupportedArchive(it)) }
@@ -35,7 +51,7 @@ class FileTypesTest {
 
     @Test
     fun unsupportedArchives_areNotAdvertised() {
-        listOf("sample.zst", "sample.iso", "sample.cab", "sample.lzh").forEach {
+        listOf("sample.cab", "sample.lzh", "sample.xar", "sample.dmg", "sample.wim").forEach {
             assertFalse("Did not expect support for $it", FileTypes.isSupportedArchive(it))
         }
     }

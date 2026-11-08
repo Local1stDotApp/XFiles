@@ -181,6 +181,22 @@ object ExternalOpenResolver {
         "application/x-bzip-compressed-tar",
         "application/x-xz",
         "application/x-xz-compressed-tar",
+        "application/zstd",
+        "application/x-zstd",
+        "application/x-zstd-compressed-tar",
+        "application/x-lz4",
+        "application/x-lz4-compressed-tar",
+        "application/x-lzip",
+        "application/x-lzip-compressed-tar",
+        "application/x-lzma",
+        "application/x-lzma-compressed-tar",
+        "application/x-compress",
+        "application/x-tarz",
+        "application/x-iso9660-image",
+        "application/x-cpio",
+        "application/x-archive",
+        "application/vnd.debian.binary-package",
+        "application/x-debian-package",
     )
 
     private fun extensionFor(mime: String?): String? = when (mime) {
@@ -189,10 +205,25 @@ object ExternalOpenResolver {
         "application/vnd.android.package-archive" -> ".apk"
         "application/x-7z-compressed" -> ".7z"
         "application/vnd.rar", "application/x-rar-compressed" -> ".rar"
-        "application/x-tar", "application/x-gtar", "application/x-compressed-tar" -> ".tar"
+        // A tar reads its own compression, whatever the extension says.
+        "application/x-tar", "application/x-gtar", "application/x-compressed-tar",
+        "application/x-bzip-compressed-tar", "application/x-xz-compressed-tar",
+        "application/x-zstd-compressed-tar", "application/x-lz4-compressed-tar",
+        "application/x-lzip-compressed-tar", "application/x-lzma-compressed-tar",
+        "application/x-tarz",
+        -> ".tar"
         "application/gzip", "application/x-gzip" -> ".gz"
-        "application/x-bzip2", "application/x-bzip-compressed-tar" -> ".bz2"
-        "application/x-xz", "application/x-xz-compressed-tar" -> ".xz"
+        "application/x-bzip2" -> ".bz2"
+        "application/x-xz" -> ".xz"
+        "application/zstd", "application/x-zstd" -> ".zst"
+        "application/x-lz4" -> ".lz4"
+        "application/x-lzip" -> ".lz"
+        "application/x-lzma" -> ".lzma"
+        "application/x-compress" -> ".Z"
+        "application/x-iso9660-image" -> ".iso"
+        "application/x-cpio" -> ".cpio"
+        "application/x-archive" -> ".ar"
+        "application/vnd.debian.binary-package", "application/x-debian-package" -> ".deb"
         else -> null
     }
 

@@ -6,7 +6,7 @@ plugins {
 }
 
 // Drives the app through its hot paths and records the classes and methods they run into
-// app/src/release/generated/baselineProfiles. Run: ./gradlew :app:generateBaselineProfile
+// app/src/main/generated/baselineProfiles. Run: ./gradlew :app:generateBaselineProfile
 android {
     namespace = "app.local1st.files.baselineprofile"
     compileSdk = 37
@@ -16,6 +16,9 @@ android {
         minSdk = 28
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Profile the full flavor; the fdroid flavor differs only in its RAR reader, so the
+        // profile fits both.
+        missingDimensionStrategy("distribution", "full")
     }
 
     compileOptions {

@@ -16,8 +16,9 @@ object FileTypes {
 
     val archiveExtensions =
         setOf(
-            "zip", "jar", "apk", "aab", "7z", "tar", "gz", "tgz", "bz2", "tbz2",
-            "xz", "txz", "rar",
+            "zip", "zipx", "jar", "apk", "aab", "7z", "rar", "tar",
+            "gz", "tgz", "taz", "bz2", "tbz", "tbz2", "xz", "txz", "zst", "tzst",
+            "lz4", "lz", "lzma", "tlz", "z", "iso", "cpio", "ar", "deb",
         ) +
             apkBundleExtensions
 
@@ -37,6 +38,16 @@ object FileTypes {
                 "apk" -> "application/vnd.android.package-archive"
                 "7z" -> "application/x-7z-compressed"
                 "rar" -> "application/vnd.rar"
+                "zipx" -> "application/zip"
+                "zst", "tzst" -> "application/zstd"
+                "lz4" -> "application/x-lz4"
+                "lz" -> "application/x-lzip"
+                "lzma", "tlz" -> "application/x-lzma"
+                "z", "taz" -> "application/x-compress"
+                "iso" -> "application/x-iso9660-image"
+                "cpio" -> "application/x-cpio"
+                "ar" -> "application/x-archive"
+                "deb" -> "application/vnd.debian.binary-package"
                 else -> null
             }
     }

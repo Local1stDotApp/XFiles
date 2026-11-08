@@ -67,7 +67,7 @@ class AabConverterHarnessTest {
             System.getProperty("xfiles.reviewerBundle")?.takeIf { it.isNotBlank() }?.let {
                 add("reviewer fixture" to File(it))
             }
-            add("XFiles" to File(repo, "app/build/outputs/bundle/debug/app-debug.aab"))
+            add("XFiles" to File(repo, "app/build/outputs/bundle/fullDebug/app-full-debug.aab"))
         }
         bundles.forEach { (_, bundle) -> assertTrue("Missing test bundle: $bundle", bundle.isFile) }
 

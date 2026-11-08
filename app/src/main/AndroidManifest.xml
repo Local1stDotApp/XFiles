@@ -85,6 +85,22 @@
                 <data android:mimeType="application/x-bzip-compressed-tar" />
                 <data android:mimeType="application/x-xz" />
                 <data android:mimeType="application/x-xz-compressed-tar" />
+                <data android:mimeType="application/zstd" />
+                <data android:mimeType="application/x-zstd" />
+                <data android:mimeType="application/x-zstd-compressed-tar" />
+                <data android:mimeType="application/x-lz4" />
+                <data android:mimeType="application/x-lz4-compressed-tar" />
+                <data android:mimeType="application/x-lzip" />
+                <data android:mimeType="application/x-lzip-compressed-tar" />
+                <data android:mimeType="application/x-lzma" />
+                <data android:mimeType="application/x-lzma-compressed-tar" />
+                <data android:mimeType="application/x-compress" />
+                <data android:mimeType="application/x-tarz" />
+                <data android:mimeType="application/x-iso9660-image" />
+                <data android:mimeType="application/x-cpio" />
+                <data android:mimeType="application/x-archive" />
+                <data android:mimeType="application/vnd.debian.binary-package" />
+                <data android:mimeType="application/x-debian-package" />
                 <!-- AAB/APKS/APKM/XAPK commonly arrive without a registered MIME type. -->
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>

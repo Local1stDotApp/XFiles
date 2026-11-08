@@ -68,21 +68,23 @@ since the CI secrets are write-only.
 ## 1. Build artifact
 
 Play requires an **AAB**, not an APK. The release workflow now runs
-`:app:bundleRelease` alongside `:app:assembleRelease` and uploads
-`app-release.aab` as a build artifact (90-day retention). Download it from the
-workflow run and upload that to Play.
+`:app:bundleFullRelease` alongside `:app:assembleFullRelease` and uploads
+`app-full-release.aab` as a build artifact (90-day retention). Download it from the
+workflow run and upload that to Play. Play gets the `full` flavor, which keeps junrar for solid
+RAR 4; the `fdroid` flavor is for F-Droid ([fdroid.md](fdroid.md)).
 
 Verified locally: the bundle builds clean with R8/`isMinifyEnabled = true` (7.4 MB AAB,
 3.2 MB release APK).
 
 > **Test the release build on a device before submitting.** The debug build is what has
-> been exercised so far. R8 shrinking plus reflective archive code
-> (commons-compress, junrar) is exactly where a release-only crash hides, and
-> `proguard-rules.pro` only `-keep`s `org.tukaani.xz.**`. Install a signed release APK
-> and open a zip, a 7z, a tar.gz and a rar before you ship.
+> been exercised so far. R8 shrinking is where a release-only crash hides: the native archive
+> reader is reached through JNI (`NativeArchive`, kept by the default rules for native methods),
+> and junrar is plain Java. Install a signed release APK and open a zip, a 7z, a tar.gz and a
+> rar before you ship.
 
-`versionCode` comes from `github.run_number` and increases monotonically — fine for
-Play, which rejects re-used or decreasing codes.
+A stable release's `versionCode` is the one in `version.properties`, and CI refuses one that
+doesn't outrank the last nightly — fine for Play, which rejects re-used or decreasing codes.
+(Up to 1.5.0 it was `github.run_number`.)
 
 ---
 
@@ -327,4 +329,5 @@ account's address.
   Console covers it.
 - **Consider F-Droid/IzzyOnDroid in parallel.** The metadata in `fastlane/` already
   satisfies both. Neither restricts All files access or root, so they can carry the app
-  while Play review runs.
+  while Play review runs. F-Droid builds the `fdroid` flavor, which leaves junrar out and so
+  can't open solid RAR 4; see [fdroid.md](fdroid.md).

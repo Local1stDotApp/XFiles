@@ -1,5 +1,6 @@
 package app.local1st.files.core.ops
 
+import app.local1st.files.core.fs.ArchiveFileSystem
 import app.local1st.files.core.fs.EditorSiblingScan
 import app.local1st.files.core.fs.EntryKind
 import app.local1st.files.core.fs.FsRegistry
@@ -402,7 +403,7 @@ class DefaultOperationEngine(
     private fun writeApksBundle(export: AppExport, out: OutputStream, t: RunningOpImpl) {
         val offset = t.doneBytesSnapshot()
         val sources = export.apks.map { apk ->
-            ZipTurbo.ZipSource(apk.name, isDir = false, apk.lastModified()) { FileInputStream(apk) }
+            ZipTurbo.ZipSource(apk.name, isDir = false, apk.lastModified(), { FileInputStream(apk) }, apk.length())
         }
         val done = AtomicLong(0)
         val publisher = scope.launch { while (isActive) { t.setBytesDone(offset + done.get()); delay(120) } }
@@ -733,13 +734,13 @@ class DefaultOperationEngine(
     ) {
         if (entry.id == outputId) return
         if (entry.isDir) {
-            out += ZipTurbo.ZipSource(relPath, isDir = true, entry.mtime) { EMPTY_INPUT }
+            out += ZipTurbo.ZipSource(relPath, isDir = true, entry.mtime, { EMPTY_INPUT })
             for (child in childrenForTransfer(entry, carryBin = false)) {
                 collectZipSources(child, "$relPath/${child.name}", outputId, out)
             }
         } else {
             val fs = registry.forScheme(entry.scheme)
-            out += ZipTurbo.ZipSource(relPath, isDir = false, entry.mtime) { fs.openIn(entry) }
+            out += ZipTurbo.ZipSource(relPath, isDir = false, entry.mtime, { fs.openIn(entry) }, entry.size)
         }
     }
 
@@ -756,7 +757,7 @@ class DefaultOperationEngine(
 
         val archiveFile = archive.localPath?.let(::File)
         val zipFamily =
-            archive.extension in setOf("zip", "jar", "apk", "aab") + FileTypes.apkBundleExtensions
+            archive.extension in setOf("zip", "zipx", "jar", "apk", "aab") + FileTypes.apkBundleExtensions
 
         // Fast path: parallel multi-handle extraction to a local directory.
         val directLocalWrites = (registry.forScheme(XId.SCHEME_FILE) as? LocalFileSystem)
@@ -791,24 +792,88 @@ class DefaultOperationEngine(
             return "Extracted ${archive.name}"
         }
 
-        // Fallback: sequential extraction (7z/tar/rar, or non-local destination).
+        // Everything else (7z/tar/rar/…, or a zip going somewhere ZipTurbo can't write): folders
+        // first, then the files in one pass over the archive.
         val archiveRoot = archive.copy(kind = EntryKind.ARCHIVE)
-        val children = registry.forEntry(archiveRoot).list(archiveRoot)
+        val archiveFs = registry.forEntry(archiveRoot)
+        val children = archiveFs.list(archiveRoot)
         val perSource = children.map { scanTree(it, t, carryBin = false) }
         t.setTotals(perSource.sumOf { it.bytes }, perSource.sumOf { it.items })
         t.setState(OpState.RUNNING)
         val taken = nameSetFor(destDir)
         taken += registry.forEntry(destDir).list(destDir).map { it.name }
         if (isConcealedBinName(destDir, TrashPaths.DIR_NAME)) taken += TrashPaths.DIR_NAME
+        val targets = HashMap<String, Pair<XEntry, String>>()
         for (child in children) {
             val childName = if (isConcealedBinName(destDir, child.name)) {
                 uniqueName(child.name, child.isDir, taken).also { taken += it }
             } else {
                 child.name
             }
-            copyTree(child, destDir, childName, t, carryBin = false)
+            if (archiveFs is ArchiveFileSystem) {
+                planExtract(child, destDir, childName, t, targets)
+            } else {
+                copyTree(child, destDir, childName, t, carryBin = false)
+            }
+        }
+        if (archiveFs is ArchiveFileSystem) {
+            // Archive order, so a tar.xz or a solid 7z/RAR decodes once rather than once per file.
+            archiveFs.forEachFile(archiveRoot) { innerPath, input ->
+                val (parent, name) = targets.remove(innerPath) ?: return@forEachFile
+                t.ensureActive()
+                t.current(name)
+                writeFile(input, parent, name, t)
+                t.itemsDone(1)
+            }
+            targets.keys.firstOrNull()?.let { throw IOException("Cannot extract $it from ${archive.name}") }
         }
         return "Extracted ${archive.name}"
+    }
+
+    /**
+     * [copyTree]'s walk for an archive being extracted: makes the folders the same way, and
+     * records where each file goes, keyed by its path inside the archive, for one pass over
+     * the archive to fill in.
+     */
+    private fun planExtract(
+        src: XEntry,
+        destParent: XEntry,
+        name: String,
+        t: RunningOpImpl,
+        targets: MutableMap<String, Pair<XEntry, String>>,
+    ) {
+        if (!isSafeFastRenameName(name)) throw IOException("Invalid name: $name")
+        t.ensureActive()
+        t.current(src.name)
+        if (src.isDir) {
+            val newDir = registry.forEntry(destParent).mkdir(destParent, name)
+            t.itemsDone(1)
+            for (child in childrenForTransfer(src, carryBin = false)) {
+                planExtract(child, newDir, child.name, t, targets)
+            }
+        } else {
+            targets[XId.zipInnerPath(src.id)] = destParent to name
+        }
+    }
+
+    /** [copyFile]'s write, from a stream the caller owns. */
+    private fun writeFile(input: java.io.InputStream, destParent: XEntry, name: String, t: RunningOpImpl) {
+        var completed = false
+        try {
+            registry.forEntry(destParent).openOut(destParent, name).use { output ->
+                val buffer = ByteArray(COPY_BUFFER_SIZE)
+                while (true) {
+                    t.ensureActive()
+                    val n = input.read(buffer)
+                    if (n < 0) break
+                    output.write(buffer, 0, n)
+                    t.bytesDone(n.toLong())
+                }
+            }
+            completed = true
+        } finally {
+            if (!completed) runCatching { deleteChildIfExists(destParent, name) }
+        }
     }
 
     // ----------------------------------------------------------------- Shared helpers

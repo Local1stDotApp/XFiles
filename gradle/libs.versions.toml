@@ -13,6 +13,7 @@ datastore = "1.2.1"
 documentfile = "1.1.0"
 coroutines = "1.11.0"
 coil = "3.6.3"
+# Test-only: the unit tests build their archives with these. The app reads archives natively.
 commonsCompress = "1.28.0"
 xz = "1.12"
 junrar = "8.1.1"
