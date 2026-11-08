@@ -155,7 +155,8 @@ other folder. Thumbnails, viewers and even video playback work on privileged pat
 
 ### Viewers
 
-Built-in **PDF viewer**, **image viewer** (pager + pinch zoom), **hex viewer** with
+Built-in **PDF viewer** (long-press to select and copy text on Android 15+, and on
+Android 12–14 with recent system updates), **image viewer** (pager + pinch zoom), **hex viewer** with
 on-demand paging, **audio player**, **text viewer & editor** (loads large files in
 on-demand stretches rather than all at once, with undo/redo, line wrap and GBK
 detection), and a **video player** (Media3/ExoPlayer) with **frame-accurate stepping**.
