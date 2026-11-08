@@ -1,6 +1,8 @@
 package app.local1st.files.ui.browser
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,6 +30,7 @@ import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -36,8 +39,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -80,6 +86,10 @@ private val ChevronGapStart = 2.dp
 private val ChevronSize = 12.dp
 private val IndentWidth = ChevronGapStart + ChevronSize
 private val RowHeight = 56.dp
+private val RowCorner = 12.dp
+private val HighlightStroke = 2.dp
+private const val HIGHLIGHT_ALPHA = 0.24f
+private const val HIGHLIGHT_IN_MS = 250
 
 /**
  * Tree levels a row of [rowWidth] indents before deeper rows share the last one, as in X-plore:
@@ -134,6 +144,8 @@ fun EntryRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onToggleSelect: () -> Unit,
+    /** A revealed search hit: tinted until the user next touches the pane. */
+    highlighted: Boolean = false,
     enabled: Boolean = true,
     richContent: Boolean = true,
     indentColumns: Int = Int.MAX_VALUE,
@@ -174,6 +186,18 @@ fun EntryRow(
     // Rows deeper than [indentColumns] stop indenting: they share the last column, and so do
     // their lines.
     val column = minOf(node.depth, indentColumns)
+    // An outline and a wash of primary over the selection or focus tint: light enough in
+    // either theme that the row's own text colours still read. Only the marked row pays for the
+    // fade, which is read while drawing so it redraws this row without recomposing it. The mark
+    // goes at once when the user moves on.
+    val highlightColor = MaterialTheme.colorScheme.primary
+    val highlight = if (highlighted) {
+        val fade = remember { Animatable(0f) }
+        LaunchedEffect(fade) { fade.animateTo(1f, tween(HIGHLIGHT_IN_MS)) }
+        fade
+    } else {
+        null
+    }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -189,8 +213,24 @@ fun EntryRow(
                     drawBranch(node, column, indentColumns, branch, guideColor)
                 },
             )
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(RowCorner))
             .background(background)
+            .then(
+                if (highlight == null) Modifier
+                else Modifier.drawBehind {
+                    val fraction = highlight.value
+                    drawRect(highlightColor, alpha = HIGHLIGHT_ALPHA * fraction)
+                    val stroke = HighlightStroke.toPx()
+                    drawRoundRect(
+                        highlightColor,
+                        topLeft = Offset(stroke / 2f, stroke / 2f),
+                        size = Size(size.width - stroke, size.height - stroke),
+                        cornerRadius = CornerRadius(RowCorner.toPx() - stroke / 2f),
+                        style = Stroke(stroke),
+                        alpha = fraction,
+                    )
+                },
+            )
             .combinedClickable(
                 enabled = enabled,
                 onClick = onClick,

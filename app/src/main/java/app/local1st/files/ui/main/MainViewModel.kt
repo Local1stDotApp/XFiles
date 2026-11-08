@@ -1200,11 +1200,15 @@ class MainViewModel : ViewModel() {
         activeCtrl.focusedDirEntry()?.let { navigation.navigate(AppScreen.Search(it)) }
     }
 
-    /** Navigate the active pane to a search hit and close the search screen. */
+    /**
+     * Navigate the active pane to a search hit, marked among its siblings, and close search.
+     * The list jumps there: the user did not see where it was, and scrolling through a folder
+     * of hundreds of rows on the way would compose most of them for nothing.
+     */
     fun revealSearchHit(entryId: String) {
         val current = screenBackStack.last()
         if (current.screen is AppScreen.Search) navigateBack(current.id)
-        activeCtrl.revealPath(entryId)
+        activeCtrl.revealPath(entryId, animate = false, highlight = true)
     }
 
     fun canCreateFileIn(parent: XEntry): Boolean = isFileOperationDestination(parent)

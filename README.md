@@ -168,7 +168,7 @@ fullscreen immersive.
 ### Search
 
 Live streaming recursive search with `*`/`?` wildcards. Descends into archives and
-network folders, and reveals results in the tree on tap. A long search pauses after
+network folders; tap a result to jump to it in the tree, where it stays highlighted. A long search pauses after
 each ten-second round and asks whether to keep going or search to the end. Switch
 from the current folder to **All storage** to search every volume; on Android 11+
 that reads the system's file index instead of walking each folder, so results arrive

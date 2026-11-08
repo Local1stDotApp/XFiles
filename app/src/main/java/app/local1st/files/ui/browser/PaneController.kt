@@ -25,7 +25,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,7 +42,51 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 /** A row to bring on screen, and whether a user-requested reveal should show the travel. */
-data class ScrollRequest(val id: String, val animate: Boolean)
+data class ScrollRequest(
+    val id: String,
+    val animate: Boolean,
+    /**
+     * The row's [TreeNode.key], when the reveal knows the path. An id alone can name two rows:
+     * a removable volume is a pane root and also a child of `/storage` under the root browser.
+     */
+    val key: String? = null,
+    /** Mark the row once it is on screen, so a search hit stands out among its siblings. */
+    val highlight: Boolean = false,
+)
+
+/** A row of the flattened tree, by entry id and [TreeNode.key]. */
+internal data class ShownRow(val id: String, val key: String)
+
+/** [TreeNode.key] of row [id] under the row keyed [parentKey]; a pane root's parent key is "". */
+internal fun treeRowKey(parentKey: String, id: String): String = "$parentKey|$id"
+
+/**
+ * The deepest row along [path] (a pane root first, then each visual child) that the flattened
+ * tree shows. A row shows when its parent row shows and is expanded, the parent's listing holds
+ * it, and it is not a hidden name that the tree leaves out. A target that cannot show (a dot-name
+ * while hidden files are off, a file gone since the search) falls back to the nearest folder
+ * above it.
+ */
+internal fun shownRowOnPath(
+    path: List<String>,
+    roots: List<XEntry>,
+    expanded: Set<String>,
+    children: Map<String, List<XEntry>>,
+    showHidden: Boolean,
+): ShownRow? {
+    val rootId = path.firstOrNull() ?: return null
+    if (roots.none { it.id == rootId }) return null
+    var shown = ShownRow(rootId, treeRowKey("", rootId))
+    for (index in 1..path.lastIndex) {
+        val parentId = path[index - 1]
+        if (parentId !in expanded) break
+        val id = path[index]
+        val entry = children[parentId]?.firstOrNull { it.id == id } ?: break
+        if (entry.hidden && !showHidden) break
+        shown = ShownRow(id, treeRowKey(shown.key, id))
+    }
+    return shown
+}
 
 private data class SortSpec(
     val by: SortBy = SortBy.NAME,
@@ -533,8 +576,20 @@ class PaneController(
     // during construction, so everything flatten touches must already be initialized.
     private val sortedListings = HashMap<String, SortedListing>()
 
-    /** A row the pane list should bring on screen (consumed by the UI). */
-    val scrollTo = MutableSharedFlow<ScrollRequest>(extraBufferCapacity = 1)
+    private val pendingScroll = MutableStateFlow<ScrollRequest?>(null)
+
+    /**
+     * The row the pane list should bring on screen next. It is held until the list reports it
+     * handled ([onScrollRequestHandled]): the browser is not composed while the search screen
+     * covers it, and an event sent then would be lost.
+     */
+    val scrollRequest: StateFlow<ScrollRequest?> = pendingScroll
+
+    /** The revealed search hit, marked until the user next touches this pane. */
+    private val highlightedId = MutableStateFlow<String?>(null)
+
+    /** Bumped by each [revealPath]; only the latest one may move focus and scroll. */
+    private var revealGeneration = 0L
 
     private val sortSpec: StateFlow<SortSpec?> = combine(
         Graph.settings.sortBy,
@@ -574,13 +629,15 @@ class PaneController(
         combine(focusedDirId, loadingRoots) { focus, lr -> focus to lr },
         combine(initialListPosition, startupSettled) { initial, settled -> initial to settled },
         startupRender,
-    ) { (tree, sel), (focus, lr), (initial, settled), startup ->
+        highlightedId,
+    ) { (tree, sel), (focus, lr), (initial, settled), startup, highlighted ->
         val freshIndex = initial?.takeIf { it.treeVersion == tree.version }?.index
         val useStartup = freshIndex == null && startup != null
         PaneUiState(
             nodes = if (useStartup) checkNotNull(startup).nodes else tree.nodes,
             selection = sel,
             focusedDirId = focus,
+            highlightedId = highlighted,
             loadingRoots = if (useStartup) false else lr,
             initialScrollIndex = if (useStartup) checkNotNull(startup).initialIndex else freshIndex,
             treeVersion = if (useStartup) checkNotNull(startup).version else tree.version,
@@ -1271,53 +1328,86 @@ class PaneController(
         focusedDirId.value = paneFocus(if (entry.isContainer) entry.id else XId.parent(entry.id))
     }
 
-    /** Expand the ancestor chain of [id], then scroll to it. See [ScrollRequest] for [animate]. */
-    fun revealPath(id: String, animate: Boolean = true) {
+    /**
+     * Expands the folders above [id], then has the list bring its row on screen. See
+     * [ScrollRequest] for [animate] and [highlight].
+     */
+    fun revealPath(id: String, animate: Boolean = true, highlight: Boolean = false) {
         finishStartupRestoreForInteraction()
+        if (highlight) highlightedId.value = null
+        val reveal = ++revealGeneration
         scope.launch {
-            revealPathNow(id)
-            scrollTo.tryEmit(ScrollRequest(id, animate))
+            val path = expandPathTo(id) ?: return@launch
+            // Reveals overlap when one waits on a slow listing. The last one asked for decides
+            // where the pane ends up, whichever finishes first.
+            if (reveal != revealGeneration) return@launch
+            focusedDirId.value = if (path.first() == XId.TRASH_ROOT) {
+                XId.TRASH_ROOT
+            } else {
+                paneFocus(findEntry(id)?.takeIf { it.isContainer }?.id ?: path.dropLast(1).lastOrNull())
+            }
+            val current = tree.value
+            val row = shownRowOnPath(
+                path = path,
+                roots = current.roots,
+                expanded = current.expanded,
+                children = current.children,
+                showHidden = (sortSpec.value ?: SortSpec()).showHidden,
+            ) ?: return@launch
+            pendingScroll.value = ScrollRequest(
+                id = row.id,
+                animate = animate,
+                key = row.key,
+                highlight = highlight && row.id == id,
+            )
         }
     }
 
-    /** Reveals only the visual path below a real pane root; protocol ancestors stay out of state. */
-    private suspend fun revealPathNow(id: String) {
+    /**
+     * Expands the visual path from a pane root down to [id]. Returns the path, pane root first,
+     * or null when no pane root holds [id]. Protocol ancestors stay out of state.
+     */
+    private suspend fun expandPathTo(id: String): List<String>? {
         // The pane scope is main. A mount scan here stalls the search-hit click.
         val volumeRoots = withContext(Dispatchers.IO) { Graph.freshMountedVolumePaths() }
+        // A binned file's stored file:// path sits under a hidden `.xfiles-trash` directory.
+        // Expanding that chain collapses the bin and never shows the row, so go through the bin.
         val binAncestors = binRevealAncestors(id, volumeRoots)
-        if (binAncestors != null) {
-            // The stored file:// path sits under a hidden `.xfiles-trash` directory.
-            // Expanding that chain collapses the bin and never shows the row.
-            for (ancestorId in binAncestors) {
-                val entry = if (ancestorId == XId.TRASH_ROOT) {
-                    tree.value.roots.firstOrNull { it.id == XId.TRASH_ROOT }
-                } else {
-                    findEntry(ancestorId) ?: withContext(Dispatchers.IO) {
-                        runCatching { registry.forId(ancestorId).stat(ancestorId) }.getOrNull()
-                    }
-                } ?: continue
-                if (!entry.isContainer) continue
-                markExpanded(entry.id)
-                if (tree.value.children[entry.id] == null) loadNow(entry)
-            }
-            focusedDirId.value = XId.TRASH_ROOT
-            return
-        }
-        val topLevelIds = tree.value.roots.mapTo(HashSet()) { it.id }
-        val path = pathInsidePaneRoots(id, topLevelIds) ?: return
-        for (ancestorId in path.dropLast(1)) {
-            val entry = findEntry(ancestorId)
-                ?: withContext(Dispatchers.IO) {
+        val path = binAncestors?.plus(id)
+            ?: pathInsidePaneRoots(id, tree.value.roots.mapTo(HashSet()) { it.id })
+            ?: return null
+        for (index in 0 until path.lastIndex) {
+            val ancestorId = path[index]
+            val entry = if (ancestorId == XId.TRASH_ROOT) {
+                tree.value.roots.firstOrNull { it.id == XId.TRASH_ROOT }
+            } else {
+                findEntry(ancestorId) ?: withContext(Dispatchers.IO) {
                     runCatching { registry.forId(ancestorId).stat(ancestorId) }.getOrNull()
                 }
-                ?: continue
+            } ?: continue
             if (!entry.isContainer) continue
             markExpanded(entry.id)
-            if (tree.value.children[entry.id] == null) loadNow(entry)
+            // A listing cached before the search can predate the next row on the path.
+            val current = tree.value
+            val cached = current.children[entry.id]?.takeIf { entry.id !in current.errors }
+            val kids = cached ?: loadNow(entry)
+            if (cached != null && kids.none { it.id == path[index + 1] }) {
+                loadNow(entry, fresh = true)
+            }
         }
-        focusedDirId.value = paneFocus(
-            findEntry(id)?.takeIf { it.isContainer }?.id ?: path.dropLast(1).lastOrNull(),
-        )
+        return path
+    }
+
+    /** Called by the list once it has acted on [request]; [shown] when the row is on screen. */
+    fun onScrollRequestHandled(request: ScrollRequest, shown: Boolean) {
+        // A newer reveal replaced it while the list waited: that one wins, mark included.
+        if (!pendingScroll.compareAndSet(request, null)) return
+        if (shown && request.highlight) highlightedId.value = request.id
+    }
+
+    /** Drops the search-hit mark once the user acts in this pane. */
+    fun clearHighlight() {
+        highlightedId.value = null
     }
 
     /**
@@ -1326,6 +1416,7 @@ class PaneController(
      */
     fun revealAppApk(app: XEntry) {
         finishStartupRestoreForInteraction()
+        ++revealGeneration
         scope.launch {
             markExpanded(app.id)
             focusedDirId.value = app.id
@@ -1337,13 +1428,20 @@ class PaneController(
             markExpanded(apk.id)
             loadNow(apk)
             focusedDirId.value = apk.id
-            scrollTo.tryEmit(ScrollRequest(apk.id, animate = true))
+            // A jump, not a glide: rows the expansion is still sliding into place while the
+            // list scrolls under them are left drawn at their old place.
+            pendingScroll.value = ScrollRequest(apk.id, animate = false)
         }
     }
 
-    /** Lists [entry]'s children synchronously (awaiting IO) and caches them; returns the list. */
-    private suspend fun loadNow(entry: XEntry): List<XEntry> {
-        tree.value.children[entry.id]?.let { if (entry.id !in tree.value.errors) return it }
+    /**
+     * Lists [entry]'s children synchronously (awaiting IO) and caches them; returns the list.
+     * A cached listing is returned as is unless [fresh].
+     */
+    private suspend fun loadNow(entry: XEntry, fresh: Boolean = false): List<XEntry> {
+        if (!fresh) {
+            tree.value.children[entry.id]?.let { if (entry.id !in tree.value.errors) return it }
+        }
         tree.update { current ->
             current.copy(
                 loading = current.loading + entry.id,
@@ -1563,7 +1661,7 @@ class PaneController(
             entries.forEachIndexed { index, e ->
                 val isLast = index == entries.lastIndex
                 val isExpanded = e.isContainer && e.id in expanded
-                val nodeKey = "$parentKey|${e.id}"
+                val nodeKey = treeRowKey(parentKey, e.id)
                 val kids = if (isExpanded) children[e.id]?.let { sortedVisible(e.id, it, sort) } else null
                 out += TreeNode(
                     entry = e.withListedChildCount(children[e.id], sort.showHidden),

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -52,6 +53,7 @@ import app.local1st.files.R
 import app.local1st.files.core.fs.XEntry
 import app.local1st.files.core.fs.XId
 import app.local1st.files.ui.statusBarsStable
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 
 /**
@@ -102,6 +104,7 @@ fun PaneView(
                     headerOverlay = headerOverlay,
                     onCrumbClick = { id ->
                         onActivate()
+                        controller.clearHighlight()
                         controller.revealPath(id)
                     },
                 )
@@ -142,12 +145,27 @@ fun PaneView(
         }
     }
 
-    LaunchedEffect(controller, listState) {
-        controller.scrollTo.collect { request ->
-            val index = controller.state.value.nodes.indexOfFirst { it.entry.id == request.id }
-            if (index < 0) return@collect
-            if (request.animate) listState.animateScrollToItem(index) else listState.scrollToItem(index)
+    // A reveal expands folders first, and the tree is flattened off the main thread, so the row
+    // can reach this list a few frames after the request. Look it up here, in the nodes this list
+    // is composed with: an index taken from newer nodes than the list has would land on the wrong
+    // row, or be clamped to the old last one.
+    val scrollRequest by controller.scrollRequest.collectAsStateWithLifecycle()
+    val pendingScroll = scrollRequest
+    val pendingIndex = pendingScroll?.let { request ->
+        state.nodes.indexOfFirst { node ->
+            if (request.key != null) node.key == request.key else node.entry.id == request.id
         }
+    } ?: -1
+    LaunchedEffect(controller, listState, pendingScroll, pendingIndex) {
+        val request = pendingScroll ?: return@LaunchedEffect
+        if (pendingIndex < 0) {
+            // Gone from the tree in the meantime: give up instead of jumping there later.
+            delay(REVEAL_ROW_WAIT_MS)
+            controller.onScrollRequestHandled(request, shown = false)
+            return@LaunchedEffect
+        }
+        listState.bringRowIntoView(pendingIndex, state.nodes[pendingIndex].key, request.animate)
+        controller.onScrollRequestHandled(request, shown = true)
     }
 
     Surface(
@@ -191,16 +209,20 @@ fun PaneView(
                             node = node,
                             selected = node.entry.id in state.selection,
                             focused = node.entry.id == state.focusedDirId,
+                            highlighted = node.entry.id == state.highlightedId,
                             onClick = {
                                 onActivate()
+                                controller.clearHighlight()
                                 onOpenEntry(node.entry)
                             },
                             onLongClick = {
                                 onActivate()
+                                controller.clearHighlight()
                                 onEntryMenu(node.entry)
                             },
                             onToggleSelect = {
                                 onActivate()
+                                controller.clearHighlight()
                                 controller.toggleSelect(node.entry)
                             },
                             enabled = !state.snapshotOnly,
@@ -220,6 +242,7 @@ fun PaneView(
                             enabled = !state.snapshotOnly,
                             onClick = {
                                 onActivate()
+                                controller.clearHighlight()
                                 onAddLocation()
                             },
                             modifier = Modifier
@@ -251,11 +274,32 @@ fun PaneView(
                 headerOverlay = headerOverlay,
                 onCrumbClick = { id ->
                     onActivate()
+                    controller.clearHighlight()
                     controller.revealPath(id)
                 },
             )
         }
     }
+}
+
+/** How long a reveal waits for its row before it is dropped. */
+private const val REVEAL_ROW_WAIT_MS = 3_000L
+
+/**
+ * Brings row [index] ([key]) on screen. A row already in full view stays where it is; otherwise it
+ * lands about a third of the way down, so some of the folder above it shows too.
+ */
+private suspend fun LazyListState.bringRowIntoView(index: Int, key: String, animate: Boolean) {
+    val info = layoutInfo
+    // Offsets count from the top content padding, below the floating breadcrumb. Found by key:
+    // the last layout may predate rows the reveal just inserted.
+    val visibleEnd = info.viewportEndOffset - info.afterContentPadding
+    val row = info.visibleItemsInfo.firstOrNull { it.key == key }
+    if (row != null && row.offset >= 0 && row.offset + row.size <= visibleEnd) return
+    val rowSize = info.visibleItemsInfo.firstOrNull()?.size ?: 0
+    val rowsAbove = if (rowSize > 0) visibleEnd / 3 / rowSize else 0
+    val target = (index - rowsAbove).coerceAtLeast(0)
+    if (animate) animateScrollToItem(target) else scrollToItem(target)
 }
 
 @OptIn(ExperimentalLayoutApi::class)

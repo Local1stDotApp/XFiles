@@ -123,6 +123,8 @@ data class PaneUiState(
     val nodes: List<TreeNode> = emptyList(),
     val selection: Set<String> = emptySet(),
     val focusedDirId: String? = null,
+    /** A revealed search hit, marked until the user next touches the pane. */
+    val highlightedId: String? = null,
     val loadingRoots: Boolean = true,
     /** Initial LazyColumn row, available only with the matching settled tree snapshot. */
     val initialScrollIndex: Int? = null,
