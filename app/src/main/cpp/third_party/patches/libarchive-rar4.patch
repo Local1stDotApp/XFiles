@@ -1,5 +1,6 @@
-libarchive's RAR 4 reader (archive_read_support_format_rar.c), as XFiles patches it.
-update.sh applies this after copying the sources: patch -p1 -d third_party/libarchive.
+libarchive's reader for RAR 1.5 to 4.x archives (archive_read_support_format_rar.c), as
+XFiles patches it. update.sh applies this after copying the sources:
+patch -p1 -d third_party/libarchive.
 
 - Solid archives (MHD_SOLID). A member flagged FHD_SOLID keeps the decoder state of the
   compressed member before it: the window, now 4 MB and kept, its positions offset by
@@ -18,13 +19,50 @@ update.sh applies this after copying the sources: patch -p1 -d third_party/libar
   and the PPMd model's memory size no longer resizes and clears the window.
 - A member ends once everything decoded before its end-of-data marker has gone out, so a
   PPMd member that ended with a match across the output buffer's end no longer loses bytes.
+- RAR 2.0 compression (unp_ver 20 and 26), which was decoded as RAR 2.9 and failed: LZ and
+  audio blocks, solid or not (parse_codes20(), expand20(), decode_audio20()). The block
+  format, the meaning of the symbols and the audio predictor are ported from rardecode
+  (https://github.com/nwaples/rardecode, BSD 2-clause; its notice is in the code). A RAR 2.0
+  member ends at its size, and in a solid archive its data may hold more for the next member
+  (read_member_end20()): an empty first member holds the tables, and an empty member before
+  one that needs other codes holds the end of the block and a new header. This was worked
+  out from archives that RAR 2.80 made.
+- RAR 1.5 compression (unp_ver 15) fails with "RAR 1.5 compression is not supported".
+- The blocks of RAR 1.5 to 2.x archives: the archive comment inside the main header and a
+  file comment inside its file header are left out of their header's CRC (RAR 2.80's
+  technote.txt). A recovery record's CRC covers its header and a Unix owner subblock's its
+  data too, so either is accepted; authenticity blocks aren't checked. An archive may end
+  after any block, without an end-of-archive block.
+- read_next_symbol(): a short code near the end of the data, with fewer bits after it than a
+  table lookup takes, is looked up with zeros after it instead of failing.
 
-Non-solid archives decode as before; RarReadingTest, SolidRar4Test and ArchiveFormatsTest
-cover both. Nothing here comes from UnRAR's source.
+Archives that read before decode as before; RarReadingTest, SolidRar4Test, Rar2Test and
+ArchiveFormatsTest cover them. Nothing here comes from UnRAR's source.
 
 --- a/archive_read_support_format_rar.c
 +++ b/archive_read_support_format_rar.c
-@@ -217,6 +217,9 @@
+@@ -135,6 +135,20 @@
+ 
+ #define MAX_SYMBOL_LENGTH 0xF
+ #define MAX_SYMBOLS       20
++
++/* RAR 2.0 compression (unp_ver 20 and 26): LZ blocks and audio blocks */
++#define RAR20_MAINCODE_SIZE   298
++#define RAR20_OFFSETCODE_SIZE 48
++#define RAR20_LENGTHCODE_SIZE 28
++#define RAR20_LZ_TABLE_SIZE \
++  (RAR20_MAINCODE_SIZE + RAR20_OFFSETCODE_SIZE + RAR20_LENGTHCODE_SIZE)
++#define RAR20_AUDIOCODE_SIZE  257
++#define RAR20_MAX_CHANNELS    4
++#define RAR20_TABLE_SIZE      (RAR20_AUDIOCODE_SIZE * RAR20_MAX_CHANNELS)
++#define RAR20_PRECODE_SIZE    19
++/* Bits after a member's last symbol that are taken as padding. RAR 2.80 pads to a byte;
++ * new tables take at least 13 bytes. */
++#define RAR20_TAIL_PADDING    (8 * 8)
+ 
+ #define SFX_MAX_READAHEAD (1024 * 512)
+ 
+@@ -217,6 +231,9 @@
    unsigned char *window;
    int mask;
    int64_t position;
@@ -34,7 +72,58 @@ cover both. Nothing here comes from UnRAR's source.
  };
  
  struct data_block_offsets
-@@ -352,7 +355,23 @@
+@@ -285,12 +302,41 @@
+   int error[11];
+   int count;
+   uint8_t lastbyte;
++};
++
++/* One channel of a RAR 2.0 audio block: an adaptive predictor of the next byte. */
++struct rar20_channel
++{
++  int weight[5];
++  int delta[4];
++  int lastdelta;
++  int error[11];
++  int count;
++  int lastbyte;
++};
++
++/* The RAR 2.0 decoder's state beyond what it shares with RAR 2.9 (window, codes, offsets). */
++struct rar20
++{
++  /* The current block is audio rather than LZ. */
++  char audio;
++  int channels;
++  /* The channel the next audio byte belongs to; bytes go round the channels in turn. */
++  int channel;
++  /* The last byte's change, across channels. */
++  int channel_delta;
++  struct rar20_channel state[RAR20_MAX_CHANNELS];
++  struct huffman_code audiocode[RAR20_MAX_CHANNELS];
++  /* Code lengths. A new block's add to these unless its header says to start over, so
++   * they are kept from block to block, LZ and audio alike. */
++  unsigned char lengthtable[RAR20_TABLE_SIZE];
+ };
+ 
+ struct rar
+ {
+   /* Entries from main RAR header */
+   unsigned main_flags;
++  char main_header_seen;
+   unsigned long file_crc;
+   char reserved1[2];
+   char reserved2[4];
+@@ -298,6 +344,8 @@
+ 
+   /* File header entries */
+   char compression_method;
++  /* The version of RAR the member needs: 15, 20 or 26, 29 or later. */
++  unsigned char unp_ver;
+   unsigned file_flags;
+   int64_t packed_size;
+   int64_t unp_size;
+@@ -352,7 +400,29 @@
    unsigned int lastlowoffset;
    unsigned int numlowoffsetrepeats;
    char start_new_table;
@@ -54,23 +143,34 @@ cover both. Nothing here comes from UnRAR's source.
 +  /* Option solid_skip=decode: skipping a member decodes it, so later members stay
 +   * readable. Without it, skipping is fast but leaves them unreadable. */
 +  char solid_skip_decodes;
++  /* The solid stream so far was decoded by the RAR 2.0 decoder. */
++  char solid_rar20;
++
++  /* RAR 2.0 compression, for members with unp_ver 20 or 26 */
++  char is_rar20;
++  struct rar20 v20;
 +
    /* Filters */
    struct rar_filters filters;
  
-@@ -431,6 +450,11 @@
+@@ -430,7 +500,16 @@
+ static int make_table(struct archive_read *, struct huffman_code *);
  static int make_table_recurse(struct archive_read *, struct huffman_code *, int,
                                struct huffman_table_entry *, int, int);
++static int allocate_window(struct archive_read *);
  static int expand(struct archive_read *, int64_t *);
 +static int expand_ppmd(struct archive_read *, int64_t *);
 +static int expand_any(struct archive_read *, int64_t *);
 +static int read_member_end(struct archive_read *);
 +static void read_empty_member(struct archive_read *);
++static int parse_codes20(struct archive_read *);
++static int expand20(struct archive_read *, int64_t *);
++static int read_member_end20(struct archive_read *);
 +static int ppmd_decode(struct archive_read *);
  static int copy_from_lzss_window_to_unp(struct archive_read *, const void **,
                                          int64_t, size_t);
  static const void *rar_read_ahead(struct archive_read *, size_t, ssize_t *);
-@@ -644,7 +668,7 @@
+@@ -644,7 +723,7 @@
  static inline int
  lzss_offset_for_position(struct lzss *lzss, int64_t pos)
  {
@@ -79,18 +179,131 @@ cover both. Nothing here comes from UnRAR's source.
  }
  
  static inline unsigned char *
-@@ -897,6 +921,10 @@
+@@ -896,6 +975,10 @@
+         ret = ARCHIVE_FATAL;
      }
      return (ret);
-   }
++  }
 +  if (strcmp(key, "solid_skip") == 0) {
 +    rar->solid_skip_decodes = val != NULL && strcmp(val, "decode") == 0;
 +    return (ARCHIVE_OK);
-+  }
+   }
  
    /* Note: The "warn" return is just to inform the options
-    * supervisor that we didn't handle it.  It will generate
-@@ -1113,6 +1141,8 @@
+@@ -951,8 +1034,13 @@
+   while (1)
+   {
+     unsigned long crc32_val;
++    ssize_t avail;
+ 
+-    if ((h = __archive_read_ahead(a, 7, NULL)) == NULL) {
++    if ((h = __archive_read_ahead(a, 7, &avail)) == NULL) {
++      /* Without an end-of-archive block, RAR 2.x archives may end with another one,
++       * such as a recovery record. */
++      if (avail == 0 && rar->main_header_seen)
++        return (ARCHIVE_EOF);
+       archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+                         "Failed to read next header");
+       return (ARCHIVE_FATAL);
+@@ -1009,6 +1097,13 @@
+       }
+ 
+       crc32_val = __archive_crc32(0, (const unsigned char *)p + 2, (unsigned)skip - 2);
++      /* RAR 1.5 to 2.x keep the archive comment inside the main header, which counts it
++       * in its size but leaves it out of its CRC (RAR 2.80's technote.txt). */
++      if ((crc32_val & 0xffff) != archive_le16dec(p) &&
++          (rar->main_flags & MHD_COMMENT) &&
++          (size_t)skip > 7 + sizeof(rar->reserved1) + sizeof(rar->reserved2))
++        crc32_val = __archive_crc32(0, (const unsigned char *)p + 2,
++          (unsigned)(7 - 2 + sizeof(rar->reserved1) + sizeof(rar->reserved2)));
+       if ((crc32_val & 0xffff) != archive_le16dec(p)) {
+ #ifndef DONT_FAIL_ON_CRC_ERROR
+         archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+@@ -1017,6 +1112,7 @@
+ #endif
+       }
+       __archive_read_consume(a, skip);
++      rar->main_header_seen = 1;
+       break;
+ 
+     case FILE_HEAD:
+@@ -1028,6 +1124,10 @@
+     case PROTECT_HEAD:
+     case SIGN_HEAD:
+     case ENDARC_HEAD:
++    {
++      unsigned long crc32_head, crc32_comment;
++      unsigned head_size;
++
+       flags = archive_le16dec(p + 3);
+       skip = archive_le16dec(p + 5);
+       if (skip < 7) {
+@@ -1035,6 +1135,13 @@
+           "Invalid header size too small");
+         return (ARCHIVE_FATAL);
+       }
++      head_size = (unsigned)skip;
++      if ((h = __archive_read_ahead(a, head_size, NULL)) == NULL) {
++        archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
++          "Bad RAR file");
++        return (ARCHIVE_FATAL);
++      }
++      p = h;
+       if (flags & HD_ADD_SIZE_PRESENT)
+       {
+         if (skip < 7 + 4) {
+@@ -1042,18 +1149,25 @@
+             "Invalid header size too small");
+           return (ARCHIVE_FATAL);
+         }
+-        if ((h = __archive_read_ahead(a, skip, NULL)) == NULL)
+-          return (ARCHIVE_FATAL);
+-        p = h;
+         skip += archive_le32dec(p + 7);
+       }
+ 
+-      /* Skip over the 2-byte CRC at the beginning of the header. */
++      /*
++       * What the CRC covers depends on the block. In RAR 2.x archives a recovery record's
++       * covers its header, a Unix owner subblock's its data as well, and a comment's the
++       * fields up to the comment's own CRC (technote.txt). A CRC over any of these spans
++       * is accepted. Authenticity blocks aren't checked: nothing says what theirs covers.
++       */
+       crc32_expected = archive_le16dec(p);
++      crc32_head = __archive_crc32(0, (const unsigned char *)p + 2, head_size - 2);
++      crc32_comment = head_size >= 13 ?
++        __archive_crc32(0, (const unsigned char *)p + 2, 13 - 2) : crc32_head;
++
++      /* Skip over the 2-byte CRC at the beginning of the header. */
+       __archive_read_consume(a, 2);
+       skip -= 2;
+ 
+-      /* Skim the entire header and compute the CRC. */
++      /* Skim the entire block and compute the CRC. */
+       crc32_val = 0;
+       while (skip > 0) {
+         unsigned to_read;
+@@ -1071,7 +1185,10 @@
+         __archive_read_consume(a, to_read);
+         skip -= to_read;
+       }
+-      if ((crc32_val & 0xffff) != crc32_expected) {
++      if ((crc32_val & 0xffff) != crc32_expected &&
++          (crc32_head & 0xffff) != crc32_expected &&
++          !(head_type == COMM_HEAD && (crc32_comment & 0xffff) == crc32_expected) &&
++          head_type != AV_HEAD && head_type != SIGN_HEAD) {
+ #ifndef DONT_FAIL_ON_CRC_ERROR
+         archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+           "Header CRC error");
+@@ -1081,6 +1198,7 @@
+       if (head_type == ENDARC_HEAD)
+         return (ARCHIVE_EOF);
+       break;
++    }
+ 
+     case NEWSUB_HEAD:
+       if ((ret = read_header(a, entry, head_type)) < ARCHIVE_WARN)
+@@ -1113,6 +1231,8 @@
    }
  
    *buff = NULL;
@@ -99,13 +312,19 @@ cover both. Nothing here comes from UnRAR's source.
    if (rar->entry_eof || rar->offset_seek >= rar->unp_size) {
      *size = 0;
      *offset = rar->offset;
-@@ -1130,11 +1160,19 @@
+@@ -1130,11 +1250,25 @@
    case COMPRESS_METHOD_NORMAL:
    case COMPRESS_METHOD_GOOD:
    case COMPRESS_METHOD_BEST:
 +    if (rar->solid_unreadable) {
 +      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
 +                        "RAR solid member can't be read without the members before it");
++      return (ARCHIVE_FAILED);
++    }
++    if (rar->unp_ver < 20) {
++      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
++                        "RAR 1.5 compression is not supported");
++      rar->solid_ready = 0;
 +      return (ARCHIVE_FAILED);
 +    }
      ret = read_data_compressed(a, buff, size, offset, 0);
@@ -120,11 +339,10 @@ cover both. Nothing here comes from UnRAR's source.
      }
      break;
  
-@@ -1153,6 +1191,26 @@
-   struct rar *rar = a->format->data;
+@@ -1154,6 +1288,26 @@
    int64_t bytes_skipped;
    int ret;
-+
+ 
 +  /* The members after this one may continue its decoder state, so with solid_skip=decode
 +   * the rest of it is decoded and dropped instead of skipped. */
 +  if (rar->solid_marker_pending && rar->solid_skip_decodes)
@@ -144,13 +362,16 @@ cover both. Nothing here comes from UnRAR's source.
 +      return (ret);
 +    /* After a failure the rest of the member is skipped below. */
 +  }
- 
++
    if (rar->bytes_unconsumed > 0) {
        /* Consume as much as the decompressor actually used. */
-@@ -1360,6 +1418,24 @@
+       __archive_read_consume(a, rar->bytes_unconsumed);
+@@ -1358,6 +1512,30 @@
+   free(rar);
+   a->format->data = NULL;
    return (ARCHIVE_OK);
- }
- 
++}
++
 +/* Gives the next member a decoder of its own, as in a non-solid archive. */
 +static void
 +reset_decoder(struct rar *rar)
@@ -167,12 +388,25 @@ cover both. Nothing here comes from UnRAR's source.
 +  rar->lastlength = rar->lastoffset = 0;
 +  memset(rar->oldoffset, 0, sizeof(rar->oldoffset));
 +  rar->lastlowoffset = rar->numlowoffsetrepeats = 0;
-+}
-+
++  rar->v20.audio = 0;
++  rar->v20.channels = 1;
++  rar->v20.channel = 0;
++  rar->v20.channel_delta = 0;
++  memset(rar->v20.state, 0, sizeof(rar->v20.state));
++  memset(rar->v20.lengthtable, 0, sizeof(rar->v20.lengthtable));
+ }
+ 
  static int
- read_header(struct archive_read *a, struct archive_entry *entry,
-             char head_type)
-@@ -1409,32 +1485,24 @@
+@@ -1377,7 +1555,7 @@
+   char unp_size[8];
+   int ttime;
+   struct archive_string_conv *sconv, *fn_sconv;
+-  uint32_t crc32_computed, crc32_read;
++  uint32_t crc32_computed, crc32_read, crc32_head;
+   int ret = (ARCHIVE_OK), ret2;
+   char *newptr;
+   size_t newsize;
+@@ -1409,32 +1587,24 @@
    crc32_computed = __archive_crc32(0, (const unsigned char *)p + 2, 7 - 2);
    __archive_read_consume(a, 7);
  
@@ -223,7 +457,37 @@ cover both. Nothing here comes from UnRAR's source.
  
    if ((h = __archive_read_ahead(a, (size_t)header_size - 7, NULL)) == NULL)
    {
-@@ -1808,9 +1876,8 @@
+@@ -1444,8 +1614,20 @@
+   }
+ 
+   /* File Header CRC check. */
++  crc32_head = crc32_computed;
+   crc32_computed = __archive_crc32(crc32_computed, h, (unsigned)(header_size - 7));
+   crc32_read = archive_le16dec(rar_header.crc);
++  if ((crc32_computed & 0xffff) != crc32_read && (rar->file_flags & FHD_COMMENT)) {
++    /* RAR 1.5 to 2.x put a file comment after the name, inside the header but outside
++     * its CRC (technote.txt). */
++    size_t named;
++
++    memcpy(&file_header, h, sizeof(file_header));
++    named = sizeof(file_header) + archive_le16dec(file_header.name_size) +
++      ((rar->file_flags & FHD_LARGE) ? 8 : 0);
++    if (named < (size_t)(header_size - 7))
++      crc32_computed = __archive_crc32(crc32_head, h, (unsigned)named);
++  }
+   if ((crc32_computed & 0xffff) != crc32_read) {
+ #ifndef DONT_FAIL_ON_CRC_ERROR
+     archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+@@ -1460,6 +1642,8 @@
+   p += sizeof(file_header);
+ 
+   rar->compression_method = file_header.method;
++  rar->unp_ver = (unsigned char)file_header.unp_ver;
++  rar->is_rar20 = rar->unp_ver == 20 || rar->unp_ver == 26;
+ 
+   ttime = archive_le32dec(file_header.file_time);
+   rar->mtime = get_time(ttime);
+@@ -1808,9 +1992,8 @@
    }
  
    rar->bytes_uncopied = rar->bytes_unconsumed = 0;
@@ -234,7 +498,7 @@ cover both. Nothing here comes from UnRAR's source.
    rar->offset_outgoing = 0;
    rar->br.cache_avail = 0;
    rar->br.avail_in = 0;
-@@ -1818,17 +1885,50 @@
+@@ -1818,16 +2001,53 @@
    rar->crc_calculated = 0;
    rar->entry_eof = 0;
    rar->valid = 1;
@@ -252,7 +516,7 @@ cover both. Nothing here comes from UnRAR's source.
 +  rar->solid_unreadable = 0;
 +  rar->solid_marker_pending = 0;
    rar->filters.filterstart = INT64_MAX;
- 
++
 +  if (!(rar->main_flags & MHD_SOLID))
 +    reset_decoder(rar);
 +  else if (rar->compression_method != COMPRESS_METHOD_STORE)
@@ -261,7 +525,7 @@ cover both. Nothing here comes from UnRAR's source.
 +    if (rar->file_flags & FHD_SOLID)
 +    {
 +      /* The data continues the window where the last compressed member ended. */
-+      rar->solid_unreadable = !rar->solid_ready;
++      rar->solid_unreadable = !rar->solid_ready || rar->solid_rar20 != rar->is_rar20;
 +      if (rar->lzss.window != NULL)
 +        rar->lzss.base = (rar->lzss.base + rar->lzss.position) & rar->lzss.mask;
 +      rar->lzss.position = 0;
@@ -271,26 +535,29 @@ cover both. Nothing here comes from UnRAR's source.
 +      /* The first member of a solid archive or of a solid group. */
 +      reset_decoder(rar);
 +      rar->solid_ready = 1;
++      rar->solid_rar20 = rar->is_rar20;
 +    }
 +    /*
-+     * An empty member's data depends on what the last member left pending. With new
-+     * tables due, it holds nothing to decode and the next member still starts with
-+     * them. Otherwise it is an LZ end-of-data marker, whose last bit decides that for
-+     * the next member, so it is decoded (read_empty_member()).
++     * An empty member's data depends on what the last member left pending. In RAR 2.9:
++     * with new tables due, it holds nothing to decode and the next member still starts
++     * with them; otherwise it is an LZ end-of-data marker, whose last bit decides that
++     * for the next member. In RAR 2.0 it holds what the first member starts with, the
++     * tables, or what any member may end with, new tables for the next one. Either way
++     * anything else is decoded (read_empty_member()).
 +     */
 +    if (rar->unp_size > 0)
 +      rar->solid_ready = 0;
-+    else if (!rar->start_new_table && !rar->solid_unreadable)
++    else if ((rar->is_rar20 ? rar->packed_size > 0 : !rar->start_new_table) &&
++             !rar->solid_unreadable)
 +    {
 +      rar->solid_marker_pending = 1;
 +      rar->solid_ready = 0;
 +    }
 +  }
-+
+ 
    archive_entry_set_mtime(entry, rar->mtime, rar->mnsec);
    archive_entry_set_ctime(entry, rar->ctime, rar->cnsec);
-   archive_entry_set_atime(entry, rar->atime, rar->ansec);
-@@ -2057,7 +2157,7 @@
+@@ -2057,7 +2277,7 @@
    struct rar *rar = a->format->data;
    int64_t start, end;
    size_t bs;
@@ -299,7 +566,7 @@ cover both. Nothing here comes from UnRAR's source.
  
    do {
      if (!rar->valid)
-@@ -2089,8 +2189,11 @@
+@@ -2089,8 +2309,11 @@
        goto ending_block;
      }
  
@@ -313,7 +580,7 @@ cover both. Nothing here comes from UnRAR's source.
      {
        if (rar->unp_offset > 0) {
          /*
-@@ -2115,12 +2218,20 @@
+@@ -2115,12 +2338,20 @@
                            "File CRC error");
          return (ARCHIVE_FAILED);
  #endif
@@ -335,7 +602,7 @@ cover both. Nothing here comes from UnRAR's source.
      {
        if (rar->bytes_uncopied > (rar->unp_buffer_size - rar->unp_offset))
          bs = rar->unp_buffer_size - rar->unp_offset;
-@@ -2151,6 +2262,14 @@
+@@ -2151,91 +2382,42 @@
        continue;
      }
  
@@ -350,7 +617,10 @@ cover both. Nothing here comes from UnRAR's source.
      if (!rar->br.next_in &&
        (ret = rar_br_preparation(a, &(rar->br))) < ARCHIVE_WARN)
        return (ret);
-@@ -2159,83 +2278,25 @@
+-    if (rar->start_new_table && ((ret = parse_codes(a)) < (ARCHIVE_WARN)))
++    if (rar->start_new_table &&
++        ((ret = rar->is_rar20 ? parse_codes20(a) : parse_codes(a)) < (ARCHIVE_WARN)))
+       return (ret);
  
      if (rar->is_ppmd_block)
      {
@@ -451,7 +721,19 @@ cover both. Nothing here comes from UnRAR's source.
        }
      }
      else
-@@ -2265,7 +2326,9 @@
+@@ -2259,13 +2441,20 @@
+         end = rar->filters.filterstart;
+       }
+ 
+-      ret = expand(a, &end);
++      /* RAR 2.0 has no end-of-data marker: a member ends at its size, and what
++       * follows in its data is either padding or tables for the next solid member. */
++      if (rar->is_rar20 && end > rar->unp_size)
++        end = rar->unp_size;
++
++      ret = rar->is_rar20 ? expand20(a, &end) : expand(a, &end);
+       if (ret != ARCHIVE_OK)
+         return (ret);
  
        rar->bytes_uncopied = end - start;
        rar->filters.lastend = end;
@@ -462,7 +744,7 @@ cover both. Nothing here comes from UnRAR's source.
            /* Broken RAR files cause this case.
            * NOTE: If this case were possible on a normal RAR file
            * we would find out where it was actually bad and
-@@ -2306,7 +2369,7 @@
+@@ -2306,7 +2495,7 @@
    struct rar *rar = a->format->data;
    int i, j, val, n, r;
    unsigned char bitlengths[MAX_SYMBOLS], zerocount, ppmd_flags;
@@ -471,7 +753,7 @@ cover both. Nothing here comes from UnRAR's source.
    struct huffman_code precode;
    struct rar_br *br = &(rar->br);
  
-@@ -2326,15 +2389,17 @@
+@@ -2326,15 +2515,17 @@
      ppmd_flags = rar_br_bits(br, 7);
      rar_br_consume(br, 7);
  
@@ -491,7 +773,7 @@ cover both. Nothing here comes from UnRAR's source.
      if (ppmd_flags & 0x40)
      {
        if (!rar_br_read_ahead(a, br, 8))
-@@ -2342,8 +2407,6 @@
+@@ -2342,8 +2533,6 @@
        rar->ppmd_escape = rar->ppmd7_context.InitEsc = rar_br_bits(br, 8);
        rar_br_consume(br, 8);
      }
@@ -500,7 +782,7 @@ cover both. Nothing here comes from UnRAR's source.
  
      if (ppmd_flags & 0x20)
      {
-@@ -2368,14 +2431,14 @@
+@@ -2368,14 +2557,14 @@
        rar->range_dec.Stream = &rar->bytein;
        __archive_ppmd7_functions.Ppmd7_Construct(&rar->ppmd7_context);
  
@@ -517,7 +799,32 @@ cover both. Nothing here comes from UnRAR's source.
        {
          archive_set_error(&a->archive, ENOMEM,
                            "Out of memory");
-@@ -2556,7 +2619,9 @@
+@@ -2547,6 +2736,24 @@
+       return (r);
+   }
+ 
++  if ((r = allocate_window(a)) != ARCHIVE_OK)
++    return (r);
++
++  rar->start_new_table = 0;
++  return (ARCHIVE_OK);
++truncated_data:
++  archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
++                    "Truncated RAR file data");
++  rar->valid = 0;
++  return (ARCHIVE_FAILED);
++}
++
++/* Sets up the window for the member, unless the one it has already fits. */
++static int
++allocate_window(struct archive_read *a)
++{
++  struct rar *rar = a->format->data;
++
+   if (!rar->dictionary_size || !rar->lzss.window ||
+       (unsigned int)(rar->lzss.mask + 1) < rar->dictionary_size)
+   {
+@@ -2556,7 +2763,9 @@
      void *new_window;
      unsigned int new_size;
  
@@ -528,7 +835,161 @@ cover both. Nothing here comes from UnRAR's source.
        new_size = DICTIONARY_MAX_SIZE;
      else
        new_size = rar_fls((unsigned int)rar->unp_size) << 1;
-@@ -2998,10 +3063,13 @@
+@@ -2576,20 +2785,14 @@
+     memset(rar->lzss.window, 0, rar->dictionary_size);
+     rar->lzss.mask = rar->dictionary_size - 1;
+   }
+-
+-  rar->start_new_table = 0;
+   return (ARCHIVE_OK);
+-truncated_data:
+-  archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+-                    "Truncated RAR file data");
+-  rar->valid = 0;
+-  return (ARCHIVE_FAILED);
+ }
+ 
+ static void
+ free_codes(struct archive_read *a)
+ {
+   struct rar *rar = a->format->data;
++  int i;
+   free(rar->maincode.tree);
+   free(rar->offsetcode.tree);
+   free(rar->lowoffsetcode.tree);
+@@ -2602,6 +2805,12 @@
+   memset(&rar->offsetcode, 0, sizeof(rar->offsetcode));
+   memset(&rar->lowoffsetcode, 0, sizeof(rar->lowoffsetcode));
+   memset(&rar->lengthcode, 0, sizeof(rar->lengthcode));
++  for (i = 0; i < RAR20_MAX_CHANNELS; i++)
++  {
++    free(rar->v20.audiocode[i].tree);
++    free(rar->v20.audiocode[i].table);
++    memset(&rar->v20.audiocode[i], 0, sizeof(rar->v20.audiocode[i]));
++  }
+ }
+ 
+ 
+@@ -2623,13 +2832,19 @@
+   br = &(rar->br);
+ 
+   /* Look ahead (peek) at bits */
+-  if (!rar_br_read_ahead(a, br, code->tablesize)) {
+-    archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
+-                      "Truncated RAR file data");
+-    rar->valid = 0;
+-    return -1;
++  if (rar_br_read_ahead(a, br, code->tablesize))
++    bits = rar_br_bits(br, code->tablesize);
++  else {
++    /* The data may end sooner than a lookup's worth of bits after a short code, as
++     * RAR 2.0's does: look up what is left followed by zeros. */
++    bits = rar_br_bits_forced(br, code->tablesize);
++    if (code->table[bits].length > (unsigned int)br->cache_avail) {
++      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
++                        "Truncated RAR file data");
++      rar->valid = 0;
++      return -1;
++    }
+   }
+-  bits = rar_br_bits(br, code->tablesize);
+ 
+   length = code->table[bits].length;
+   value = code->table[bits].value;
+@@ -2918,50 +3133,52 @@
+   }
+   return ret;
+ }
++
++/* Match lengths and offsets: a symbol's base value, then how many bits are added to it.
++ * RAR 2.0 uses the first 48 offset symbols. */
++static const unsigned char lengthbases[] =
++  {   0,   1,   2,   3,   4,   5,   6,
++      7,   8,  10,  12,  14,  16,  20,
++     24,  28,  32,  40,  48,  56,  64,
++     80,  96, 112, 128, 160, 192, 224 };
++static const unsigned char lengthbits[] =
++  { 0, 0, 0, 0, 0, 0, 0,
++    0, 1, 1, 1, 1, 2, 2,
++    2, 2, 3, 3, 3, 3, 4,
++    4, 4, 4, 5, 5, 5, 5 };
++static const int lengthb_min = minimum(
++  (int)(sizeof(lengthbases)/sizeof(lengthbases[0])),
++  (int)(sizeof(lengthbits)/sizeof(lengthbits[0]))
++);
++static const unsigned int offsetbases[] =
++  {       0,       1,       2,       3,       4,       6,
++          8,      12,      16,      24,      32,      48,
++         64,      96,     128,     192,     256,     384,
++        512,     768,    1024,    1536,    2048,    3072,
++       4096,    6144,    8192,   12288,   16384,   24576,
++      32768,   49152,   65536,   98304,  131072,  196608,
++     262144,  327680,  393216,  458752,  524288,  589824,
++     655360,  720896,  786432,  851968,  917504,  983040,
++    1048576, 1310720, 1572864, 1835008, 2097152, 2359296,
++    2621440, 2883584, 3145728, 3407872, 3670016, 3932160 };
++static const unsigned char offsetbits[] =
++  {  0,  0,  0,  0,  1,  1,  2,  2,  3,  3,  4,  4,
++     5,  5,  6,  6,  7,  7,  8,  8,  9,  9, 10, 10,
++    11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16,
++    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
++    18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18 };
++static const int offsetb_min = minimum(
++  (int)(sizeof(offsetbases)/sizeof(offsetbases[0])),
++  (int)(sizeof(offsetbits)/sizeof(offsetbits[0]))
++);
++static const unsigned char shortbases[] =
++  { 0, 4, 8, 16, 32, 64, 128, 192 };
++static const unsigned char shortbits[] =
++  { 2, 2, 3, 4, 5, 6, 6, 6 };
+ 
+ static int
+ expand(struct archive_read *a, int64_t *end)
+ {
+-  static const unsigned char lengthbases[] =
+-    {   0,   1,   2,   3,   4,   5,   6,
+-        7,   8,  10,  12,  14,  16,  20,
+-       24,  28,  32,  40,  48,  56,  64,
+-       80,  96, 112, 128, 160, 192, 224 };
+-  static const unsigned char lengthbits[] =
+-    { 0, 0, 0, 0, 0, 0, 0,
+-      0, 1, 1, 1, 1, 2, 2,
+-      2, 2, 3, 3, 3, 3, 4,
+-      4, 4, 4, 5, 5, 5, 5 };
+-  static const int lengthb_min = minimum(
+-    (int)(sizeof(lengthbases)/sizeof(lengthbases[0])),
+-    (int)(sizeof(lengthbits)/sizeof(lengthbits[0]))
+-  );
+-  static const unsigned int offsetbases[] =
+-    {       0,       1,       2,       3,       4,       6,
+-            8,      12,      16,      24,      32,      48,
+-           64,      96,     128,     192,     256,     384,
+-          512,     768,    1024,    1536,    2048,    3072,
+-         4096,    6144,    8192,   12288,   16384,   24576,
+-        32768,   49152,   65536,   98304,  131072,  196608,
+-       262144,  327680,  393216,  458752,  524288,  589824,
+-       655360,  720896,  786432,  851968,  917504,  983040,
+-      1048576, 1310720, 1572864, 1835008, 2097152, 2359296,
+-      2621440, 2883584, 3145728, 3407872, 3670016, 3932160 };
+-  static const unsigned char offsetbits[] =
+-    {  0,  0,  0,  0,  1,  1,  2,  2,  3,  3,  4,  4,
+-       5,  5,  6,  6,  7,  7,  8,  8,  9,  9, 10, 10,
+-      11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16,
+-      16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+-      18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18 };
+-  static const int offsetb_min = minimum(
+-    (int)(sizeof(offsetbases)/sizeof(offsetbases[0])),
+-    (int)(sizeof(offsetbits)/sizeof(offsetbits[0]))
+-  );
+-  static const unsigned char shortbases[] =
+-    { 0, 4, 8, 16, 32, 64, 128, 192 };
+-  static const unsigned char shortbits[] =
+-    { 2, 2, 3, 4, 5, 6, 6, 6 };
+-
+   struct rar *rar = a->format->data;
+   int symbol, offs, len, offsindex, lensymbol, i, offssymbol, lowoffsetsymbol;
+   unsigned char newfile;
+@@ -2998,10 +3215,13 @@
  
        if(newfile)
        {
@@ -542,14 +1003,12 @@ cover both. Nothing here comes from UnRAR's source.
          *end = lzss_position(&rar->lzss);
          return (ARCHIVE_OK);
        }
-@@ -3145,9 +3213,173 @@
-   archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
-                     "Bad RAR file data");
+@@ -3147,7 +3367,586 @@
    return (ARCHIVE_FAILED);
-+}
-+
+ }
+ 
 +/* The next PPMd symbol, or -1 with the error set. */
-+static int
+ static int
 +ppmd_decode(struct archive_read *a)
 +{
 +  struct rar *rar = a->format->data;
@@ -639,10 +1098,10 @@ cover both. Nothing here comes from UnRAR's source.
 +    }
 +  }
 +  return (ARCHIVE_OK);
- }
- 
++}
++
 +/* Decodes until *end through PPMd and LZ blocks alike, as a filter's block needs. */
- static int
++static int
 +expand_any(struct archive_read *a, int64_t *end)
 +{
 +  struct rar *rar = a->format->data;
@@ -682,6 +1141,8 @@ cover both. Nothing here comes from UnRAR's source.
 +  int64_t end, before;
 +  int ret;
 +
++  if (rar->is_rar20)
++    return (read_member_end20(a));
 +  while (!rar->member_end_seen)
 +  {
 +    if (!rar->br.next_in &&
@@ -712,11 +1173,424 @@ cover both. Nothing here comes from UnRAR's source.
 +    archive_clear_error(&a->archive);
 +}
 +
++/*
++ * RAR 2.0 compression, for members with unp_ver 20 or 26. Blocks are LZ or audio, each with
++ * its own codes. The block format, the meaning of the symbols and the audio predictor are
++ * ported from decode20.go, decode20_lz.go and decode20_audio.go of rardecode
++ * (https://github.com/nwaples/rardecode), under its licence:
++ *
++ *   Copyright (c) 2015, Nicholas Waples
++ *   All rights reserved.
++ *
++ *   Redistribution and use in source and binary forms, with or without
++ *   modification, are permitted provided that the following conditions are met:
++ *
++ *   * Redistributions of source code must retain the above copyright notice, this
++ *     list of conditions and the following disclaimer.
++ *
++ *   * Redistributions in binary form must reproduce the above copyright notice,
++ *     this list of conditions and the following disclaimer in the documentation
++ *     and/or other materials provided with the distribution.
++ *
++ *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
++ *   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
++ *   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++ *   DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
++ *   FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++ *   DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++ *   SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
++ *   CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
++ *   OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++ *   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++ *
++ * What a solid member's data holds besides its own bytes was worked out from archives that
++ * RAR 2.80 made.
++ */
++
++/* value's low byte as a signed number */
++static inline int
++rar20_signed_byte(int value)
++{
++  value &= 0xFF;
++  return (value >= 0x80 ? value - 0x100 : value);
++}
++
++/*
++ * Reads a block header: a bit for audio or LZ, a bit to add the new code lengths to the
++ * last ones rather than to zeros, for audio two bits of channel count, then the code
++ * lengths, themselves coded by a code of 19 symbols.
++ */
++static int
++parse_codes20(struct archive_read *a)
++{
++  struct rar *rar = a->format->data;
++  struct rar_br *br = &(rar->br);
++  struct huffman_code precode;
++  unsigned char bitlengths[RAR20_PRECODE_SIZE];
++  unsigned char *table = rar->v20.lengthtable;
++  int i, j, n, val, size, r;
++
++  free_codes(a);
++  memset(&precode, 0, sizeof(precode));
++
++  if (!rar_br_read_ahead(a, br, 2))
++    goto truncated_data;
++  rar->v20.audio = rar_br_bits(br, 1);
++  rar_br_consume(br, 1);
++  if (!rar_br_bits(br, 1))
++    memset(table, 0, RAR20_TABLE_SIZE);
++  rar_br_consume(br, 1);
++
++  size = RAR20_LZ_TABLE_SIZE;
++  if (rar->v20.audio)
++  {
++    if (!rar_br_read_ahead(a, br, 2))
++      goto truncated_data;
++    rar->v20.channels = rar_br_bits(br, 2) + 1;
++    rar_br_consume(br, 2);
++    if (rar->v20.channel >= rar->v20.channels)
++      rar->v20.channel = 0;
++    size = RAR20_AUDIOCODE_SIZE * rar->v20.channels;
++  }
++
++  for (i = 0; i < RAR20_PRECODE_SIZE; i++)
++  {
++    if (!rar_br_read_ahead(a, br, 4))
++      goto truncated_data;
++    bitlengths[i] = rar_br_bits(br, 4);
++    rar_br_consume(br, 4);
++  }
++  if ((r = create_code(a, &precode, bitlengths, RAR20_PRECODE_SIZE,
++      MAX_SYMBOL_LENGTH)) != ARCHIVE_OK)
++    goto failed;
++
++  for (i = 0; i < size;)
++  {
++    if ((val = read_next_symbol(a, &precode)) < 0)
++    {
++      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
++                        "Bad RAR file data");
++      r = ARCHIVE_FAILED;
++      goto failed;
++    }
++    if (val < 16)
++    {
++      table[i] = (table[i] + val) & 0xF;
++      i++;
++    }
++    else if (val == 16)
++    {
++      /* The length before, 3 to 6 times */
++      if (i == 0)
++      {
++        archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
++                          "Bad RAR file data");
++        r = ARCHIVE_FAILED;
++        goto failed;
++      }
++      if (!rar_br_read_ahead(a, br, 2))
++        goto truncated_data;
++      n = rar_br_bits(br, 2) + 3;
++      rar_br_consume(br, 2);
++      for (j = 0; j < n && i < size; j++, i++)
++        table[i] = table[i - 1];
++    }
++    else
++    {
++      /* Zeros, 3 to 10 or 11 to 138 of them */
++      if (val == 17)
++      {
++        if (!rar_br_read_ahead(a, br, 3))
++          goto truncated_data;
++        n = rar_br_bits(br, 3) + 3;
++        rar_br_consume(br, 3);
++      }
++      else
++      {
++        if (!rar_br_read_ahead(a, br, 7))
++          goto truncated_data;
++        n = rar_br_bits(br, 7) + 11;
++        rar_br_consume(br, 7);
++      }
++      for (j = 0; j < n && i < size; j++)
++        table[i++] = 0;
++    }
++  }
++  free(precode.tree);
++  free(precode.table);
++
++  if (rar->v20.audio)
++  {
++    for (i = 0; i < rar->v20.channels; i++)
++      if ((r = create_code(a, &rar->v20.audiocode[i], &table[i * RAR20_AUDIOCODE_SIZE],
++          RAR20_AUDIOCODE_SIZE, MAX_SYMBOL_LENGTH)) != ARCHIVE_OK)
++        return (r);
++  }
++  else
++  {
++    if ((r = create_code(a, &rar->maincode, table, RAR20_MAINCODE_SIZE,
++        MAX_SYMBOL_LENGTH)) != ARCHIVE_OK)
++      return (r);
++    if ((r = create_code(a, &rar->offsetcode, &table[RAR20_MAINCODE_SIZE],
++        RAR20_OFFSETCODE_SIZE, MAX_SYMBOL_LENGTH)) != ARCHIVE_OK)
++      return (r);
++    if ((r = create_code(a, &rar->lengthcode,
++        &table[RAR20_MAINCODE_SIZE + RAR20_OFFSETCODE_SIZE],
++        RAR20_LENGTHCODE_SIZE, MAX_SYMBOL_LENGTH)) != ARCHIVE_OK)
++      return (r);
++  }
++  if ((r = allocate_window(a)) != ARCHIVE_OK)
++    return (r);
++  rar->start_new_table = 0;
++  return (ARCHIVE_OK);
++
++truncated_data:
++  archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
++                    "Truncated RAR file data");
++  rar->valid = 0;
++  r = ARCHIVE_FAILED;
++failed:
++  free(precode.tree);
++  free(precode.table);
++  return (r);
++}
++
++/* The next byte of an audio block, from the coded difference to the predicted one. */
++static uint8_t
++decode_audio20(struct rar *rar, int delta)
++{
++  struct rar20_channel *v = &rar->v20.state[rar->v20.channel];
++  int predicted, byte, error, i, best;
++
++  v->count++;
++  v->delta[3] = v->delta[2];
++  v->delta[2] = v->delta[1];
++  v->delta[1] = v->lastdelta - v->delta[0];
++  v->delta[0] = v->lastdelta;
++  predicted = 8 * v->lastbyte + v->weight[0] * v->delta[0] +
++    v->weight[1] * v->delta[1] + v->weight[2] * v->delta[2] +
++    v->weight[3] * v->delta[3] + v->weight[4] * rar->v20.channel_delta;
++  /* The sum can be negative; shifted unsigned, its low byte is that of floor(sum / 8). */
++  predicted = (int)(((unsigned int)predicted >> 3) & 0xFF);
++  byte = predicted - delta;
++
++  /* Each weight moves towards the predictions that would have erred least. */
++  error = rar20_signed_byte(delta) * 8;
++  v->error[0] += abs(error);
++  v->error[1] += abs(error - v->delta[0]);
++  v->error[2] += abs(error + v->delta[0]);
++  v->error[3] += abs(error - v->delta[1]);
++  v->error[4] += abs(error + v->delta[1]);
++  v->error[5] += abs(error - v->delta[2]);
++  v->error[6] += abs(error + v->delta[2]);
++  v->error[7] += abs(error - v->delta[3]);
++  v->error[8] += abs(error + v->delta[3]);
++  v->error[9] += abs(error - rar->v20.channel_delta);
++  v->error[10] += abs(error + rar->v20.channel_delta);
++
++  rar->v20.channel_delta = v->lastdelta = rar20_signed_byte(byte - v->lastbyte);
++  v->lastbyte = byte;
++
++  if ((v->count & 0x1F) == 0)
++  {
++    best = 0;
++    for (i = 1; i < 11; i++)
++      if (v->error[i] < v->error[best])
++        best = i;
++    memset(v->error, 0, sizeof(v->error));
++    if (best > 0)
++    {
++      i = (best - 1) / 2;
++      if ((best - 1) % 2 == 0)
++      {
++        if (v->weight[i] >= -16)
++          v->weight[i]--;
++      }
++      else if (v->weight[i] < 16)
++        v->weight[i]++;
++    }
++  }
++  return ((uint8_t)byte);
++}
++
++/* expand() for RAR 2.0: decodes LZ and audio blocks into the window until it reaches *end. */
++static int
++expand20(struct archive_read *a, int64_t *end)
++{
++  struct rar *rar = a->format->data;
++  struct rar_br *br = &(rar->br);
++  int symbol, lensymbol, offssymbol, i, r;
++  unsigned int offs, len;
++
++  while (lzss_position(&rar->lzss) < *end)
++  {
++    if (rar->v20.audio)
++    {
++      if ((symbol = read_next_symbol(a, &rar->v20.audiocode[rar->v20.channel])) < 0)
++        goto bad_data;
++      if (symbol == 256)
++      {
++        /* The end of the block; another header follows. */
++        if ((r = parse_codes20(a)) != ARCHIVE_OK)
++          return (r);
++        continue;
++      }
++      lzss_emit_literal(rar, decode_audio20(rar, symbol));
++      if (++rar->v20.channel >= rar->v20.channels)
++        rar->v20.channel = 0;
++      continue;
++    }
++
++    if ((symbol = read_next_symbol(a, &rar->maincode)) < 0)
++      goto bad_data;
++    if (symbol < 256)
++    {
++      lzss_emit_literal(rar, (uint8_t)symbol);
++      continue;
++    }
++    if (symbol == 269)
++    {
++      /* The end of the block; another header follows. */
++      if ((r = parse_codes20(a)) != ARCHIVE_OK)
++        return (r);
++      continue;
++    }
++    if (symbol == 256)
++    {
++      /* The last match again */
++      offs = rar->oldoffset[0];
++      len = rar->lastlength;
++    }
++    else if (symbol < 261)
++    {
++      /* One of the last four offsets, with a new length, longer for a longer offset */
++      offs = rar->oldoffset[symbol - 257];
++      if ((lensymbol = read_next_symbol(a, &rar->lengthcode)) < 0)
++        goto bad_data;
++      if (lensymbol >= lengthb_min)
++        goto bad_data;
++      len = lengthbases[lensymbol] + 2;
++      if (lengthbits[lensymbol] > 0)
++      {
++        if (!rar_br_read_ahead(a, br, lengthbits[lensymbol]))
++          goto truncated_data;
++        len += rar_br_bits(br, lengthbits[lensymbol]);
++        rar_br_consume(br, lengthbits[lensymbol]);
++      }
++      if (offs >= 0x101)
++        len++;
++      if (offs >= 0x2000)
++        len++;
++      if (offs >= 0x40000)
++        len++;
++    }
++    else if (symbol < 269)
++    {
++      /* Two bytes from up to 256 back */
++      i = symbol - 261;
++      offs = shortbases[i] + 1;
++      if (!rar_br_read_ahead(a, br, shortbits[i]))
++        goto truncated_data;
++      offs += rar_br_bits(br, shortbits[i]);
++      rar_br_consume(br, shortbits[i]);
++      len = 2;
++    }
++    else
++    {
++      /* A new length and offset */
++      i = symbol - 270;
++      if (i >= lengthb_min)
++        goto bad_data;
++      len = lengthbases[i] + 3;
++      if (lengthbits[i] > 0)
++      {
++        if (!rar_br_read_ahead(a, br, lengthbits[i]))
++          goto truncated_data;
++        len += rar_br_bits(br, lengthbits[i]);
++        rar_br_consume(br, lengthbits[i]);
++      }
++      if ((offssymbol = read_next_symbol(a, &rar->offsetcode)) < 0)
++        goto bad_data;
++      if (offssymbol >= RAR20_OFFSETCODE_SIZE)
++        goto bad_data;
++      offs = offsetbases[offssymbol] + 1;
++      if (offsetbits[offssymbol] > 0)
++      {
++        if (!rar_br_read_ahead(a, br, offsetbits[offssymbol]))
++          goto truncated_data;
++        offs += rar_br_bits(br, offsetbits[offssymbol]);
++        rar_br_consume(br, offsetbits[offssymbol]);
++      }
++      if (offs >= 0x2000)
++        len++;
++      if (offs >= 0x40000)
++        len++;
++    }
++
++    /* Every match pushes its offset onto the last four, even one taken from them. */
++    rar->oldoffset[3] = rar->oldoffset[2];
++    rar->oldoffset[2] = rar->oldoffset[1];
++    rar->oldoffset[1] = rar->oldoffset[0];
++    rar->oldoffset[0] = offs;
++    rar->lastlength = len;
++    lzss_emit_match(rar, (int)offs, (int)len);
++  }
++  return (ARCHIVE_OK);
++
++truncated_data:
++  archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
++                    "Truncated RAR file data");
++  rar->valid = 0;
++  return (ARCHIVE_FAILED);
++bad_data:
++  archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
++                    "Bad RAR file data");
++  return (ARCHIVE_FAILED);
++}
++
++/*
++ * Reads what a RAR 2.0 member's data holds after its last byte, which the next solid
++ * member depends on: when the first member is empty, the tables the next ones start with;
++ * when an empty member comes before one that needs other codes, the end of the block and
++ * a new header. Anything else past the last symbol is padding.
++ */
++static int
++read_member_end20(struct archive_read *a)
++{
++  struct rar *rar = a->format->data;
++  struct rar_br *br = &(rar->br);
++  int symbol, ret;
++
++  if (!br->next_in && (ret = rar_br_preparation(a, br)) < ARCHIVE_WARN)
++    return (ret);
++  if (rar->start_new_table)
++  {
++    if (br->cache_avail == 0 && rar->bytes_remaining == 0)
++      return (ARCHIVE_OK); /* the next member starts with them */
++    if ((ret = parse_codes20(a)) != ARCHIVE_OK)
++      return (ret);
++  }
++  while (br->cache_avail + 8 * rar->bytes_remaining > RAR20_TAIL_PADDING)
++  {
++    symbol = read_next_symbol(a, rar->v20.audio ?
++      &rar->v20.audiocode[rar->v20.channel] : &rar->maincode);
++    if (symbol != (rar->v20.audio ? 256 : 269))
++    {
++      archive_set_error(&a->archive, ARCHIVE_ERRNO_FILE_FORMAT,
++                        "Bad RAR file data");
++      return (ARCHIVE_FAILED);
++    }
++    if ((ret = parse_codes20(a)) != ARCHIVE_OK)
++      return (ret);
++  }
++  return (ARCHIVE_OK);
++}
++
 +static int
  copy_from_lzss_window(struct archive_read *a, uint8_t *buffer,
                        int64_t startpos, int length)
  {
-@@ -3459,7 +3691,7 @@
+@@ -3459,7 +4258,7 @@
  
    filters->filterstart = INT64_MAX;
    tend = (int64_t)end;
@@ -725,7 +1599,7 @@ cover both. Nothing here comes from UnRAR's source.
    if (ret != ARCHIVE_OK)
      return 0;
  
-@@ -3923,6 +4155,16 @@
+@@ -3923,6 +4722,16 @@
  {
    struct rar *rar = a->format->data;
    struct rar_br *br = &(rar->br);

@@ -5,7 +5,7 @@ import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
 
-/** Multi-volume RAR sets and the RAR 4 archives libarchive can't read. Shared by both flavors. */
+/** Multi-volume RAR sets and the old RAR archives libarchive can't read. Shared by both flavors. */
 internal object RarVolumes {
 
     /**
@@ -41,13 +41,12 @@ internal object RarVolumes {
     }
 
     /**
-     * True for the RAR archives libarchive can't read:
+     * True for the RAR archives libarchive can't read, both made by RAR 1.x:
      * - RAR 1.4 (signature `RE~^`), a format of its own;
-     * - archives made by RAR 1.5 to 2.x: libarchive decodes every member with the RAR 2.9
-     *   algorithm, so members packed with the older ones fail.
+     * - archives made by RAR 1.5x, whose members are packed with its algorithm.
      *
-     * Solid RAR 2.9 to 4.x is read natively, through the patched libarchive in
-     * `third_party/patches`.
+     * RAR 2.0 to 4.x archives, solid ones included, are read natively, through the patched
+     * libarchive in `third_party/patches`.
      */
     fun isBeyondLibarchive(file: File): Boolean = try {
         RandomAccessFile(file, "r").use(::isBeyondLibarchive)
@@ -74,7 +73,7 @@ internal object RarVolumes {
                 FILE_HEAD -> {
                     if (size < FILE_HEAD_FIXED || !rar.readAt(at, block, FILE_HEAD_FIXED)) return false
                     // An archive's members come from one RAR version, so the first packed one tells.
-                    if (block[25].toInt() and 0xFF != METHOD_STORE) return (block[24].toInt() and 0xFF) < UNP_VER_29
+                    if (block[25].toInt() and 0xFF != METHOD_STORE) return (block[24].toInt() and 0xFF) < UNP_VER_20
                     var packed = block.u32(7)
                     if (flags and LHD_LARGE != 0) {
                         if (!rar.readAt(at + FILE_HEAD_FIXED, block, 4)) return false
@@ -121,5 +120,5 @@ internal object RarVolumes {
     private const val LHD_LARGE = 0x0100
     private const val LONG_BLOCK = 0x8000
     private const val METHOD_STORE = 0x30
-    private const val UNP_VER_29 = 29
+    private const val UNP_VER_20 = 20
 }

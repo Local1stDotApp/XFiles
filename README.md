@@ -102,7 +102,7 @@ bundles), 7z, rar, iso, cpio, ar/deb, tar compressed or not (gz, bz2, xz, zst, l
 and single compressed files of each of those kinds. A native library reads them all; zip entries
 can be stored, deflated, Deflate64, bzip2, LZMA, XZ, zstd, PPMd, or one of the old PKZIP methods
 (shrink, implode). Encrypted entries aren't supported. The F-Droid build can't open archives made
-by RAR 2.x and older, from the 1990s; see [docs/fdroid.md](docs/fdroid.md).
+by RAR 1.x, from the mid-1990s; see [docs/fdroid.md](docs/fdroid.md).
 Anything installable installs from right there — see below.
 
 ### High-performance zip
@@ -234,7 +234,7 @@ That last row is enforced by the OS, not by policy — verify it yourself in
 | Architecture | MVVM + StateFlow, manual DI composition root (`di/Graph`); app module + a shaded bundletool vendor module |
 | Persistence | DataStore Preferences |
 | Media/Images | Coil 3 (GIF, custom fetchers: app icons, APK/bundle icons, disk-cached video thumbnails), Media3 ExoPlayer |
-| Archives | libxfarchive (`app/src/main/cpp`, NDK): a read-only libarchive 3.8 subset with zstd, liblzma, bzip2 and lz4 decoders, plus our own random-access zip reader; zip writing on the platform's zlib. junrar for RAR 2.x and older (`full` flavor) |
+| Archives | libxfarchive (`app/src/main/cpp`, NDK): a read-only libarchive 3.8 subset with zstd, liblzma, bzip2 and lz4 decoders, plus our own random-access zip reader; zip writing on the platform's zlib. junrar for RAR 1.x archives (`full` flavor) |
 | Privileged access | Shizuku 13.1.5 (user service, real fds) · `su` shell |
 | Package install | PackageInstaller sessions · vendored bundletool 1.18.3 · ARSCLib (in-process aapt2) · minimal self-signed signer |
 
@@ -270,7 +270,7 @@ app/src/main/java/app/local1st/files/
 
 app/src/main/cpp/           libxfarchive: CMake project, JNI, zip reader; third_party/ holds the
                             vendored libarchive, zstd, xz, bzip2 and lz4 sources (README there)
-app/src/full/               RarArchives: junrar for RAR 2.x and older: full flavor (GitHub, Play)
+app/src/full/               RarArchives: junrar for RAR 1.x archives: full flavor (GitHub, Play)
 app/src/fdroid/             RarArchives: no fallback: fdroid flavor (docs/fdroid.md)
 baselineprofile/            Baseline Profile generator (:baselineprofile) for AOT compilation
 vendor/bundletool-shaded/   Gradle module shading bundletool 1.18.3 + its pinned deps
@@ -293,7 +293,7 @@ library for the host and need a C compiler. On first launch grant "All files acc
 deep-links to the system page).
 
 GitHub releases and Google Play ship the `full` flavor. `fdroid` (`:app:assembleFdroidDebug`) is
-what F-Droid builds: the same app without junrar, so without RAR 2.x and older archives
+what F-Droid builds: the same app without junrar, so without archives made by RAR 1.x
 ([why](docs/fdroid.md)).
 
 ## Releases

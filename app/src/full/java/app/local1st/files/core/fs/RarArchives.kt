@@ -17,11 +17,10 @@ import kotlin.concurrent.thread
  * The full flavor's RAR hook for [ArchiveFileSystem]: the RAR archives libarchive can't read,
  * through junrar.
  *
- * libarchive reads every other RAR in both flavors, solid RAR 4 included, but it can't decode
- * members packed by RAR 1.5 to 2.x, nor the RAR 1.4 format ([RarVolumes.isBeyondLibarchive]).
- * junrar can. junrar is under the UnRAR
- * licence, which F-Droid treats as non-free, so the fdroid flavor's copy of this object has no
- * fallback.
+ * libarchive reads every other RAR in both flavors, from RAR 2.0 to RAR 5, but it can't decode
+ * members packed by RAR 1.5x, nor the RAR 1.4 format ([RarVolumes.isBeyondLibarchive]). junrar
+ * can. junrar is under the UnRAR licence, which F-Droid treats as non-free, so the fdroid
+ * flavor's copy of this object has no fallback.
  *
  * Two of junrar's habits are worked around here. It reads a multi-volume set one volume at a
  * time, so [JoinedRarVolumes] hands it the set as one archive. And its getInputStream drops

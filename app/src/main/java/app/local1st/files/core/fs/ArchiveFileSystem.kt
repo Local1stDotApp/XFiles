@@ -22,7 +22,7 @@ import java.io.RandomAccessFile
  * its random-access zip reader; 7z, RAR, tar (plain or compressed with gzip, bzip2, xz, zstd,
  * lz4, lzip, lzma or compress), ISO 9660, cpio and ar/deb by its libarchive; and single-file
  * compressed streams as one-file pseudo-archives. The full flavor's [RarArchives] still reads
- * archives made by RAR 2.x and older, which libarchive can't.
+ * archives made by RAR 1.x, which libarchive can't.
  *
  * Each archive is parsed once into an in-memory tree of [Node]s, cached in a small
  * LRU keyed by archive path + file mtime + length, so re-listing directories and

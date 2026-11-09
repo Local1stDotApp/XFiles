@@ -9,7 +9,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/** The full flavor hands junrar the RAR archives libarchive can't read. */
+/** The full flavor hands junrar the RAR archives libarchive can't read, those made by RAR 1.x. */
 class RarFlavorTest {
 
     @get:Rule
@@ -21,21 +21,24 @@ class RarFlavorTest {
     fun fullFlavor_keepsJunrarForWhatLibarchiveCantRead() {
         Class.forName("com.github.junrar.Archive")
 
-        assertTrue(RarArchives.readsItself(fixture("rar2-unix-owner.rar")))
-        // Solid RAR 4 is read natively now (SolidRar4Test).
+        assertTrue(RarArchives.readsItself(fixture("rar15.rar")))
+        assertTrue(RarArchives.readsItself(fixture("rar15-comment.rar")))
+        // RAR 2.x and solid RAR 4 are read natively now (Rar2Test, SolidRar4Test).
+        assertFalse(RarArchives.readsItself(fixture("rar2-unix-owner.rar")))
         assertFalse(RarArchives.readsItself(fixture("test_read_format_rar4_solid_encrypted.rar")))
         assertFalse(RarArchives.readsItself(fixture("test_read_format_rar5_compressed.rar")))
         assertFalse(RarArchives.readsItself(fixture("test_read_format_rar_multivolume.part0001.rar")))
     }
 
     @Test
-    fun rar2Archive_opensThroughJunrar() {
-        val entries = fileSystem.list(root(fixture("rar2-unix-owner.rar")))
+    fun rar15Archive_opensThroughJunrar() {
+        // rar15-comment.rar without its file comments, which junrar can't read past.
+        val entries = fileSystem.list(root(fixture("rar15.rar")))
 
-        assertEquals(listOf("file.txt"), entries.map(XEntry::name))
-        val bytes = fileSystem.openIn(entries.single()).use { it.readBytes() }
-        assertEquals(4, bytes.size)
-        assertEquals(0x7E3265A8L, CRC32().apply { update(bytes) }.value) // the CRC its header holds
+        assertEquals(listOf("FILE1.TXT", "FILE2.TXT"), entries.map(XEntry::name))
+        // The CRCs their headers hold. FILE1.TXT is packed with the RAR 1.5 algorithm, FILE2.TXT stored.
+        val crcs = entries.map { entry -> CRC32().apply { update(fileSystem.openIn(entry).use { it.readBytes() }) }.value }
+        assertEquals(listOf(0xE27F07A9L, 0x3C4306F7L), crcs)
     }
 
     private fun root(archive: File) = XEntry(

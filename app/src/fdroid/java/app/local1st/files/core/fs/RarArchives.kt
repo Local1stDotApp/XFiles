@@ -6,9 +6,9 @@ import java.io.InputStream
 
 /**
  * The fdroid flavor's RAR hook for [ArchiveFileSystem]: nothing beyond libarchive, which reads
- * every RAR except archives made by RAR 1.5 to 2.x and RAR 1.4. The full flavor reads those
- * with junrar, whose UnRAR licence F-Droid treats as non-free; here they fail to
- * open like any other archive that can't be read.
+ * every RAR except archives made by RAR 1.x (RAR 1.4 and 1.5x). The full flavor reads those
+ * with junrar, whose UnRAR licence F-Droid treats as non-free; here a RAR 1.4 archive fails
+ * to open and a RAR 1.5x member fails to read, like anything else that can't be read.
  */
 internal object RarArchives {
 

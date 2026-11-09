@@ -67,7 +67,7 @@ static int enable(struct archive *a, jint formats) {
 /*
  * Opens the archive (several paths for a multi-volume RAR). formats is a FORMAT_* mask. With
  * decode_skipped, members passed over on the way to the one read are decoded where later ones
- * continue them (solid RAR 4), so those can be read; listing leaves it off.
+ * continue them (solid RAR 2.x to 4.x), so those can be read; listing leaves it off.
  */
 JNIEXPORT jlong XF_JNI(open)(JNIEnv *env, jclass clazz, jobjectArray paths, jint formats,
                              jboolean decode_skipped) {

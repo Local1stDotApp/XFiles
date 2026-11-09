@@ -70,8 +70,8 @@ since the CI secrets are write-only.
 Play requires an **AAB**, not an APK. The release workflow now runs
 `:app:bundleFullRelease` alongside `:app:assembleFullRelease` and uploads
 `app-full-release.aab` as a build artifact (90-day retention). Download it from the
-workflow run and upload that to Play. Play gets the `full` flavor, which keeps junrar for RAR 2.x
-and older archives; the `fdroid` flavor is for F-Droid ([fdroid.md](fdroid.md)).
+workflow run and upload that to Play. Play gets the `full` flavor, which keeps junrar for
+archives made by RAR 1.x; the `fdroid` flavor is for F-Droid ([fdroid.md](fdroid.md)).
 
 Verified locally: the bundle builds clean with R8/`isMinifyEnabled = true` (7.4 MB AAB,
 3.2 MB release APK).
@@ -330,4 +330,4 @@ account's address.
 - **Consider F-Droid/IzzyOnDroid in parallel.** The metadata in `fastlane/` already
   satisfies both. Neither restricts All files access or root, so they can carry the app
   while Play review runs. F-Droid builds the `fdroid` flavor, which leaves junrar out and so
-  can't open RAR 2.x and older archives; see [fdroid.md](fdroid.md).
+  can't open archives made by RAR 1.x; see [fdroid.md](fdroid.md).

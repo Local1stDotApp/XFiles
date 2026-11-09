@@ -37,8 +37,8 @@ internal object NativeArchive {
 
     /**
      * [decodeSkipped]: entries passed over on the way to the one read are decoded when later
-     * ones depend on them (solid RAR 4), so they can be read, at the cost of the decoding.
-     * Listing leaves it off and jumps over them.
+     * ones depend on them (solid RAR 2.x to 4.x), so they can be read, at the cost of the
+     * decoding. Listing leaves it off and jumps over them.
      */
     @JvmStatic external fun open(paths: Array<ByteArray>, formats: Int, decodeSkipped: Boolean): Long
 
