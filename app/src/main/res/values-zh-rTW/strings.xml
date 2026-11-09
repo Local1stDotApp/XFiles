@@ -232,6 +232,7 @@
     <string name="encoding">編碼</string>
     <string name="auto_detect">自動偵測</string>
     <string name="playback_speed">播放速度</string>
+    <string name="picture_in_picture">子母畫面</string>
     <string name="decoded_binary_xml">已從 Android 二進位 XML 解碼（唯讀）</string>
     <string name="previous_frame">上一幀</string>
     <string name="next_frame">下一幀</string>

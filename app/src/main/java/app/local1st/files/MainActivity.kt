@@ -1,5 +1,6 @@
 package app.local1st.files
 
+import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.res.Configuration
 import android.content.res.Resources
@@ -26,14 +27,17 @@ import app.local1st.files.di.Graph
 import app.local1st.files.ui.main.AppHost
 import app.local1st.files.ui.main.MainViewModel
 import app.local1st.files.ui.theme.XFilesTheme
+import app.local1st.files.ui.viewer.PictureInPictureHost
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), PictureInPictureHost {
 
     private val incomingIntents = Channel<Intent>(Channel.BUFFERED)
     private val incomingIntentFlow = incomingIntents.receiveAsFlow()
+
+    override var pipOnLeave: PictureInPictureParams? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // auto() with LaunchTheme so bar icons follow in-app night. Contrast is forced
@@ -49,6 +53,16 @@ class MainActivity : ComponentActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         applyEdgeToEdge()
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        // Android 12+ enters on its own (setAutoEnterEnabled); doing it here too would enter twice.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            // Refused when the user has turned picture-in-picture off for the app: the activity
+            // then just stops, and the player pauses with it.
+            pipOnLeave?.let { runCatching { enterPictureInPictureMode(it) } }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

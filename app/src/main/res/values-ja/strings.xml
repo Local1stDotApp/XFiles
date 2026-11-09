@@ -231,6 +231,7 @@
     <string name="encoding">文字コード</string>
     <string name="auto_detect">自動検出</string>
     <string name="playback_speed">再生速度</string>
+    <string name="picture_in_picture">ピクチャー イン ピクチャー</string>
     <string name="decoded_binary_xml">Android バイナリ XML からデコードしました（読み取り専用）</string>
     <string name="previous_frame">前のフレーム</string>
     <string name="next_frame">次のフレーム</string>

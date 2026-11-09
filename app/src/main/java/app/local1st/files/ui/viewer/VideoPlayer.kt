@@ -1,5 +1,9 @@
 package app.local1st.files.ui.viewer
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.MediaMetadataRetriever
 import android.os.Build
 import android.os.Handler
@@ -42,6 +46,7 @@ import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Forward5
 import androidx.compose.material.icons.outlined.Pause
+import androidx.compose.material.icons.outlined.PictureInPictureAlt
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.Replay5
 import androidx.compose.material.icons.outlined.SkipNext
@@ -75,7 +80,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -83,12 +91,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
@@ -143,12 +153,16 @@ fun VideoPlayerScreen(
     var resumeAfterScrub by remember { mutableStateOf(false) }
     var cardDragging by remember { mutableStateOf(false) }
     var speedMenuOpen by remember { mutableStateOf(false) }
+    var videoAspect by remember { mutableStateOf<Float?>(null) }
+    // The player view's bounds in the window: where a picture-in-picture window grows out of.
+    var playerBounds by remember { mutableStateOf<android.graphics.Rect?>(null) }
+    val inPip = rememberInPictureInPicture()
 
     // The system bars belong to the same chrome as the close row and the control card: they go
     // when it goes and come back with it, rather than being suppressed for the whole session.
     // Scrubbing stays safe either way — the scrub layer below keeps clear of the back-gesture edge
     // zones on its own, instead of relying on hidden bars to swallow the first edge swipe.
-    SystemBarsHidden(hidden = !controlsVisible)
+    SystemBarsHidden(hidden = !controlsVisible || inPip)
     // Black behind the status bar in either theme; a light theme's dark icons would vanish there.
     DarkSystemBars()
     val view = LocalView.current
@@ -172,7 +186,11 @@ fun VideoPlayerScreen(
                 seekGate.reset()
                 player.pauseAtEndOfMediaItems = false
             }
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                videoAspect = videoAspect(videoSize.width, videoSize.height, videoSize.pixelWidthHeightRatio)
+            }
         }
+        videoAspect = player.videoSize.let { videoAspect(it.width, it.height, it.pixelWidthHeightRatio) }
         player.addListener(listener)
         onDispose {
             player.removeListener(listener)
@@ -233,8 +251,9 @@ fun VideoPlayerScreen(
         interactionTick++
     }
 
-    // Out of sight — home, screen off, a call: a preview has nothing to show, so it stops
-    // rather than playing on unseen until the system freezes the app.
+    // Out of sight and not in a picture-in-picture window — home, screen off, a call, or the PiP
+    // window closed: a preview has nothing to show, so it stops rather than playing on unseen
+    // until the system freezes the app. A PiP window only pauses the activity; it never stops it.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, player) {
         val observer = LifecycleEventObserver { _, event ->
@@ -242,6 +261,59 @@ fun VideoPlayerScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val context = LocalContext.current
+    val activity = remember(context) { context.findActivity() }
+    val pipAvailable = remember(context, activity) { activity != null && supportsPictureInPicture(context) }
+    val maxPipActions = remember(activity) { activity?.maxNumPictureInPictureActions ?: 0 }
+    fun currentPipParams(autoEnter: Boolean) = pipParams(
+        aspect = videoAspect,
+        // Only from the full-screen layout: inside the window, the bounds are the window's own.
+        sourceRect = if (inPip) null else videoAspect?.let { aspect -> playerBounds?.let { fittedVideoRect(it, aspect) } },
+        actions = pipActions(context, playing, maxPipActions),
+        autoEnter = autoEnter,
+    )
+    // Leaving the app while a video plays shrinks it into a window instead of stopping it.
+    // Synchronous on purpose: Open with… disarms this right before starting another activity,
+    // which also counts as leaving.
+    fun armPip(armed: Boolean) {
+        val host = activity ?: return
+        if (!pipAvailable) return
+        val params = currentPipParams(autoEnter = armed)
+        runCatching { host.setPictureInPictureParams(params) }
+        (host as? PictureInPictureHost)?.pipOnLeave = if (armed) params else null
+    }
+    fun enterPip() {
+        val host = activity ?: return
+        runCatching { host.enterPictureInPictureMode(currentPipParams(autoEnter = playing)) }
+    }
+    // Also refreshed inside the window, whose play/pause button has to show the current state.
+    LaunchedEffect(pipAvailable, playing, inPip, videoAspect, playerBounds) {
+        armPip(armed = playing && !inPip)
+    }
+    DisposableEffect(activity) {
+        onDispose { armPip(armed = false) }
+    }
+    // The window's buttons arrive as broadcasts from our own PendingIntents.
+    DisposableEffect(context, player, pipAvailable) {
+        if (!pipAvailable) return@DisposableEffect onDispose {}
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, intent: Intent) {
+                when (intent.getIntExtra(EXTRA_PIP_CONTROL, 0)) {
+                    PIP_PLAY_PAUSE -> togglePlayback(player, playbackIntended(player))
+                    PIP_REWIND -> stepSeconds(-STEP_SECONDS)
+                    PIP_FORWARD -> stepSeconds(STEP_SECONDS)
+                }
+            }
+        }
+        ContextCompat.registerReceiver(
+            context,
+            receiver,
+            IntentFilter(ACTION_PIP_CONTROL),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        onDispose { context.unregisterReceiver(receiver) }
     }
 
     // Pausing is when the controls matter, so surface them — except mid-swipe, where the
@@ -286,7 +358,18 @@ fun VideoPlayerScreen(
                 }
             },
             update = { it.player = player },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .onGloballyPositioned { coords ->
+                    val b = coords.boundsInWindow()
+                    val rect = android.graphics.Rect(
+                        b.left.roundToInt(),
+                        b.top.roundToInt(),
+                        b.right.roundToInt(),
+                        b.bottom.roundToInt(),
+                    )
+                    if (rect != playerBounds) playerBounds = rect
+                },
         )
 
         // Tap toggles the chrome; horizontal swipes seek directly on the picture.
@@ -370,7 +453,7 @@ fun VideoPlayerScreen(
         }
 
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = controlsVisible && !inPip,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter),
@@ -414,16 +497,24 @@ fun VideoPlayerScreen(
                         contentColor = Color.White,
                         onExpandedChange = { speedMenuOpen = it },
                     )
+                    if (pipAvailable) {
+                        TooltipIconButton(
+                            stringResource(R.string.picture_in_picture),
+                            Icons.Outlined.PictureInPictureAlt,
+                        ) { enterPip() }
+                    }
                     TooltipIconButton(
                         stringResource(R.string.open_with),
                         Icons.AutoMirrored.Outlined.OpenInNew,
-                        onClick = onOpenWith,
-                    )
+                    ) {
+                        armPip(armed = false)
+                        onOpenWith()
+                    }
                 }
             }
         }
 
-        scrubLabel?.let { label ->
+        scrubLabel?.takeUnless { inPip }?.let { label ->
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 color = Color.Black.copy(alpha = 0.6f),
@@ -443,7 +534,7 @@ fun VideoPlayerScreen(
         }
 
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = controlsVisible && !inPip,
             enter = fadeIn() + slideInVertically { it / 2 },
             exit = fadeOut() + slideOutVertically { it / 2 },
             modifier = Modifier

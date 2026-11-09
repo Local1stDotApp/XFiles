@@ -232,6 +232,7 @@ Hängen Sie den Ort zuerst in einer anderen App als Ordner ein — RCX (rclone),
     <string name="encoding">Zeichenkodierung</string>
     <string name="auto_detect">Automatisch erkennen</string>
     <string name="playback_speed">Wiedergabegeschwindigkeit</string>
+    <string name="picture_in_picture">Bild-im-Bild</string>
     <string name="decoded_binary_xml">Aus Android-Binär-XML dekodiert (schreibgeschützt)</string>
     <string name="previous_frame">Vorheriger Frame</string>
     <string name="next_frame">Nächster Frame</string>

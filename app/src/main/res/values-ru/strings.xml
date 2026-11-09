@@ -234,6 +234,7 @@
     <string name="encoding">Кодировка</string>
     <string name="auto_detect">Определять автоматически</string>
     <string name="playback_speed">Скорость воспроизведения</string>
+    <string name="picture_in_picture">Картинка в картинке</string>
     <string name="decoded_binary_xml">Декодировано из двоичного XML-файла Android (только для чтения).</string>
     <string name="previous_frame">Предыдущий кадр</string>
     <string name="next_frame">Следующий кадр</string>

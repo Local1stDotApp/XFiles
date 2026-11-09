@@ -230,6 +230,7 @@
     <string name="encoding">Encoding</string>
     <string name="auto_detect">Auto-detect</string>
     <string name="playback_speed">Playback speed</string>
+    <string name="picture_in_picture">Picture-in-picture</string>
     <string name="decoded_binary_xml">Decoded from Android binary XML (read-only)</string>
     <string name="previous_frame">Previous frame</string>
     <string name="next_frame">Next frame</string>

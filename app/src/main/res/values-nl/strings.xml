@@ -232,6 +232,7 @@ Koppel die locatie eerst in een andere app als map — RCX (rclone), Nextcloud, 
     <string name="encoding">Codering</string>
     <string name="auto_detect">Automatisch detecteren</string>
     <string name="playback_speed">Afspeelsnelheid</string>
+    <string name="picture_in_picture">Scherm-in-scherm</string>
     <string name="decoded_binary_xml">Gedecodeerd uit Android binaire XML (alleen-lezen)</string>
     <string name="previous_frame">Vorige frame</string>
     <string name="next_frame">Volgende frame</string>

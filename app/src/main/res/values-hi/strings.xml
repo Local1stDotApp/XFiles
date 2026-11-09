@@ -232,6 +232,7 @@
     <string name="encoding">एन्कोडिंग</string>
     <string name="auto_detect">अपने-आप पहचानें</string>
     <string name="playback_speed">प्लेबैक स्पीड</string>
+    <string name="picture_in_picture">पिक्चर-इन-पिक्चर</string>
     <string name="decoded_binary_xml">एंड्रॉइड बाइनरी XML से डिकोड किया गया (केवल पढ़ने के लिए)</string>
     <string name="previous_frame">पिछला फ़्रेम</string>
     <string name="next_frame">अगला फ़्रेम</string>
