@@ -233,6 +233,7 @@ Najpierw zamontuj tę lokalizację w innej aplikacji jako folder — RCX (rclone
     <string name="larger_text">Większy tekst</string>
     <string name="encoding">Kodowanie</string>
     <string name="auto_detect">Wykryj automatycznie</string>
+    <string name="playback_speed">Szybkość odtwarzania</string>
     <string name="decoded_binary_xml">Zdekodowano z binarnego pliku XML Androida (tylko do odczytu)</string>
     <string name="previous_frame">Poprzednia klatka</string>
     <string name="next_frame">Następna klatka</string>

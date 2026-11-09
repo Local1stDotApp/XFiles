@@ -231,6 +231,7 @@ Monta prima quella posizione come cartella in un’altra app — RCX (rclone), N
     <string name="larger_text">Testo più grande</string>
     <string name="encoding">Codifica</string>
     <string name="auto_detect">Rilevamento automatico</string>
+    <string name="playback_speed">Velocità di riproduzione</string>
     <string name="decoded_binary_xml">Decodificato da XML binario Android (sola lettura)</string>
     <string name="previous_frame">Fotogramma precedente</string>
     <string name="next_frame">Fotogramma successivo</string>

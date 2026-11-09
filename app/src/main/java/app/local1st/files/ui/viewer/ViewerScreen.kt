@@ -28,7 +28,8 @@ fun ViewerScreen(vm: MainViewModel, request: ViewerRequest, onBack: () -> Unit) 
             )
             is ViewerRequest.Hex -> HexViewer(req.entry, close)
             is ViewerRequest.Pdf -> PdfViewer(req.entry, close) { vm.openWith(req.entry) }
-            is ViewerRequest.Media -> MediaViewer(req.entry, req.playlist, close)
+            // The playing item, not the tapped one: next/previous move through the folder.
+            is ViewerRequest.Media -> MediaViewer(req.entry, req.playlist, close, onOpenWith = vm::openWith)
         }
     }
 }

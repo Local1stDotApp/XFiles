@@ -235,6 +235,7 @@
     <string name="larger_text">تكبير النص</string>
     <string name="encoding">الترميز</string>
     <string name="auto_detect">اكتشاف تلقائي</string>
+    <string name="playback_speed">سرعة التشغيل</string>
     <string name="decoded_binary_xml">تم فك ترميز ملف Android XML الثنائي (للقراءة فقط)</string>
     <string name="previous_frame">الإطار السابق</string>
     <string name="next_frame">الإطار التالي</string>

@@ -231,6 +231,7 @@ Montez d’abord cet emplacement comme dossier dans une autre appli — RCX (rcl
     <string name="larger_text">Texte plus grand</string>
     <string name="encoding">Encodage</string>
     <string name="auto_detect">Détection automatique</string>
+    <string name="playback_speed">Vitesse de lecture</string>
     <string name="decoded_binary_xml">Décodé à partir du XML binaire Android (lecture seule)</string>
     <string name="previous_frame">Image précédente</string>
     <string name="next_frame">Image suivante</string>

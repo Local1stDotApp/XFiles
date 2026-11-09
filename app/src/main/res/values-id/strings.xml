@@ -231,6 +231,7 @@ Pasang dulu lokasi itu sebagai folder di aplikasi lain — RCX (rclone), Nextclo
     <string name="larger_text">Teks lebih besar</string>
     <string name="encoding">Encoding</string>
     <string name="auto_detect">Deteksi otomatis</string>
+    <string name="playback_speed">Kecepatan pemutaran</string>
     <string name="decoded_binary_xml">Didekodekan dari XML biner Android (hanya baca)</string>
     <string name="previous_frame">Bingkai sebelumnya</string>
     <string name="next_frame">Bingkai berikutnya</string>

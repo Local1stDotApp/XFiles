@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
@@ -49,6 +50,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Slider
@@ -58,6 +60,7 @@ import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -80,6 +83,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -118,7 +124,9 @@ fun VideoPlayerScreen(
     playing: Boolean,
     hasPrevious: Boolean,
     hasNext: Boolean,
+    speed: Float,
     onClose: () -> Unit,
+    onOpenWith: () -> Unit,
 ) {
     // All of these are UNKEYED remembers on purpose: long-lived gesture closures
     // (pointerInput below) capture the state objects once, and only an unkeyed
@@ -134,6 +142,7 @@ fun VideoPlayerScreen(
     var sliderPos by remember { mutableStateOf<Float?>(null) }
     var resumeAfterScrub by remember { mutableStateOf(false) }
     var cardDragging by remember { mutableStateOf(false) }
+    var speedMenuOpen by remember { mutableStateOf(false) }
 
     // The system bars belong to the same chrome as the close row and the control card: they go
     // when it goes and come back with it, rather than being suppressed for the whole session.
@@ -224,6 +233,17 @@ fun VideoPlayerScreen(
         interactionTick++
     }
 
+    // Out of sight — home, screen off, a call: a preview has nothing to show, so it stops
+    // rather than playing on unseen until the system freezes the app.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, player) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) player.pause()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     // Pausing is when the controls matter, so surface them — except mid-swipe, where the
     // pause is our own bookkeeping and chrome would defeat the gesture's purpose.
     LaunchedEffect(playing) {
@@ -231,7 +251,7 @@ fun VideoPlayerScreen(
     }
     // Auto-hide only while playing hands-free: a finger on the slider or the card must
     // never have the control it's holding vanish beneath it.
-    val interacting = scrubbing || cardDragging || sliderPos != null
+    val interacting = scrubbing || cardDragging || sliderPos != null || speedMenuOpen
     LaunchedEffect(controlsVisible, playing, interacting, interactionTick) {
         if (controlsVisible && playing && !interacting) {
             delay(AUTO_HIDE_MS)
@@ -371,7 +391,7 @@ fun VideoPlayerScreen(
                             cutout.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal),
                         ),
                     )
-                    .padding(start = 4.dp, end = 16.dp, bottom = 8.dp),
+                    .padding(start = 4.dp, end = 4.dp, bottom = 8.dp),
             ) {
                 IconButton(onClick = onClose) {
                     Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.close), tint = Color.White)
@@ -382,7 +402,24 @@ fun VideoPlayerScreen(
                     color = Color.White,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
+                CompositionLocalProvider(LocalContentColor provides Color.White) {
+                    PlaybackSpeedButton(
+                        speed = speed,
+                        onSpeed = {
+                            player.setPlaybackSpeed(it)
+                            interactionTick++
+                        },
+                        contentColor = Color.White,
+                        onExpandedChange = { speedMenuOpen = it },
+                    )
+                    TooltipIconButton(
+                        stringResource(R.string.open_with),
+                        Icons.AutoMirrored.Outlined.OpenInNew,
+                        onClick = onOpenWith,
+                    )
+                }
             }
         }
 
@@ -563,21 +600,7 @@ fun VideoPlayerScreen(
                         ) {
                             FilledIconButton(
                                 onClick = {
-                                    when {
-                                        playing -> player.pause()
-                                        // play() alone is a no-op at ENDED/IDLE — the
-                                        // stock controller restarts/re-prepares, so do we.
-                                        player.playbackState == Player.STATE_ENDED -> {
-                                            player.seekToDefaultPosition()
-                                            player.play()
-                                        }
-                                        else -> {
-                                            if (player.playbackState == Player.STATE_IDLE) {
-                                                player.prepare()
-                                            }
-                                            player.play()
-                                        }
-                                    }
+                                    togglePlayback(player, playing)
                                     interactionTick++
                                 },
                                 modifier = Modifier.size(44.dp),

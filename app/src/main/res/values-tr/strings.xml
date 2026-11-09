@@ -231,6 +231,7 @@
     <string name="larger_text">Daha büyük metin</string>
     <string name="encoding">Kodlama</string>
     <string name="auto_detect">Otomatik algıla</string>
+    <string name="playback_speed">Oynatma hızı</string>
     <string name="decoded_binary_xml">Android ikili XML\'den kodu çözüldü (salt okunur)</string>
     <string name="previous_frame">Önceki kare</string>
     <string name="next_frame">Sonraki kare</string>
