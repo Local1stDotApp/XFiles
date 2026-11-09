@@ -226,6 +226,11 @@ Monte esse local como pasta em outro app primeiro — RCX (rclone), Nextcloud ou
     <string name="discard">Descartar</string>
     <string name="wrap_lines">Quebrar linhas</string>
     <string name="stop_wrapping">Parar de quebrar</string>
+    <string name="text_size">Tamanho do texto</string>
+    <string name="smaller_text">Texto menor</string>
+    <string name="larger_text">Texto maior</string>
+    <string name="encoding">Codificação</string>
+    <string name="auto_detect">Detectar automaticamente</string>
     <string name="decoded_binary_xml">Decodificado do XML binário Android (somente leitura)</string>
     <string name="previous_frame">Quadro anterior</string>
     <string name="next_frame">Próximo quadro</string>

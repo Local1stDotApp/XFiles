@@ -226,6 +226,11 @@
     <string name="discard">버리기</string>
     <string name="wrap_lines">줄 바꿈</string>
     <string name="stop_wrapping">줄 바꿈 해제</string>
+    <string name="text_size">글자 크기</string>
+    <string name="smaller_text">글자 작게</string>
+    <string name="larger_text">글자 크게</string>
+    <string name="encoding">인코딩</string>
+    <string name="auto_detect">자동 감지</string>
     <string name="decoded_binary_xml">Android 바이너리 XML에서 디코딩됨(읽기 전용)</string>
     <string name="previous_frame">이전 프레임</string>
     <string name="next_frame">다음 프레임</string>

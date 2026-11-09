@@ -226,6 +226,11 @@ Hängen Sie den Ort zuerst in einer anderen App als Ordner ein — RCX (rclone),
     <string name="discard">Verwerfen</string>
     <string name="wrap_lines">Zeilen umbrechen</string>
     <string name="stop_wrapping">Umbruch beenden</string>
+    <string name="text_size">Textgröße</string>
+    <string name="smaller_text">Kleinerer Text</string>
+    <string name="larger_text">Größerer Text</string>
+    <string name="encoding">Zeichenkodierung</string>
+    <string name="auto_detect">Automatisch erkennen</string>
     <string name="decoded_binary_xml">Aus Android-Binär-XML dekodiert (schreibgeschützt)</string>
     <string name="previous_frame">Vorheriger Frame</string>
     <string name="next_frame">Nächster Frame</string>

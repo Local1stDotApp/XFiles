@@ -226,6 +226,11 @@ Hãy gắn vị trí đó thành thư mục trong ứng dụng khác trước �
     <string name="discard">Bỏ</string>
     <string name="wrap_lines">Ngắt dòng</string>
     <string name="stop_wrapping">Ngừng ngắt dòng</string>
+    <string name="text_size">Cỡ chữ</string>
+    <string name="smaller_text">Chữ nhỏ hơn</string>
+    <string name="larger_text">Chữ lớn hơn</string>
+    <string name="encoding">Bảng mã</string>
+    <string name="auto_detect">Tự động phát hiện</string>
     <string name="decoded_binary_xml">Đã giải mã từ XML nhị phân của Android (chỉ đọc)</string>
     <string name="previous_frame">Khung hình trước</string>
     <string name="next_frame">Khung hình tiếp theo</string>

@@ -6,6 +6,7 @@ import java.nio.CharBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
+import java.util.Locale
 
 /**
  * Byte encoding of a text document. [charset] is what decode/encode use; [label] is the name to
@@ -28,35 +29,164 @@ data class TextEncoding(
 const val CHARSET_PROBE_BYTES = 32 * 1024
 
 /**
+ * A pre-Unicode encoding a file can be reopened in: the name to show, the languages it was the
+ * everyday encoding for (BCP 47 tags, for the picker to name in the reader's own language), and
+ * the charset names that implement it — the first one this runtime has wins, because Android's
+ * ICU and the JDK name some Windows code pages differently.
+ *
+ * Every one of these is ASCII-compatible and stateless. That is a requirement, not a taste:
+ * [TextRowIndex] finds rows by scanning for the byte `0x0A`, which UTF-16 and the ISO-2022
+ * family can carry inside a character.
+ */
+class LegacyEncoding internal constructor(
+    val label: String,
+    val languages: List<String>,
+    private val names: List<String>,
+) {
+    /** Null when this runtime has none of [names]. */
+    val charset: Charset? by lazy { names.firstNotNullOfOrNull { charsetOrNull(it) } }
+
+    fun encoding(): TextEncoding? = charset?.let { TextEncoding(it, label) }
+}
+
+private fun legacy(label: String, languages: List<String>, vararg names: String) =
+    LegacyEncoding(label, languages, names.toList())
+
+private val Big5 = legacy("Big5", listOf("zh-Hant"), "Big5")
+// windows-31j is Microsoft's Shift_JIS, which is what Japanese files on disk are actually in.
+private val ShiftJis = legacy("Shift_JIS", listOf("ja"), "windows-31j", "Shift_JIS")
+private val EucJp = legacy("EUC-JP", listOf("ja"), "EUC-JP")
+// CP949 is a superset of EUC-KR, with the Hangul syllables EUC-KR cannot spell.
+private val EucKr = legacy("EUC-KR", listOf("ko"), "x-windows-949", "windows-949", "EUC-KR")
+private val Arabic = legacy("Windows-1256", listOf("ar", "fa", "ur"), "windows-1256")
+private val Hebrew = legacy("Windows-1255", listOf("he", "yi"), "windows-1255")
+private val Cyrillic = legacy("Windows-1251", listOf("ru", "uk", "bg", "sr"), "windows-1251")
+private val Koi8R = legacy("KOI8-R", listOf("ru"), "KOI8-R")
+private val Greek = legacy("Windows-1253", listOf("el"), "windows-1253")
+private val Turkish = legacy("Windows-1254", listOf("tr", "az"), "windows-1254")
+private val CentralEuropean = legacy("Windows-1250", listOf("pl", "cs", "hu", "sk", "ro", "hr"), "windows-1250")
+private val Baltic = legacy("Windows-1257", listOf("lt", "lv", "et"), "windows-1257")
+private val Vietnamese = legacy("Windows-1258", listOf("vi"), "windows-1258")
+private val Thai = legacy("Windows-874", listOf("th"), "x-windows-874", "windows-874", "TIS-620")
+private val Western = legacy("Windows-1252", listOf("en", "fr", "de", "es", "pt", "it"), "windows-1252")
+
+/**
+ * What a file can be reopened in, in the order to offer them: UTF-8, the GB family, then the
+ * code pages this runtime has. [LegacyEncoding.languages] is empty for UTF-8.
+ */
+fun selectableEncodings(): List<LegacyEncoding> = buildList {
+    add(LegacyEncoding("UTF-8", emptyList(), listOf("UTF-8")))
+    chineseLegacyCharset()?.let { add(LegacyEncoding("GB18030", listOf("zh-Hans"), listOf(it.name()))) }
+    for (encoding in listOf(
+        Big5, ShiftJis, EucJp, EucKr, Arabic, Hebrew, Cyrillic, Koi8R, Greek, Turkish,
+        CentralEuropean, Baltic, Vietnamese, Thai, Western,
+    )) {
+        if (encoding.charset != null) add(encoding)
+    }
+}
+
+/**
+ * The legacy encodings worth trying, in order, for someone whose languages are [locales]: what
+ * files in those languages were saved in before UTF-8. Simplified Chinese has none because GB18030
+ * is recognised from the bytes alone, for everyone; English has none because English text is
+ * ASCII, and Windows-1252 is everyone's last resort anyway. The other Western languages do name
+ * it, ahead of the GB check: an umlaut is usually followed by another letter, and enough of those
+ * pairs make a German file look like GBK.
+ */
+fun legacyEncodingHints(locales: List<Locale>): List<Charset> {
+    val hints = LinkedHashSet<Charset>()
+    for (locale in locales) {
+        val encodings = when (locale.language) {
+            // EUC-JP first: Shift_JIS bytes are almost never valid EUC-JP, while EUC-JP bytes
+            // read as Shift_JIS without a single error — as half-width katakana.
+            "ja" -> listOf(EucJp, ShiftJis)
+            "ko" -> listOf(EucKr)
+            "zh" -> if (isTraditionalChinese(locale)) listOf(Big5) else emptyList()
+            "ar", "fa", "ur" -> listOf(Arabic)
+            "he", "iw", "yi", "ji" -> listOf(Hebrew)
+            "ru", "uk", "be", "bg", "sr", "mk", "kk", "ky", "tg", "mn" -> listOf(Cyrillic)
+            "el" -> listOf(Greek)
+            "tr", "az" -> listOf(Turkish)
+            "pl", "cs", "sk", "hu", "sl", "hr", "ro", "bs", "sq" -> listOf(CentralEuropean)
+            "lt", "lv", "et" -> listOf(Baltic)
+            "vi" -> listOf(Vietnamese)
+            "th" -> listOf(Thai)
+            "de", "fr", "es", "pt", "it", "nl", "sv", "da", "no", "nb", "nn", "fi", "is", "ca",
+            "eu", "gl", "ga", "cy", "af", "lb", "fo", "br", "oc" -> listOf(Western)
+            else -> emptyList()
+        }
+        encodings.forEach { encoding -> encoding.charset?.let(hints::add) }
+    }
+    return hints.toList()
+}
+
+private fun isTraditionalChinese(locale: Locale): Boolean =
+    locale.script == "Hant" || (locale.script.isEmpty() && locale.country in setOf("TW", "HK", "MO"))
+
+/**
  * Guess the byte encoding of a text file from a leading sample.
  *
  * UTF-8 wins whenever the sample is well-formed: ASCII is valid UTF-8, and real UTF-8 Chinese
- * must not be stolen by the GBK scorer — those encodings overlap on many byte values. GB2312 /
- * GBK / GB18030 are tried only after UTF-8 has already lost: a GBK file of Chinese is almost
- * never well-formed UTF-8, which is what makes the split reliable.
+ * must not be stolen by the GBK scorer — those encodings overlap on many byte values. Everything
+ * else is tried only after UTF-8 has already lost, and only once the sample is mostly bytes UTF-8
+ * cannot be — a UTF-8 file with a few stray bytes stays UTF-8.
+ *
+ * Then, in order: the reader's own legacy encodings ([hints], see [legacyEncodingHints]), if one
+ * decodes the whole sample; GB2312 / GBK / GB18030, from the shape of the bytes; Windows-1252.
+ * The hints come first because the byte shapes overlap — EUC-KR, Big5 and Shift_JIS are all valid
+ * GBK as far as byte ranges go, and Korean read as GBK is a page of the wrong Chinese characters.
+ * Who is reading is the best evidence there is of which one it is.
  */
-fun detectTextEncoding(bytes: ByteArray, length: Int = bytes.size): TextEncoding {
+fun detectTextEncoding(
+    bytes: ByteArray,
+    length: Int = bytes.size,
+    hints: List<Charset> = emptyList(),
+): TextEncoding {
     val n = length.coerceIn(0, bytes.size)
     if (n <= 0) return TextEncoding.Utf8
     val utf8 = utf8Stats(bytes, n)
     if (utf8.invalid == 0) return TextEncoding.Utf8
-    val chineseCharset = chineseLegacyCharset() ?: return TextEncoding.Utf8
-    val chinese = chineseScore(bytes, n)
-    if (!chinese.looksLikeChinese) return TextEncoding.Utf8
     // A UTF-8 file with a single glitch still has many valid multibyte sequences; flipping the
-    // whole document to GBK would garble it. A GBK file has almost none of those sequences.
-    val keepUtf8 = utf8.validMultibyte >= 8 && utf8.validMultibyte >= utf8.invalid * 4
-    if (keepUtf8) return TextEncoding.Utf8
-    return TextEncoding(chineseCharset, chinese.label)
+    // whole document to a legacy encoding would garble it. A legacy file has almost none of them.
+    if (utf8.validMultibyte >= 8 && utf8.validMultibyte >= utf8.invalid * 4) return TextEncoding.Utf8
+    val legacy = utf8.validMultibyte * 2 <= utf8.invalid
+    if (legacy) {
+        for (charset in hints) {
+            if (decodesWhole(bytes, n, charset)) return TextEncoding(charset, labelOf(charset))
+        }
+    }
+    val chineseCharset = chineseLegacyCharset()
+    if (chineseCharset != null) {
+        val chinese = chineseScore(bytes, n)
+        if (chinese.looksLikeChinese) return TextEncoding(chineseCharset, chinese.label)
+    }
+    if (legacy) {
+        val western = Western.charset
+        if (western != null && decodesWhole(bytes, n, western)) return TextEncoding(western, Western.label)
+    }
+    return TextEncoding.Utf8
 }
 
-fun detectTextEncoding(source: ByteWindow): TextEncoding {
+fun detectTextEncoding(source: ByteWindow, hints: List<Charset> = emptyList()): TextEncoding {
     val n = minOf(source.size, CHARSET_PROBE_BYTES.toLong()).toInt()
     if (n <= 0) return TextEncoding.Utf8
     val sample = ByteArray(n)
     val read = source.read(0, sample, 0, n)
     if (read <= 0) return TextEncoding.Utf8
-    return detectTextEncoding(sample, read)
+    return detectTextEncoding(sample, read, hints)
+}
+
+/** The picker's name for [charset], or the charset's own when it is not one of ours. */
+private fun labelOf(charset: Charset): String =
+    selectableEncodings().firstOrNull { it.charset == charset }?.label ?: charset.name()
+
+/**
+ * True when [charset] decodes all of `bytes[0, length)` without a malformed or unmappable byte. A
+ * character the probe cut in half at the end does not count against it: the file goes on.
+ */
+private fun decodesWhole(bytes: ByteArray, length: Int, charset: Charset): Boolean {
+    val longest = runCatching { charset.newEncoder().maxBytesPerChar().toInt() }.getOrDefault(4)
+    return charsetConsumedEnd(bytes, 0, length, charset) >= length - (longest - 1).coerceIn(0, 3)
 }
 
 /**

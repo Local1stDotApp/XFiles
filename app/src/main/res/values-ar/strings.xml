@@ -230,6 +230,11 @@
     <string name="discard">تجاهل</string>
     <string name="wrap_lines">التفاف الأسطر</string>
     <string name="stop_wrapping">إيقاف الالتفاف</string>
+    <string name="text_size">حجم النص</string>
+    <string name="smaller_text">تصغير النص</string>
+    <string name="larger_text">تكبير النص</string>
+    <string name="encoding">الترميز</string>
+    <string name="auto_detect">اكتشاف تلقائي</string>
     <string name="decoded_binary_xml">تم فك ترميز ملف Android XML الثنائي (للقراءة فقط)</string>
     <string name="previous_frame">الإطار السابق</string>
     <string name="next_frame">الإطار التالي</string>

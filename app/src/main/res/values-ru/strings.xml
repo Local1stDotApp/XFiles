@@ -228,6 +228,11 @@
     <string name="discard">Не сохранять</string>
     <string name="wrap_lines">Переносить строки</string>
     <string name="stop_wrapping">Не переносить строки</string>
+    <string name="text_size">Размер текста</string>
+    <string name="smaller_text">Уменьшить текст</string>
+    <string name="larger_text">Увеличить текст</string>
+    <string name="encoding">Кодировка</string>
+    <string name="auto_detect">Определять автоматически</string>
     <string name="decoded_binary_xml">Декодировано из двоичного XML-файла Android (только для чтения).</string>
     <string name="previous_frame">Предыдущий кадр</string>
     <string name="next_frame">Следующий кадр</string>

@@ -226,6 +226,11 @@ Montez d’abord cet emplacement comme dossier dans une autre appli — RCX (rcl
     <string name="discard">Abandonner</string>
     <string name="wrap_lines">Retour à la ligne</string>
     <string name="stop_wrapping">Arrêter le retour à la ligne</string>
+    <string name="text_size">Taille du texte</string>
+    <string name="smaller_text">Texte plus petit</string>
+    <string name="larger_text">Texte plus grand</string>
+    <string name="encoding">Encodage</string>
+    <string name="auto_detect">Détection automatique</string>
     <string name="decoded_binary_xml">Décodé à partir du XML binaire Android (lecture seule)</string>
     <string name="previous_frame">Image précédente</string>
     <string name="next_frame">Image suivante</string>

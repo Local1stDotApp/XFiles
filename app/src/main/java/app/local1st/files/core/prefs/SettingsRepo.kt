@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
@@ -257,6 +258,7 @@ class SettingsRepo(private val context: Context) {
     private val keyThemeMode = stringPreferencesKey("theme_mode")
     private val keyDynamicColor = booleanPreferencesKey("dynamic_color")
     private val keyTextWrap = booleanPreferencesKey("text_wrap")
+    private val keyTextScale = floatPreferencesKey("text_scale")
     private val keyRootEnabled = booleanPreferencesKey("root_enabled")
     private val keyRootReadOnly = booleanPreferencesKey("root_read_only")
     private val keyPrivilegedTransport = stringPreferencesKey("privileged_transport")
@@ -311,6 +313,9 @@ class SettingsRepo(private val context: Context) {
      * destroys the shape of indented text, and XML, JSON and source are most of what gets opened.
      */
     val textWrap: Flow<Boolean> = setting { it[keyTextWrap] ?: false }
+
+    /** The text viewer's size, as a multiple of the body size; the viewer offers fixed steps. */
+    val textScale: Flow<Float> = setting { (it[keyTextScale] ?: 1f).coerceIn(0.5f, 4f) }
 
     /** Root row is on the home screen by default; Read-only still blocks privileged writes. */
     val rootEnabled: Flow<Boolean> = setting { it[keyRootEnabled] ?: DEFAULT_ROOT_ENABLED }
@@ -456,6 +461,7 @@ class SettingsRepo(private val context: Context) {
     }
     suspend fun setDynamicColor(value: Boolean) = context.dataStore.edit { it[keyDynamicColor] = value }
     suspend fun setTextWrap(value: Boolean) = context.dataStore.edit { it[keyTextWrap] = value }
+    suspend fun setTextScale(value: Float) = context.dataStore.edit { it[keyTextScale] = value }
     suspend fun setRootEnabled(value: Boolean) = context.dataStore.edit { it[keyRootEnabled] = value }
     suspend fun setRootReadOnly(value: Boolean) = context.dataStore.edit { it[keyRootReadOnly] = value }
     suspend fun setPrivilegedTransport(value: TransportPref) = context.dataStore.edit {

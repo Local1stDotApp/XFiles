@@ -226,6 +226,11 @@ Monta prima quella posizione come cartella in un’altra app — RCX (rclone), N
     <string name="discard">Scarta</string>
     <string name="wrap_lines">A capo automatico</string>
     <string name="stop_wrapping">Disattiva a capo automatico</string>
+    <string name="text_size">Dimensione testo</string>
+    <string name="smaller_text">Testo più piccolo</string>
+    <string name="larger_text">Testo più grande</string>
+    <string name="encoding">Codifica</string>
+    <string name="auto_detect">Rilevamento automatico</string>
     <string name="decoded_binary_xml">Decodificato da XML binario Android (sola lettura)</string>
     <string name="previous_frame">Fotogramma precedente</string>
     <string name="next_frame">Fotogramma successivo</string>

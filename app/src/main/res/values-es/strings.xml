@@ -226,6 +226,11 @@ Monta esa ubicación como carpeta en otra app primero — RCX (rclone), Nextclou
     <string name="discard">Descartar</string>
     <string name="wrap_lines">Ajustar líneas</string>
     <string name="stop_wrapping">Dejar de ajustar</string>
+    <string name="text_size">Tamaño del texto</string>
+    <string name="smaller_text">Texto más pequeño</string>
+    <string name="larger_text">Texto más grande</string>
+    <string name="encoding">Codificación</string>
+    <string name="auto_detect">Detectar automáticamente</string>
     <string name="decoded_binary_xml">Decodificado de XML binario de Android (solo lectura)</string>
     <string name="previous_frame">Fotograma anterior</string>
     <string name="next_frame">Fotograma siguiente</string>

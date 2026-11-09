@@ -1,6 +1,9 @@
 package app.local1st.files.ui.viewer
 
 import android.content.Context
+import android.content.res.Resources
+import android.icu.text.LocaleDisplayNames
+import android.icu.util.ULocale
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -19,6 +22,8 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,25 +34,36 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.automirrored.outlined.Redo
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.automirrored.outlined.WrapText
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.EditOff
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.TextDecrease
+import androidx.compose.material.icons.outlined.TextIncrease
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -94,6 +110,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -102,20 +119,26 @@ import androidx.compose.ui.platform.TextToolbar
 import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import app.local1st.files.R
@@ -129,11 +152,14 @@ import app.local1st.files.core.text.ByteWindow
 import app.local1st.files.core.text.EditCaret
 import app.local1st.files.core.text.EditDocument
 import app.local1st.files.core.text.FileByteWindow
+import app.local1st.files.core.text.MAX_ROW_BYTES
 import app.local1st.files.core.text.TextEncoding
 import app.local1st.files.core.text.TextRowIndex
 import app.local1st.files.core.text.TextRowIndexStore
 import app.local1st.files.core.text.detectTextEncoding
 import app.local1st.files.core.text.isTextCodingFailure
+import app.local1st.files.core.text.legacyEncodingHints
+import app.local1st.files.core.text.selectableEncodings
 import app.local1st.files.core.util.AxmlDecoder
 import app.local1st.files.core.util.Format
 import app.local1st.files.di.Graph
@@ -142,6 +168,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -214,6 +241,7 @@ fun TextViewer(
     startEditing: Boolean = false,
     onClose: () -> Unit,
     onFileChanged: () -> Unit = {},
+    onOpenWith: () -> Unit,
 ) {
     val context = LocalContext.current
     val cannotRead = stringResource(R.string.cannot_read, entry.name)
@@ -243,9 +271,20 @@ fun TextViewer(
     val editorHandle = remember { EditorHandle() }
     val closeViewer by rememberUpdatedState(onClose)
     val wrap by Graph.settings.textWrap.collectAsState(initial = false)
+    val textScale by Graph.settings.textScale.collectAsState(initial = 1f)
+    val unwrappedScaleLimit = rememberUnwrappedScaleLimit()
+    // Unwrapped, a full-length row is laid out at its whole width, and past this limit that
+    // width no longer fits a layout: the scale gives way instead of the viewer crashing.
+    val effectiveScale = if (wrap) textScale else minOf(textScale, unwrappedScaleLimit)
+    var menuOpen by remember { mutableStateOf(false) }
+    var choosingEncoding by remember { mutableStateOf(false) }
+    // Null is "detect it": what the bytes and the reader's languages suggest.
+    var encodingOverride by remember(entry.id) { mutableStateOf<TextEncoding?>(null) }
 
     val file = remember(entry.id, startEditing) { pageableFile(entry, allowEmpty = startEditing) }
-    val document = remember(entry.id, reloads) { TextDocument(context, entry, file) }
+    val document = remember(entry.id, reloads, encodingOverride) {
+        TextDocument(context, entry, file, encodingOverride)
+    }
     DisposableEffect(document) {
         document.start()
         onDispose { document.close() }
@@ -467,6 +506,33 @@ fun TextViewer(
                             onClick = { toggleEditing() },
                         )
                     }
+                    // Not while editing: the bar is full there, and neither the encoding nor
+                    // another app can take over a buffer with unsaved changes in it.
+                    if (!editing) {
+                        Box {
+                            TooltipIconButton(stringResource(R.string.more), Icons.Outlined.MoreVert) {
+                                menuOpen = true
+                            }
+                            TextViewerMenu(
+                                expanded = menuOpen,
+                                onDismiss = { menuOpen = false },
+                                scale = effectiveScale,
+                                storedScale = textScale,
+                                maxScale = if (wrap) TEXT_SCALE_STEPS.last() else unwrappedScaleLimit,
+                                encodingLabel = document.encoding.value.label,
+                                // A decoded binary XML is UTF-8 that XFiles wrote itself.
+                                canChangeEncoding = opened && !document.axml.value,
+                                onChooseEncoding = {
+                                    menuOpen = false
+                                    choosingEncoding = true
+                                },
+                                onOpenWith = {
+                                    menuOpen = false
+                                    onOpenWith()
+                                },
+                            )
+                        }
+                    }
                 },
             )
         },
@@ -485,6 +551,7 @@ fun TextViewer(
                                 initialColumn = editFocusColumn,
                                 chrome = chrome,
                                 wrap = wrap,
+                                scale = effectiveScale,
                                 readOnly = saving,
                                 focusRequester = editorFocus,
                                 handle = editorHandle,
@@ -509,7 +576,7 @@ fun TextViewer(
                 rowCount == 0 -> ViewerNotice(chrome) {
                     Text(stringResource(R.string.empty_file), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                else -> TextRows(entry, document, rowCount, chrome, wrap, firstVisibleRow) {
+                else -> TextRows(entry, document, rowCount, chrome, wrap, effectiveScale, firstVisibleRow) {
                     firstVisibleRow = it
                 }
             }
@@ -532,6 +599,19 @@ fun TextViewer(
                 }
             }
         }
+    }
+    if (choosingEncoding) {
+        EncodingDialog(
+            current = document.encoding.value,
+            detected = document.autoEncoding.value,
+            overridden = encodingOverride != null,
+            onPick = { picked ->
+                choosingEncoding = false
+                // Re-indexed from scratch under the new charset; the reader stays on the same row.
+                if (picked != encodingOverride) encodingOverride = picked
+            },
+            onDismiss = { choosingEncoding = false },
+        )
     }
     unsavedPrompt?.let { prompt ->
         AlertDialog(
@@ -575,6 +655,7 @@ private fun EditRows(
     initialColumn: Int,
     chrome: PaddingValues,
     wrap: Boolean,
+    scale: Float,
     readOnly: Boolean,
     focusRequester: FocusRequester,
     handle: EditorHandle,
@@ -587,7 +668,8 @@ private fun EditRows(
     val startColumn = initialColumn.coerceIn(0, startText.length)
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = startLine)
     val horizontal = rememberScrollState()
-    var widest by remember { mutableIntStateOf(0) }
+    // Every width measured so far belongs to the old size.
+    var widest by remember(scale) { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     var focused by remember { mutableIntStateOf(startLine) }
     var field by remember {
@@ -599,7 +681,7 @@ private fun EditRows(
     var fieldLayout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var fieldCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var loading by remember { mutableStateOf(false) }
-    val textStyle = MaterialTheme.typography.bodySmall.copy(
+    val textStyle = textRowStyle(MaterialTheme.typography.bodySmall, scale).copy(
         fontFamily = FontFamily.Monospace,
         color = MaterialTheme.colorScheme.onSurface,
     )
@@ -1709,6 +1791,7 @@ private fun TextRows(
     rowCount: Int,
     chrome: PaddingValues,
     wrap: Boolean,
+    scale: Float,
     initialRow: Int,
     onFirstVisibleRow: (Int) -> Unit,
 ) {
@@ -1729,12 +1812,14 @@ private fun TextRows(
             (listState.firstVisibleItemIndex - headers).coerceAtLeast(0)
         }.collect { onFirstVisibleRow(it) }
     }
-    var widest by remember { mutableIntStateOf(0) }
+    // Every width measured so far belongs to the old size.
+    var widest by remember(scale) { mutableIntStateOf(0) }
     val baseStyle = MaterialTheme.typography.bodySmall
-    val rowStyle = remember(baseStyle, wrap) {
+    val rowStyle = remember(baseStyle, wrap, scale) {
+        val scaled = textRowStyle(baseStyle, scale)
         // Hanging indent, and only where it means something: what a line wraps onto stays
         // distinguishable from the next line, which is most of what unwrapped text gives for free.
-        if (wrap) baseStyle.copy(textIndent = TextIndent(restLine = 16.sp)) else baseStyle
+        if (wrap) scaled.copy(textIndent = TextIndent(restLine = 16.sp * scale)) else scaled
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val contentWidth = with(LocalDensity.current) { maxOf(widest, constraints.maxWidth).toDp() }
@@ -1886,6 +1971,8 @@ private class TextDocument(
     private val context: Context,
     private val entry: XEntry,
     private val file: File?,
+    /** The encoding the reader picked, or null to detect one. */
+    private val encodingOverride: TextEncoding? = null,
 ) {
     /** True once the bytes are open and rows can start arriving. */
     val opened = mutableStateOf(false)
@@ -1902,8 +1989,11 @@ private class TextDocument(
     /** Set when the bytes turned out to be compiled Android binary XML, decoded for display. */
     val axml = mutableStateOf(false)
 
-    /** Byte encoding of the document; UTF-8 unless the leading sample is GB2312/GBK/GB18030. */
+    /** Byte encoding the document is read in: the reader's pick, else [autoEncoding]. */
     val encoding = mutableStateOf(TextEncoding.Utf8)
+
+    /** What detection made of the leading sample, whether or not the reader overrode it. */
+    val autoEncoding = mutableStateOf<TextEncoding?>(null)
 
     /**
      * Size and modification time of the file as it was opened. Edits are made against these
@@ -1936,7 +2026,13 @@ private class TextDocument(
                 error.value = e.message ?: message(R.string.cannot_read)
                 return@launch
             }
-            val detected = if (axml.value) TextEncoding.Utf8 else detectTextEncoding(source)
+            val auto = if (axml.value) {
+                TextEncoding.Utf8
+            } else {
+                detectTextEncoding(source, legacyEncodingHints(readerLocales()))
+            }
+            val detected = if (axml.value) auto else encodingOverride ?: auto
+            autoEncoding.value = auto
             val rowIndex = TextRowIndex(source, charset = detected.charset)
             // A file large enough to take seconds to walk keeps its finished table on disk.
             val store = if (file != null && !axml.value) rowIndexStore() else null
@@ -2098,6 +2194,201 @@ private fun openSource(context: Context, entry: XEntry): InputStream {
             ?: throw IOException("Cannot read ${entry.name}")
     }
     return Graph.fsRegistry.forId(entry.id).openIn(entry)
+}
+
+/** The reader's text sizes, as multiples of the body size. */
+internal val TEXT_SCALE_STEPS = listOf(0.75f, 0.85f, 1f, 1.15f, 1.3f, 1.5f, 1.75f, 2f, 2.5f, 3f)
+
+/** The widest a layout can be: Compose throws rather than clip past this many pixels. */
+private const val MAX_LAYOUT_PX = 262_143
+
+/** The next step up or down from [scale], or null past either end. */
+internal fun textScaleStep(scale: Float, up: Boolean): Float? =
+    if (up) TEXT_SCALE_STEPS.firstOrNull { it > scale + 0.001f }
+    else TEXT_SCALE_STEPS.lastOrNull { it < scale - 0.001f }
+
+/**
+ * The largest scale at which a row of [rowBytes] characters, each [advancePx] wide at scale 1, still
+ * fits a layout beside [paddingPx], with a tenth to spare. Monospace ASCII is the widest a full row
+ * gets: a CJK character is two advances but takes two or three bytes of the row.
+ */
+internal fun unwrappedScaleLimit(advancePx: Float, paddingPx: Float, rowBytes: Int = MAX_ROW_BYTES): Float {
+    if (advancePx <= 0f) return 1f
+    val limit = (MAX_LAYOUT_PX * 0.9f - paddingPx) / (rowBytes * advancePx)
+    return limit.coerceAtLeast(TEXT_SCALE_STEPS.first())
+}
+
+/** How far unwrapped text may be scaled on this screen, at this font scale; see [unwrappedScaleLimit]. */
+@Composable
+private fun rememberUnwrappedScaleLimit(): Float {
+    val measurer = rememberTextMeasurer()
+    val style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
+    val density = LocalDensity.current
+    return remember(measurer, style, density) {
+        val sample = "0".repeat(64)
+        val advance = measurer.measure(sample, style, softWrap = false).size.width / sample.length.toFloat()
+        // Rows carry 12 dp on either side.
+        unwrappedScaleLimit(advance, with(density) { 24.dp.toPx() })
+    }
+}
+
+/**
+ * The body style at [scale], with each row's direction taken from its own first strong character.
+ * Left unspecified, Compose would lay every row out in the app's direction: Arabic in an English
+ * UI — or code in an Arabic one — would come out with its punctuation on the wrong side.
+ */
+private fun textRowStyle(base: TextStyle, scale: Float): TextStyle = base.copy(
+    fontSize = if (base.fontSize.isSpecified) base.fontSize * scale else base.fontSize,
+    lineHeight = if (base.lineHeight.isSpecified) base.lineHeight * scale else base.lineHeight,
+    textDirection = TextDirection.Content,
+)
+
+/** The app's language first, then the device's, for guessing what a legacy file was written in. */
+private fun readerLocales(): List<Locale> {
+    val device = Resources.getSystem().configuration.locales
+    return listOf(Locale.getDefault()) + (0 until device.size()).map { device[it] }
+}
+
+@Composable
+private fun TextViewerMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    scale: Float,
+    storedScale: Float,
+    maxScale: Float,
+    encodingLabel: String,
+    canChangeEncoding: Boolean,
+    onChooseEncoding: () -> Unit,
+    onOpenWith: () -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        // Stays open while stepping, so the text can be watched changing behind it.
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 16.dp, end = 4.dp),
+        ) {
+            Text(stringResource(R.string.text_size), style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.width(8.dp))
+            val smaller = textScaleStep(storedScale.coerceAtMost(maxScale), up = false)
+            val larger = textScaleStep(storedScale, up = true)?.takeIf { it <= maxScale + 0.001f }
+            TooltipIconButton(
+                stringResource(R.string.smaller_text),
+                Icons.Outlined.TextDecrease,
+                enabled = smaller != null,
+            ) {
+                smaller?.let { next -> Graph.appScope.launch { Graph.settings.setTextScale(next) } }
+            }
+            Text(
+                "${(scale * 100).roundToInt()}%",
+                style = MaterialTheme.typography.labelLarge,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.widthIn(min = 44.dp),
+            )
+            TooltipIconButton(
+                stringResource(R.string.larger_text),
+                Icons.Outlined.TextIncrease,
+                enabled = larger != null,
+            ) {
+                larger?.let { next -> Graph.appScope.launch { Graph.settings.setTextScale(next) } }
+            }
+        }
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.encoding)) },
+            trailingIcon = {
+                Text(
+                    encodingLabel,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            enabled = canChangeEncoding,
+            onClick = onChooseEncoding,
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.open_with)) },
+            leadingIcon = { Icon(Icons.AutoMirrored.Outlined.OpenInNew, contentDescription = null) },
+            onClick = onOpenWith,
+        )
+    }
+}
+
+/**
+ * Detection, or one of the encodings the viewer can read: each named by the languages it was used
+ * for, in the reader's own language, with its code-page name beneath.
+ */
+@Composable
+private fun EncodingDialog(
+    current: TextEncoding,
+    detected: TextEncoding?,
+    overridden: Boolean,
+    onPick: (TextEncoding?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val choices = remember { selectableEncodings() }
+    val locale = LocalConfiguration.current.locales[0]
+    // Dialect names: "Simplified Chinese" rather than the script spelled out in brackets.
+    val names = remember(locale) {
+        LocaleDisplayNames.getInstance(ULocale.forLocale(locale), LocaleDisplayNames.DialectHandling.DIALECT_NAMES)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.encoding)) },
+        text = {
+            LazyColumn {
+                item {
+                    EncodingChoiceRow(
+                        title = stringResource(R.string.auto_detect),
+                        detail = detected?.label,
+                        selected = !overridden,
+                        onClick = { onPick(null) },
+                    )
+                }
+                items(choices) { choice ->
+                    val encoding = choice.encoding() ?: return@items
+                    val languages = choice.languages
+                    EncodingChoiceRow(
+                        title = if (languages.isEmpty()) {
+                            choice.label
+                        } else {
+                            languages.take(3).joinToString(", ") {
+                                names.localeDisplayName(Locale.forLanguageTag(it))
+                            } + if (languages.size > 3) "…" else ""
+                        },
+                        detail = choice.label.takeIf { languages.isNotEmpty() },
+                        selected = overridden && current.charset == encoding.charset,
+                        onClick = { onPick(encoding) },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun EncodingChoiceRow(title: String, detail: String?, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick),
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Column(Modifier.padding(start = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            detail?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }
 
 private fun InputStream.readUpTo(limit: Int): ByteArray {

@@ -226,6 +226,11 @@
     <string name="discard">त्यागें</string>
     <string name="wrap_lines">पंक्तियाँ लपेटें</string>
     <string name="stop_wrapping">लपेटना बंद करें</string>
+    <string name="text_size">टेक्स्ट का आकार</string>
+    <string name="smaller_text">छोटा टेक्स्ट</string>
+    <string name="larger_text">बड़ा टेक्स्ट</string>
+    <string name="encoding">एन्कोडिंग</string>
+    <string name="auto_detect">अपने-आप पहचानें</string>
     <string name="decoded_binary_xml">एंड्रॉइड बाइनरी XML से डिकोड किया गया (केवल पढ़ने के लिए)</string>
     <string name="previous_frame">पिछला फ़्रेम</string>
     <string name="next_frame">अगला फ़्रेम</string>

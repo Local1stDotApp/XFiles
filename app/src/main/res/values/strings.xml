@@ -224,6 +224,11 @@
     <string name="discard">Discard</string>
     <string name="wrap_lines">Wrap lines</string>
     <string name="stop_wrapping">Stop wrapping</string>
+    <string name="text_size">Text size</string>
+    <string name="smaller_text">Smaller text</string>
+    <string name="larger_text">Larger text</string>
+    <string name="encoding">Encoding</string>
+    <string name="auto_detect">Auto-detect</string>
     <string name="decoded_binary_xml">Decoded from Android binary XML (read-only)</string>
     <string name="previous_frame">Previous frame</string>
     <string name="next_frame">Next frame</string>
