@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -72,7 +73,7 @@ internal fun hexFileSize(file: File?, entrySize: Long): Long {
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun HexViewer(entry: XEntry, onClose: () -> Unit) {
+fun HexViewer(entry: XEntry, onClose: () -> Unit, onOpenWith: () -> Unit) {
     // localPath is cleared for a bin symlink. Falling back to the file:// path
     // would follow that link into the live target.
     val localPath = remember(entry.id) { entry.localPath }
@@ -98,7 +99,7 @@ fun HexViewer(entry: XEntry, onClose: () -> Unit) {
     ViewerChrome(
         topBar = {
             val size = if (fileSize >= 0) fileSize else loaded?.getOrNull()?.size?.toLong() ?: -1L
-            HexTopBar(entry.name, size, onClose)
+            HexTopBar(entry.name, size, onClose, onOpenWith)
         },
     ) { chrome ->
         if (file != null) {
@@ -136,6 +137,7 @@ private fun HexTopBar(
     name: String,
     sizeBytes: Long,
     onClose: () -> Unit,
+    onOpenWith: () -> Unit,
 ) {
     TopAppBar(
         title = {
@@ -152,6 +154,13 @@ private fun HexTopBar(
         },
         navigationIcon = {
             TooltipIconButton(stringResource(R.string.close), Icons.Outlined.Close, onClick = onClose)
+        },
+        actions = {
+            TooltipIconButton(
+                stringResource(R.string.open_with),
+                Icons.AutoMirrored.Outlined.OpenInNew,
+                onClick = onOpenWith,
+            )
         },
     )
 }

@@ -18,7 +18,8 @@ fun ViewerScreen(vm: MainViewModel, request: ViewerRequest, onBack: () -> Unit) 
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         when (req) {
-            is ViewerRequest.Image -> ImageViewer(req.items, req.startIndex, close)
+            // The picture on screen, not the tapped one: the pager moves through the folder.
+            is ViewerRequest.Image -> ImageViewer(req.items, req.startIndex, close, onOpenWith = vm::openWith)
             is ViewerRequest.Text -> TextViewer(
                 entry = req.entry,
                 startEditing = req.startEditing,
@@ -26,7 +27,7 @@ fun ViewerScreen(vm: MainViewModel, request: ViewerRequest, onBack: () -> Unit) 
                 onFileChanged = { vm.refreshListedFile(req.entry.id) },
                 onOpenWith = { vm.openWith(req.entry) },
             )
-            is ViewerRequest.Hex -> HexViewer(req.entry, close)
+            is ViewerRequest.Hex -> HexViewer(req.entry, close) { vm.openWith(req.entry) }
             is ViewerRequest.Pdf -> PdfViewer(req.entry, close) { vm.openWith(req.entry) }
             // The playing item, not the tapped one: next/previous move through the folder.
             is ViewerRequest.Media -> MediaViewer(req.entry, req.playlist, close, onOpenWith = vm::openWith)

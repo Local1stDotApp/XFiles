@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,6 +34,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
@@ -40,6 +42,7 @@ import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -65,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import coil3.compose.AsyncImage
 import app.local1st.files.R
+import app.local1st.files.ui.components.TooltipIconButton
 import app.local1st.files.ui.statusBarsStable
 import app.local1st.files.ui.theme.DarkSystemBars
 import app.local1st.files.core.fs.XEntry
@@ -87,7 +91,12 @@ private const val MAX_IMAGE_BYTES = 64L * 1024 * 1024
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun ImageViewer(items: List<XEntry>, startIndex: Int, onClose: () -> Unit) {
+fun ImageViewer(
+    items: List<XEntry>,
+    startIndex: Int,
+    onClose: () -> Unit,
+    onOpenWith: (XEntry) -> Unit,
+) {
     // Black behind the status bar in either theme; a light theme's dark icons would vanish there.
     DarkSystemBars()
     if (items.isEmpty()) {
@@ -158,8 +167,9 @@ fun ImageViewer(items: List<XEntry>, startIndex: Int, onClose: () -> Unit) {
                         Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.close), tint = Color.White)
                     }
                 }
+                val current = items[pagerState.currentPage.coerceIn(0, items.size - 1)]
                 Text(
-                    items[pagerState.currentPage.coerceIn(0, items.size - 1)].name,
+                    current.name,
                     color = Color.White,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
@@ -170,8 +180,14 @@ fun ImageViewer(items: List<XEntry>, startIndex: Int, onClose: () -> Unit) {
                     "${pagerState.currentPage + 1}/${items.size}",
                     color = Color.White,
                     style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(horizontal = 12.dp),
+                    modifier = Modifier.padding(start = 12.dp),
                 )
+                CompositionLocalProvider(LocalContentColor provides Color.White) {
+                    TooltipIconButton(
+                        stringResource(R.string.open_with),
+                        Icons.AutoMirrored.Outlined.OpenInNew,
+                    ) { onOpenWith(current) }
+                }
             }
         }
     }
