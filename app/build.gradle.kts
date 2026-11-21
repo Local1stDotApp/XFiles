@@ -222,7 +222,8 @@ abstract class HostNativeBuild @Inject constructor(private val exec: ExecOperati
             commandLine(
                 buildList {
                     add(cmake)
-                    addAll(listOf("-S", sourceDir.get().asFile.path, "-B", buildDir.path))
+                    // --fresh: the cache remembers the host SDK path, which an Xcode update removes.
+                    addAll(listOf("--fresh", "-S", sourceDir.get().asFile.path, "-B", buildDir.path))
                     if (ninja != null) addAll(listOf("-G", "Ninja", "-DCMAKE_MAKE_PROGRAM=${ninja.path}"))
                     add("-DCMAKE_BUILD_TYPE=Release")
                     add("-DXF_HOST_BUILD=ON")
