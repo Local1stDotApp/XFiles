@@ -92,6 +92,7 @@ Categories:
   - File Manager
   - System
 License: GPL-3.0-only
+AuthorName: Local1stDotApp
 WebSite: https://xfiles.local1st.app
 SourceCode: https://github.com/Local1stDotApp/XFiles
 IssueTracker: https://github.com/Local1stDotApp/XFiles/issues
