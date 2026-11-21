@@ -5,6 +5,7 @@ import app.local1st.files.core.archive.LibArchiveReader
 import app.local1st.files.core.archive.NativeArchive
 import app.local1st.files.core.archive.NativeZip
 import app.local1st.files.core.util.FileTypes
+import java.io.ByteArrayInputStream
 import java.io.Closeable
 import java.io.File
 import java.io.FileInputStream
@@ -436,8 +437,12 @@ class ArchiveFileSystem(
         val reader = LibArchiveReader.open(listOf(archiveFile), ArchiveFormat.SINGLE.formats, forData = true)
         try {
             // The raw reader takes any bytes; only a decompression filter makes it an archive.
-            if (reader.next() == null || reader.filter == 0) {
-                throw IOException("${archiveFile.name} is not compressed data")
+            // No entry with a filter is a compressed empty file; the stream then just ends.
+            val entry = reader.next()
+            if (reader.filter == 0) throw IOException("${archiveFile.name} is not compressed data")
+            if (entry == null) {
+                reader.close()
+                return ByteArrayInputStream(ByteArray(0))
             }
             return reader.detachEntryStream()
         } catch (e: Exception) {

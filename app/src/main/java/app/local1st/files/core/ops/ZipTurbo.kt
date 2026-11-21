@@ -11,6 +11,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.util.ArrayDeque
 import java.util.Collections
+import java.util.Locale
 import java.util.concurrent.Callable
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.ExecutionException
@@ -312,7 +313,10 @@ object ZipTurbo {
                 files += entry to inside(destDir, destRoot, path, entry.name)
             }
 
-            val queue = ConcurrentLinkedQueue(files)
+            // Shared storage ignores case, so names that differ only in case are one file there.
+            // Their entries go to one worker, in archive order: the last one wins, as with equal
+            // names, instead of two workers writing the same file at once.
+            val queue = ConcurrentLinkedQueue(files.groupBy { it.second.path.lowercase(Locale.ROOT) }.values)
             val total = AtomicLong(0)
             val pool = Executors.newFixedThreadPool(WORKERS)
             var firstError: Throwable? = null
@@ -322,28 +326,30 @@ object ZipTurbo {
                     pool.submit {
                         val buffer = ByteArray(EXTRACT_BUFFER)
                         while (!isCancelled()) {
-                            val (entry, target) = queue.poll() ?: break
-                            try {
-                                zip.openEntry(entry.index).use { input ->
-                                    FileOutputStream(target).use { fos ->
-                                        while (true) {
-                                            if (isCancelled()) break
-                                            val n = input.read(buffer)
-                                            if (n < 0) break
-                                            fos.write(buffer, 0, n)
-                                            onBytes(total.addAndGet(n.toLong()))
+                            val group = queue.poll() ?: break
+                            for ((entry, target) in group) {
+                                try {
+                                    zip.openEntry(entry.index).use { input ->
+                                        FileOutputStream(target).use { fos ->
+                                            while (true) {
+                                                if (isCancelled()) break
+                                                val n = input.read(buffer)
+                                                if (n < 0) break
+                                                fos.write(buffer, 0, n)
+                                                onBytes(total.addAndGet(n.toLong()))
+                                            }
                                         }
                                     }
-                                }
-                                if (isCancelled()) {
-                                    runCatching { target.delete() } // drop the partial file
+                                    if (isCancelled()) {
+                                        runCatching { target.delete() } // drop the partial file
+                                        return@submit
+                                    }
+                                    if (entry.time > 0) target.setLastModified(entry.time)
+                                } catch (t: Throwable) {
+                                    runCatching { target.delete() }
+                                    synchronized(errorLock) { if (firstError == null) firstError = t }
                                     return@submit
                                 }
-                                if (entry.time > 0) target.setLastModified(entry.time)
-                            } catch (t: Throwable) {
-                                runCatching { target.delete() }
-                                synchronized(errorLock) { if (firstError == null) firstError = t }
-                                return@submit
                             }
                         }
                     }

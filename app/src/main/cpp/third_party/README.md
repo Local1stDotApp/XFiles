@@ -17,7 +17,7 @@ is ported from [rardecode](https://github.com/nwaples/rardecode) (BSD 2-clause, 
 | `bzip2/` | [bzip2](https://sourceware.org/bzip2/) | 1.0.8 | `ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269` | BSD-style (`LICENSE`) |
 | `lz4/` | [LZ4](https://github.com/lz4/lz4), block decoder | 1.10.0 | `537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b` | BSD 2-clause (`LICENSE`) |
 
-libarchive is a read-only subset: the 7z, RAR, RAR5, tar, cpio, ar, ISO 9660 and raw readers,
+libarchive is a read-only subset: the 7z, RAR, RAR5, tar, cpio, ar, ISO 9660, raw and empty readers,
 and the gzip, bzip2, xz/lzma/lzip, zstd, lz4 and compress filters. Zip is read by our own
 `../xfarchive/zip_reader.c`, which uses libarchive's PPMd8 decoder for zip method 98.
 

@@ -52,6 +52,11 @@ static int enable(struct archive *a, jint formats) {
     if (formats & FORMAT_AR) ok &= archive_read_support_format_ar(a) == ARCHIVE_OK;
     if (formats & FORMAT_ISO9660) ok &= archive_read_support_format_iso9660(a) == ARCHIVE_OK;
     if (formats & FORMAT_RAW) ok &= archive_read_support_format_raw(a) == ARCHIVE_OK;
+    /*
+     * Nothing at all, after any decompression: an empty tar, as tar and bsdtar read a zero-byte
+     * one, or a compressed empty file. The raw reader wants at least one byte.
+     */
+    if (formats & (FORMAT_TAR | FORMAT_RAW)) ok &= archive_read_support_format_empty(a) == ARCHIVE_OK;
     /* Every decompression filter, so the content decides rather than the file name. */
     ok &= archive_read_support_filter_gzip(a) == ARCHIVE_OK;
     ok &= archive_read_support_filter_bzip2(a) == ARCHIVE_OK;

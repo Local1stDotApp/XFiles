@@ -24,7 +24,8 @@ set(LIBARCHIVE_SOURCES
     archive_read_support_filter_gzip archive_read_support_filter_lz4
     archive_read_support_filter_xz archive_read_support_filter_zstd
     archive_read_support_format_7zip archive_read_support_format_ar
-    archive_read_support_format_cpio archive_read_support_format_iso9660
+    archive_read_support_format_cpio archive_read_support_format_empty
+    archive_read_support_format_iso9660
     archive_read_support_format_rar archive_read_support_format_rar5
     archive_read_support_format_raw archive_read_support_format_tar archive_string
     archive_string_sprintf archive_time archive_util archive_virtual xxhash)
