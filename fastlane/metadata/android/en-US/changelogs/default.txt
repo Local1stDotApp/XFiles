@@ -1,7 +1,9 @@
-What's new in 1.5.0
+What's new in 1.6.0
 
-• Recycle Bin: deletes on internal storage, SD cards and USB drives can be restored, deleted permanently or emptied from the new Recycle Bin root
-• Use XFiles to view PDFs and text files opened from other apps (turn on in Settings)
-• Text editor opens large files: loads only what you edit, with undo/redo, Wrap lines and GBK detection
-• Folder rows show item counts and dates
-• Predictive back, and smoother screen switches on older phones
+• New built-in archive reader: 7Z and TAR.XZ open several times faster, and ISO, CPIO, DEB, ZST, LZ4 and more now open too
+• Search the whole tree or all storage, then jump to a result
+• PDF viewer: select and copy text
+• Media player: seek, replay, change speed and keep watching in picture-in-picture
+• Text viewer: right-to-left text and legacy encodings
+• APK and split bundle files show their app icons
+• Dialogs keep their buttons on screen with long names
