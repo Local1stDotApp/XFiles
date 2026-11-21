@@ -104,7 +104,7 @@ Pasang dulu lokasi itu sebagai folder di aplikasi lain — RCX (rclone), Nextclo
     <string name="descending_summary">Balikkan urutannya</string>
     <string name="file_associations">Asosiasi file</string>
     <string name="open_supported_archives_with_xfiles">Gunakan XFiles untuk membuka arsip apa pun yang didukung</string>
-    <string name="supported_archives_summary">Mendukung ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2, dan XZ</string>
+    <string name="supported_archives_summary">Mendukung ZIP, ZIPX, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, TAR.ZST, TAR.LZ4, ISO, CPIO, DEB, GZ, BZ2, XZ, ZST, LZ4, LZ, LZMA, dan Z</string>
     <string name="view_images_with_xfiles">Gunakan XFiles untuk melihat gambar</string>
     <string name="view_pdfs_with_xfiles">Gunakan XFiles untuk melihat PDF</string>
     <string name="view_text_with_xfiles">Gunakan XFiles untuk melihat file teks</string>

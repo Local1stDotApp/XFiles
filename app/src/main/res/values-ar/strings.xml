@@ -104,7 +104,7 @@
     <string name="descending_summary">عكس ترتيب الفرز</string>
     <string name="file_associations">ارتباطات الملفات</string>
     <string name="open_supported_archives_with_xfiles">استخدام XFiles لفتح أي أرشيف مدعوم</string>
-    <string name="supported_archives_summary">يدعم ZIP وJAR وAPK وAAB وAPKS وAPKM وXAPK و7Z وRAR وTAR وTAR.GZ/TGZ وTAR.BZ2/TBZ2 وTAR.XZ/TXZ وGZ وBZ2 وXZ</string>
+    <string name="supported_archives_summary">يدعم ZIP وZIPX وJAR وAPK وAAB وAPKS وAPKM وXAPK و7Z وRAR وTAR وTAR.GZ/TGZ وTAR.BZ2/TBZ2 وTAR.XZ/TXZ وTAR.ZST وTAR.LZ4 وISO وCPIO وDEB وGZ وBZ2 وXZ وZST وLZ4 وLZ وLZMA وZ</string>
     <string name="view_images_with_xfiles">استخدام XFiles لعرض الصور</string>
     <string name="view_pdfs_with_xfiles">استخدام XFiles لعرض ملفات PDF</string>
     <string name="view_text_with_xfiles">استخدام XFiles لعرض الملفات النصية</string>

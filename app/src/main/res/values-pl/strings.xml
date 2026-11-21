@@ -104,7 +104,7 @@ Najpierw zamontuj tę lokalizację w innej aplikacji jako folder — RCX (rclone
     <string name="descending_summary">Odwróć kolejność sortowania</string>
     <string name="file_associations">Skojarzenia plików</string>
     <string name="open_supported_archives_with_xfiles">Otwieraj dowolne obsługiwane archiwum w XFiles</string>
-    <string name="supported_archives_summary">Obsługuje ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2 i XZ</string>
+    <string name="supported_archives_summary">Obsługuje ZIP, ZIPX, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, TAR.ZST, TAR.LZ4, ISO, CPIO, DEB, GZ, BZ2, XZ, ZST, LZ4, LZ, LZMA i Z</string>
     <string name="view_images_with_xfiles">Wyświetlaj obrazy w XFiles</string>
     <string name="view_pdfs_with_xfiles">Wyświetlaj pliki PDF w XFiles</string>
     <string name="view_text_with_xfiles">Wyświetlaj pliki tekstowe w XFiles</string>

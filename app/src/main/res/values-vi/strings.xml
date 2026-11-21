@@ -104,7 +104,7 @@ Hãy gắn vị trí đó thành thư mục trong ứng dụng khác trước �
     <string name="descending_summary">Đảo ngược thứ tự sắp xếp</string>
     <string name="file_associations">Liên kết tệp</string>
     <string name="open_supported_archives_with_xfiles">Dùng XFiles để mở mọi tệp nén được hỗ trợ</string>
-    <string name="supported_archives_summary">Hỗ trợ ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2 và XZ</string>
+    <string name="supported_archives_summary">Hỗ trợ ZIP, ZIPX, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, TAR.ZST, TAR.LZ4, ISO, CPIO, DEB, GZ, BZ2, XZ, ZST, LZ4, LZ, LZMA và Z</string>
     <string name="view_images_with_xfiles">Dùng XFiles để xem hình ảnh</string>
     <string name="view_pdfs_with_xfiles">Dùng XFiles để xem PDF</string>
     <string name="view_text_with_xfiles">Dùng XFiles để xem tệp văn bản</string>

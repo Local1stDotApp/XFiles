@@ -104,7 +104,7 @@ Monta prima quella posizione come cartella in un’altra app — RCX (rclone), N
     <string name="descending_summary">Invertire l\'ordinamento</string>
     <string name="file_associations">Associazioni file</string>
     <string name="open_supported_archives_with_xfiles">Usa XFiles per aprire qualsiasi archivio supportato</string>
-    <string name="supported_archives_summary">Supporta ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2 e XZ</string>
+    <string name="supported_archives_summary">Supporta ZIP, ZIPX, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, TAR.ZST, TAR.LZ4, ISO, CPIO, DEB, GZ, BZ2, XZ, ZST, LZ4, LZ, LZMA e Z</string>
     <string name="view_images_with_xfiles">Usa XFiles per visualizzare le immagini</string>
     <string name="view_pdfs_with_xfiles">Usa XFiles per visualizzare i PDF</string>
     <string name="view_text_with_xfiles">Usa XFiles per visualizzare i file di testo</string>

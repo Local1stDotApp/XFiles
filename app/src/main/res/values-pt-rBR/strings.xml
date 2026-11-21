@@ -104,7 +104,7 @@ Monte esse local como pasta em outro app primeiro — RCX (rclone), Nextcloud ou
     <string name="descending_summary">Inverter a ordem de classificação</string>
     <string name="file_associations">Associações de arquivos</string>
     <string name="open_supported_archives_with_xfiles">Usar o XFiles para abrir qualquer arquivo compactado compatível</string>
-    <string name="supported_archives_summary">Compatível com ZIP, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, GZ, BZ2 e XZ</string>
+    <string name="supported_archives_summary">Compatível com ZIP, ZIPX, JAR, APK, AAB, APKS, APKM, XAPK, 7Z, RAR, TAR, TAR.GZ/TGZ, TAR.BZ2/TBZ2, TAR.XZ/TXZ, TAR.ZST, TAR.LZ4, ISO, CPIO, DEB, GZ, BZ2, XZ, ZST, LZ4, LZ, LZMA e Z</string>
     <string name="view_images_with_xfiles">Usar o XFiles para ver imagens</string>
     <string name="view_pdfs_with_xfiles">Usar o XFiles para ver PDFs</string>
     <string name="view_text_with_xfiles">Usar o XFiles para ver arquivos de texto</string>
