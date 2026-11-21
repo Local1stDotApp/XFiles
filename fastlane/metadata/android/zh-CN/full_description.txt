@@ -34,8 +34,8 @@ XFiles 是一款离线的 Android 文件管理器，沿用 X-plore 的操作方�
 
 ROOT 访问（可选）
 • 主页默认就有 Root 入口，可在设置里关掉
-• 有超级用户（su）可浏览整棵树；没有的话，Shizuku 仍可列出 `/` 以及 adb shell 能看见的目录
-• `/data` 和 `/data/data` 仍然要有超级用户才能进
+• 有超级用户（su）可浏览整棵树；没有的话，Shizuku 仍可列出根目录以及 adb shell 能看见的目录
+• /data 和 /data/data 仍然要有超级用户才能进
 • 另有一个独立的只读开关（默认打开），会挡掉所有写操作
 
 现代 Android

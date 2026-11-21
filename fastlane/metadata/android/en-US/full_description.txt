@@ -34,8 +34,8 @@ APP MANAGER
 
 ROOT ACCESS (OPTIONAL)
 • A Root entry is on the home screen by default; turn it off in Settings
-• Superuser (su) browses the whole tree; without it Shizuku can still list `/` and what the adb shell can see
-• `/data` and `/data/data` stay closed until superuser is granted
+• Superuser (su) browses the whole tree; without it Shizuku can still list the root folder and what the adb shell can see
+• /data and /data/data stay closed until superuser is granted
 • A separate read-only switch (on by default) blocks writes
 
 MODERN ANDROID
