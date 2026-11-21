@@ -29,6 +29,8 @@ val ciKeystore: String? = System.getenv("XFILES_KEYSTORE")
 android {
     namespace = "app.local1st.files"
     compileSdk = 37
+    // Compose 1.13 (BOM 2026.11) requires 37.1 or later. AGP installs the platform if missing.
+    compileSdkMinor = 2
     // libxfarchive, the native archive reader (src/main/cpp). F-Droid's recipe pins the same NDK.
     ndkVersion = "29.0.14206865"
 

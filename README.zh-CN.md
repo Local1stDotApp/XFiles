@@ -200,16 +200,14 @@ XFiles 注册进系统的**压缩包**、**图片**、**视频**、**PDF** 和**
 
 | 层 | 选型 |
 |---|---|
-| 语言 / UI | Kotlin、Jetpack Compose（BOM 2026.09.00）、material3 **1.5.0-alpha28**（Expressive API）、Navigation 3（预测性返回） |
-| 构建 | AGP 9.4.1（内置 Kotlin，不用 KGP）、Gradle 9.7.1、compileSdk 37 / target 37 / min 26、Baseline Profile（`:baselineprofile` + `ProfileInstaller`） |
+| 语言 / UI | Kotlin、Jetpack Compose（BOM 2026.11.01）、material3 1.5.0（Expressive API）、Navigation 3（预测性返回） |
+| 构建 | AGP 9.5.2（内置 Kotlin，不用 KGP）、Gradle 9.9.2、compileSdk 37.2 / target 37 / min 26、Baseline Profile（`:baselineprofile` + `ProfileInstaller`） |
 | 架构 | MVVM + StateFlow，手写 DI 组合根（`di/Graph`）；app 模块 + 一个 shaded bundletool vendor 模块 |
 | 持久化 | DataStore Preferences |
 | 媒体 / 图片 | Coil 3（GIF，自定义 fetcher：应用图标、APK/拆分包图标、落盘缓存的视频缩略图）、Media3 ExoPlayer |
 | 压缩包 | libxfarchive（`app/src/main/cpp`，NDK）：libarchive 3.8 的只读子集，配 zstd、liblzma、bzip2、lz4 解码器，加上我们自己的随机访问 zip 读取器；写 zip 用系统 zlib。RAR 1.x 的压缩包用 junrar（`full` 变体） |
 | 特权访问 | Shizuku 13.1.5（用户服务、真实文件描述符）· `su` shell |
 | 软件包安装 | PackageInstaller 会话 · 内置 bundletool 1.18.3 · ARSCLib（进程内 aapt2）· 极简自签名器 |
-
-注：material3 锁在 1.5 alpha 线（`1.5.0-alpha28`），因为 1.4.0 正式版里 Expressive 那批 API 还是 `internal`。
 
 ## 项目结构
 

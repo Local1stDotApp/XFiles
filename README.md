@@ -229,17 +229,14 @@ That last row is enforced by the OS, not by policy — verify it yourself in
 
 | Layer | Choice |
 |---|---|
-| Language / UI | Kotlin, Jetpack Compose (BOM 2026.09.00), material3 **1.5.0-alpha28** (Expressive APIs), Navigation 3 (predictive back) |
-| Build | AGP 9.4.1 (built-in Kotlin, no KGP), Gradle 9.7.1, compileSdk 37 / target 37 / min 26, Baseline Profile (`:baselineprofile` + `ProfileInstaller`) |
+| Language / UI | Kotlin, Jetpack Compose (BOM 2026.11.01), material3 1.5.0 (Expressive APIs), Navigation 3 (predictive back) |
+| Build | AGP 9.5.2 (built-in Kotlin, no KGP), Gradle 9.9.2, compileSdk 37.2 / target 37 / min 26, Baseline Profile (`:baselineprofile` + `ProfileInstaller`) |
 | Architecture | MVVM + StateFlow, manual DI composition root (`di/Graph`); app module + a shaded bundletool vendor module |
 | Persistence | DataStore Preferences |
 | Media/Images | Coil 3 (GIF, custom fetchers: app icons, APK/bundle icons, disk-cached video thumbnails), Media3 ExoPlayer |
 | Archives | libxfarchive (`app/src/main/cpp`, NDK): a read-only libarchive 3.8 subset with zstd, liblzma, bzip2 and lz4 decoders, plus our own random-access zip reader; zip writing on the platform's zlib. junrar for RAR 1.x archives (`full` flavor) |
 | Privileged access | Shizuku 13.1.5 (user service, real fds) · `su` shell |
 | Package install | PackageInstaller sessions · vendored bundletool 1.18.3 · ARSCLib (in-process aapt2) · minimal self-signed signer |
-
-Note: material3 is pinned to the 1.5 alpha line (`1.5.0-alpha28`) because the
-Expressive APIs are `internal` in the 1.4.0 stable release.
 
 ## Project layout
 
