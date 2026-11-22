@@ -149,6 +149,13 @@ fun AppHost(vm: MainViewModel) {
         if (rear != null) add(rear to rearPose)
         add(front to frontPose)
     }
+    // Only the page on top of the stack takes touches. A push puts the new page there while
+    // the old one is still visible beside it; a pop puts the revealed page there while the
+    // closing one slides away. A committed back gesture pops only after its motion, so until
+    // then neither page may start a navigation: the closing page is fading out, and a push
+    // from the revealed page would land on top of the page being closed.
+    val inputTopId = backStack.lastOrNull()?.id
+    val committingBack = switcher.mode == AppScreenSwitcher.Mode.BackCommit
 
     Box(
         Modifier
@@ -166,6 +173,7 @@ fun AppHost(vm: MainViewModel) {
                         pose = pose,
                         displayCornerRadius = displayCornerRadius,
                         mayShowVideo = entry.screen is AppScreen.Viewer,
+                        acceptsInput = entry.id == inputTopId && !committingBack,
                     ) {
                         AppScreenBody(vm, entry)
                     }

@@ -15,6 +15,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
@@ -94,11 +96,17 @@ fun AppScreenSwitcher.scrimAlpha(isDark: Boolean): Float {
     return maxScrim * (1f - commit)
 }
 
+/**
+ * [acceptsInput] false lays a touch shield over the page. A page in motion that is not where the
+ * motion ends must not take taps: the second tap of a double tap would land on the page being
+ * covered and open the item again.
+ */
 @Composable
 fun AppScreenSurface(
     pose: WindowPose,
     displayCornerRadius: Dp,
     mayShowVideo: Boolean,
+    acceptsInput: Boolean,
     content: @Composable () -> Unit,
 ) {
     val background = MaterialTheme.colorScheme.background
@@ -130,6 +138,23 @@ fun AppScreenSurface(
             .background(background),
     ) {
         content()
+        if (!acceptsInput) {
+            // Hit testing stops at the topmost sibling with pointer input, so the page under
+            // the shield never sees the pointer, including scrolls and long presses.
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitPointerEvent(PointerEventPass.Initial)
+                                    .changes
+                                    .forEach { it.consume() }
+                            }
+                        }
+                    },
+            )
+        }
     }
 }
 
