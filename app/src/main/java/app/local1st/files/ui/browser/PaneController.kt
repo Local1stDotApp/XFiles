@@ -353,6 +353,37 @@ internal fun pathInsidePaneRoots(id: String, topLevelIds: Set<String>): List<Str
 }
 
 /**
+ * Whether an id still sits inside the pane roots. Most rows reach a root through their id
+ * parents ([pathInsidePaneRoots]). Some virtual folders list rows whose ids live elsewhere:
+ * App manager shows an app's APKs (`file:///data/app/…/base.apk`) under `apps://<package>`, and
+ * no id parent of those files is a pane root. Such rows are reached through the listings in
+ * [children] instead, so a listing under a vanished volume is still dropped.
+ */
+internal class PaneReach(
+    private val topLevelIds: Set<String>,
+    private val children: Map<String, List<XEntry>>,
+) {
+    // Most checks end on the id chain, so the listing index is only built when one does not.
+    private val visualParents by lazy(LazyThreadSafetyMode.NONE) { visualParentsOf(children) }
+
+    operator fun contains(id: String): Boolean {
+        if (pathInsidePaneRoots(id, topLevelIds) != null) return true
+        if (children.isEmpty()) return false
+        val seen = hashSetOf(id)
+        var current = visualParents[id] ?: XId.parent(id)
+        while (current != null && seen.add(current)) {
+            if (pathInsidePaneRoots(current, topLevelIds) != null) return true
+            current = visualParents[current] ?: XId.parent(current)
+        }
+        return false
+    }
+
+    /** [expandedIds] minus stale protocol ancestors and ids outside the pane roots. */
+    fun expanded(expandedIds: Set<String>): Set<String> =
+        expandedIds.filterTo(LinkedHashSet()) { id -> !isSyntheticArchiveRoot(id) && id in this }
+}
+
+/**
  * Ancestors to expand for a hit inside a volume bin: the Recycle Bin root, then the
  * trashed folder chain. Hidden `.xfiles-trash` directories are not in the chain.
  * Null when [hitId] is not a file in a mounted volume's bin.
@@ -462,13 +493,14 @@ internal fun trashRowsOnMountedVolumes(rows: List<XEntry>, mountedRoots: List<St
         mountedRoots.any { TrashPaths.isInside(it, path) }
     }
 
-/** Removes stale protocol ancestors and ids from volumes/favorites that are no longer pane roots. */
+/**
+ * Removes stale protocol ancestors and ids from volumes/favorites that are no longer pane roots.
+ * Without listings, rows shown under another scheme (see [PaneReach]) are removed too.
+ */
 internal fun reachableExpandedIds(
     expandedIds: Set<String>,
     topLevelIds: Set<String>,
-): Set<String> = expandedIds.filterTo(LinkedHashSet()) { id ->
-    !isSyntheticArchiveRoot(id) && pathInsidePaneRoots(id, topLevelIds) != null
-}
+): Set<String> = PaneReach(topLevelIds, emptyMap()).expanded(expandedIds)
 
 /**
  * Builds the small routing snapshot persisted for the next cold start. Fresh entries already in
@@ -789,41 +821,37 @@ class PaneController(
         }
         var reloadTrash = false
         tree.update { current ->
-            val expanded = reachableExpandedIds(current.expanded, topLevelIds)
-            val children = current.children.filterKeys { id ->
-                id in topLevelIds || pathInsidePaneRoots(id, topLevelIds) != null
-            }.toMutableMap()
+            val listed = current.children.toMutableMap()
             // A cached trash:// listing does not follow plug/unplug on its own.
             // Drop rows whose volume is gone now, then reload so a newly mounted bin shows up.
-            if (XId.TRASH_ROOT in children || XId.TRASH_ROOT in expanded) {
+            // Done first so a folder opened in a gone bin row is not kept through that row.
+            if (XId.TRASH_ROOT in listed || XId.TRASH_ROOT in current.expanded) {
                 reloadTrash = true
-                children[XId.TRASH_ROOT]?.let { rows ->
-                    children[XId.TRASH_ROOT] = trashRowsOnMountedVolumes(rows, mountedRoots)
+                listed[XId.TRASH_ROOT]?.let { rows ->
+                    listed[XId.TRASH_ROOT] = trashRowsOnMountedVolumes(rows, mountedRoots)
                 }
             }
+            val reach = PaneReach(topLevelIds, listed)
             current.copy(
                 roots = list,
-                expanded = expanded,
-                children = children,
-                loading = current.loading.filterTo(LinkedHashSet()) {
-                    it in topLevelIds || pathInsidePaneRoots(it, topLevelIds) != null
-                },
-                errors = current.errors.filterKeys {
-                    it in topLevelIds || pathInsidePaneRoots(it, topLevelIds) != null
-                },
+                expanded = reach.expanded(current.expanded),
+                children = listed.filterKeys { it in reach },
+                loading = current.loading.filterTo(LinkedHashSet()) { it in reach },
+                errors = current.errors.filterKeys { it in reach },
             )
         }
-        sessionExpanded.value = reachableExpandedIds(sessionExpanded.value, topLevelIds)
+        val reach = PaneReach(topLevelIds, tree.value.children)
+        sessionExpanded.value = reach.expanded(sessionExpanded.value)
         savedDirectoryHints.update { hints ->
-            hints.filterKeys { pathInsidePaneRoots(it, topLevelIds) != null }
+            hints.filterKeys { it in reach }
         }
         selection.update { sel ->
-            sel.filterTo(LinkedHashSet()) { pathInsidePaneRoots(it, topLevelIds) != null }
+            sel.filterTo(LinkedHashSet()) { it in reach }
         }
         val focus = focusedDirId.value
-        if (focus != null && pathInsidePaneRoots(focus, topLevelIds) == null) {
+        if (focus != null && focus !in reach) {
             var candidate: String? = XId.parent(focus)
-            while (candidate != null && pathInsidePaneRoots(candidate, topLevelIds) == null) {
+            while (candidate != null && candidate !in reach) {
                 candidate = XId.parent(candidate)
             }
             focusedDirId.value = candidate ?: list.firstOrNull()?.id
@@ -954,14 +982,11 @@ class PaneController(
         focusedDirId.value = target?.id
         applyPaneRoots(publishRoots)
         tree.update { current ->
+            val reach = PaneReach(topLevelIdsAtPublish, buffer.children)
             current.copy(
-                expanded = reachableExpandedIds(criticalExpanded, topLevelIdsAtPublish),
-                children = buffer.children.filterKeys {
-                    pathInsidePaneRoots(it, topLevelIdsAtPublish) != null
-                },
-                errors = buffer.errors.filterKeys {
-                    pathInsidePaneRoots(it, topLevelIdsAtPublish) != null
-                },
+                expanded = reach.expanded(criticalExpanded),
+                children = buffer.children.filterKeys { it in reach },
+                errors = buffer.errors.filterKeys { it in reach },
             )
         }
         settleInitialPosition(focusedDirId.value)
@@ -988,23 +1013,17 @@ class PaneController(
                 buffer.retainListings(remainingCritical + hydratedIds)
                 tree.update { current ->
                     val liveTopLevelIds = current.roots.mapTo(HashSet()) { it.id }
-                    val keptChildren = buffer.children.filterKeys {
-                        pathInsidePaneRoots(it, liveTopLevelIds) != null
-                    }
-                    val keptErrors = buffer.errors.filterKeys {
-                        pathInsidePaneRoots(it, liveTopLevelIds) != null
-                    }
+                    val merged = current.children + buffer.children
+                    val reach = PaneReach(liveTopLevelIds, merged)
+                    val keptChildren = buffer.children.filterKeys { it in reach }
+                    val keptErrors = buffer.errors.filterKeys { it in reach }
                     val mergedErrors = current.errors.toMutableMap()
                     keptChildren.keys.forEach(mergedErrors::remove)
                     mergedErrors.putAll(keptErrors)
                     current.copy(
-                        expanded = reachableExpandedIds(remainingExpanded, liveTopLevelIds),
-                        children = (current.children + keptChildren).filterKeys {
-                            pathInsidePaneRoots(it, liveTopLevelIds) != null
-                        },
-                        errors = mergedErrors.filterKeys {
-                            pathInsidePaneRoots(it, liveTopLevelIds) != null
-                        },
+                        expanded = reach.expanded(remainingExpanded),
+                        children = merged.filterKeys { it in reach },
+                        errors = mergedErrors.filterKeys { it in reach },
                     )
                 }
             } finally {
@@ -1199,7 +1218,7 @@ class PaneController(
                 val current = tree.value
                 val topLevelIds = current.roots.mapTo(HashSet()) { it.id }
                 if (entry.id in current.expanded &&
-                    pathInsidePaneRoots(entry.id, topLevelIds) != null
+                    entry.id in PaneReach(topLevelIds, current.children)
                 ) {
                     load(entry)
                 } else {
@@ -1223,8 +1242,8 @@ class PaneController(
 
     /**
      * Publishes a directory listing only if the pane roots have not changed since the
-     * read started and [id] is still on a mounted volume. Otherwise an unplug that
-     * raced this IO would put the vanished folder back, and a remount would show
+     * read started and [id] is still inside them (see [PaneReach]). Otherwise an unplug
+     * that raced this IO would put the vanished folder back, and a remount would show
      * the pre-unplug cache.
      */
     private fun applyListingIfCurrent(
@@ -1237,7 +1256,7 @@ class PaneController(
         tree.update { current ->
             val topLevelIds = current.roots.mapTo(HashSet()) { it.id }
             if (startedGeneration != paneRootsGeneration ||
-                pathInsidePaneRoots(id, topLevelIds) == null
+                id !in PaneReach(topLevelIds, current.children)
             ) {
                 applied = false
                 current.copy(loading = current.loading - id)

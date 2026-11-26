@@ -13,6 +13,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Test
 
@@ -310,6 +311,73 @@ class PaneExpansionPolicyTest {
                 topLevelIds = setOf(internal, "apps://"),
             ),
         )
+    }
+
+    @Test
+    fun appManagerApkRowsStayInsideThePane() {
+        val appsRoot = "apps://"
+        val installed = "apps://@user"
+        val app = "apps://com.example.app"
+        val apkPath = "/data/app/~~abc==/com.example.app-xyz==/split_config.en.apk"
+        val apk = XId.file(apkPath)
+        val manifest = XId.zip(apkPath, "AndroidManifest.xml")
+        val res = XId.zip(apkPath, "res")
+        val drawable = XId.zip(apkPath, "res/drawable")
+        val children = mapOf(
+            appsRoot to listOf(XEntry(installed, "Installed", isDir = true)),
+            installed to listOf(XEntry(app, "Example", isDir = false, kind = EntryKind.APP)),
+            app to listOf(XEntry(apk, "split_config.en.apk", isDir = false, kind = EntryKind.ARCHIVE)),
+            apk to listOf(
+                XEntry(manifest, "AndroidManifest.xml", isDir = false),
+                XEntry(res, "res", isDir = true),
+            ),
+            res to listOf(XEntry(drawable, "drawable", isDir = true)),
+        )
+        val topLevelIds = setOf("file:///storage/emulated/0", appsRoot)
+        val reach = PaneReach(topLevelIds, children)
+
+        assertTrue(apk in reach)
+        assertTrue(res in reach)
+        assertTrue(drawable in reach)
+        assertEquals(
+            setOf(appsRoot, installed, app, apk, res),
+            reach.expanded(setOf(appsRoot, installed, app, apk, res)),
+        )
+        // App manager closed: its listings no longer lead to a root.
+        val withoutApps = PaneReach(setOf("file:///storage/emulated/0"), children)
+        assertFalse(apk in withoutApps)
+        assertFalse(res in withoutApps)
+    }
+
+    @Test
+    fun listingsUnderVanishedUsbVolumeStayOut() {
+        val internal = "file:///storage/emulated/0"
+        val usb = "file:///storage/ABCD-1234"
+        val children = mapOf(
+            internal to listOf(XEntry("$internal/Download", "Download", isDir = true)),
+            usb to listOf(XEntry("$usb/DCIM", "DCIM", isDir = true)),
+            "$usb/DCIM" to listOf(XEntry("$usb/DCIM/Camera", "Camera", isDir = true)),
+        )
+        val reach = PaneReach(setOf(internal, "apps://"), children)
+
+        assertEquals(
+            listOf(internal, "$internal/Download"),
+            listOf(internal, "$internal/Download", usb, "$usb/DCIM", "$usb/DCIM/Camera")
+                .filter { it in reach },
+        )
+    }
+
+    @Test
+    fun apkIsKeptWhenItsAppIsAlsoInAStaleListing() {
+        val app = "apps://com.example.app"
+        val apk = XId.file("/data/app/~~abc==/com.example.app-xyz==/base.apk")
+        val children = mapOf(
+            // A listing under a gone volume that holds the same app row comes first.
+            "file:///storage/ABCD-1234" to listOf(XEntry(app, "Example", isDir = false, kind = EntryKind.APP)),
+            app to listOf(XEntry(apk, "base.apk", isDir = false, kind = EntryKind.ARCHIVE)),
+        )
+
+        assertTrue(apk in PaneReach(setOf("apps://"), children))
     }
 
     @Test
