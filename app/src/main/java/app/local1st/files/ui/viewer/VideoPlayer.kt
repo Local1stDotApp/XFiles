@@ -341,10 +341,13 @@ fun VideoPlayerScreen(
     var cardHeightPx by remember { mutableIntStateOf(0) }
     var cardOffsetY by remember { mutableFloatStateOf(0f) }
 
+    // Letterboxing on a checkerboard, so a dark frame's edges stay visible. PiP keeps black:
+    // its window already has the video's shape.
+    val checkerboard = rememberTransparencyCheckerboard()
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .then(if (inPip) Modifier.background(Color.Black) else Modifier.background(checkerboard.brush))
             .onSizeChanged { parentHeightPx = it.height },
     ) {
         AndroidView(

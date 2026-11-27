@@ -97,11 +97,12 @@ fun ImageViewer(
     onClose: () -> Unit,
     onOpenWith: (XEntry) -> Unit,
 ) {
-    // Black behind the status bar in either theme; a light theme's dark icons would vanish there.
+    // Light status-bar icons in either theme: the top bar's dark gradient sits behind them.
     DarkSystemBars()
+    val checkerboard = rememberTransparencyCheckerboard()
     if (items.isEmpty()) {
-        Box(Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.nothing_to_show), color = Color.White)
+        Box(Modifier.fillMaxSize().background(checkerboard.brush), contentAlignment = Alignment.Center) {
+            Text(stringResource(R.string.nothing_to_show), color = checkerboard.contentColor)
         }
         return
     }
@@ -116,7 +117,8 @@ fun ImageViewer(
     // would give the picture the whole screen except a strip it still cannot use.
     SystemBarsHidden(hidden = !barsVisible)
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    // A checkerboard, not black, so a dark picture's edges and transparent pixels show.
+    Box(Modifier.fillMaxSize().background(checkerboard.brush)) {
         HorizontalPager(
             state = pagerState,
             userScrollEnabled = !currentZoomed,
@@ -126,6 +128,7 @@ fun ImageViewer(
         ) { page ->
             ZoomableImagePage(
                 entry = items[page],
+                contentColor = checkerboard.contentColor,
                 isSettled = pagerState.settledPage == page,
                 onToggleBars = { barsVisible = !barsVisible },
                 onZoomChanged = { zoomedPages[page] = it },
@@ -197,6 +200,7 @@ fun ImageViewer(
 @Composable
 private fun ZoomableImagePage(
     entry: XEntry,
+    contentColor: Color,
     isSettled: Boolean,
     onToggleBars: () -> Unit,
     onZoomChanged: (Boolean) -> Unit,
@@ -308,7 +312,7 @@ private fun ZoomableImagePage(
                 }
             }
             when (val result = loaded) {
-                null -> LoadingIndicator(color = Color.White)
+                null -> LoadingIndicator(color = contentColor)
                 else -> result.fold(
                     onSuccess = { bytes ->
                         AsyncImage(
@@ -323,11 +327,11 @@ private fun ZoomableImagePage(
                             Icon(
                                 Icons.Outlined.BrokenImage,
                                 contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.7f),
+                                tint = contentColor.copy(alpha = 0.7f),
                             )
                             Text(
                                 e.message ?: stringResource(R.string.cannot_load, entry.name),
-                                color = Color.White.copy(alpha = 0.7f),
+                                color = contentColor.copy(alpha = 0.7f),
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(top = 8.dp),
                             )
