@@ -74,6 +74,9 @@ class RootFileSystemTest {
         // the remedies are the grant or the transport switch.
         assertTrue(rootTransportUnavailableMessage(TransportPref.SU).contains("superuser"))
         assertFalse(rootTransportUnavailableMessage(TransportPref.SU).contains("start Shizuku"))
+        // Magisk 31.1+ refuses silently, so the message has to say where the grant is made.
+        assertTrue(rootTransportUnavailableMessage(TransportPref.AUTO).contains("root manager"))
+        assertTrue(rootTransportUnavailableMessage(TransportPref.SU).contains("root manager"))
         assertEquals(FILESYSTEM_ROOT_TRANSPORT_OFF_MESSAGE, rootTransportUnavailableMessage(TransportPref.OFF))
     }
 

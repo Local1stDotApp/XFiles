@@ -365,10 +365,18 @@ internal fun rootTransportUnavailableMessage(preference: TransportPref): String 
         "Shizuku is not running. Start it to browse /, or switch the transport to Auto / Root (su)."
     // Forced su never falls back to Shizuku, so starting it would not help here.
     TransportPref.SU ->
-        "Root access is unavailable. Grant superuser (su), or switch the transport to Auto / Shizuku."
+        "Root access is unavailable. $SUPERUSER_GRANT_HINT, or switch the transport to Auto / Shizuku."
     TransportPref.AUTO ->
-        "Root access is unavailable. Grant superuser (su) or start Shizuku to browse /."
+        "Root access is unavailable. $SUPERUSER_GRANT_HINT, or start Shizuku to browse /."
 }
+
+/**
+ * Where the grant happens. Magisk 31.1 removed the prompt that used to appear when an app ran
+ * `su`: an app that is not already allowed in its Superuser tab is refused without any UI, so
+ * "grant superuser" alone no longer tells the user what to do.
+ */
+private const val SUPERUSER_GRANT_HINT =
+    "Allow XFiles superuser access in your root manager (Magisk 31.1 and later no longer ask)"
 
 /** The transport preference is Off: point at that switch, not at a missing su grant. */
 internal const val FILESYSTEM_ROOT_TRANSPORT_OFF_MESSAGE =
