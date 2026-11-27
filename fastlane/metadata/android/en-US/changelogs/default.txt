@@ -1,9 +1,8 @@
-What's new in 1.6.0
+What's new in 1.6.1
 
-• New built-in archive reader: 7Z and TAR.XZ open several times faster, and ISO, CPIO, DEB, ZST, LZ4 and more now open too
-• Search the whole tree or all storage, then jump to a result
-• PDF viewer: select and copy text
-• Media player: seek, replay, change speed and keep watching in picture-in-picture
-• Text viewer: right-to-left text and legacy encodings
-• APK and split bundle files show their app icons
-• Dialogs keep their buttons on screen with long names
+• App manager: tapping an app's APK shows its contents again
+• Ticking boxes quickly down a column no longer opens the rows in between
+• A fast double tap no longer opens an item twice
+• Pictures and videos sit on a checkerboard, so dark and transparent ones keep a visible edge
+• Shizuku-compatible services such as Shizako are recognised
+• Root: when su is refused, XFiles says where to allow it (Magisk 31.1 and later no longer ask)
