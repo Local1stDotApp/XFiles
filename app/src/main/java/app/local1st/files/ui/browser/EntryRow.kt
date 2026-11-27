@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -24,11 +25,11 @@ import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,6 +55,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.pluralStringResource
@@ -87,6 +89,7 @@ private val ChevronSize = 12.dp
 private val IndentWidth = ChevronGapStart + ChevronSize
 private val RowHeight = 56.dp
 private val RowCorner = 12.dp
+private val SelectionToggleWidth = 48.dp
 private val HighlightStroke = 2.dp
 private const val HIGHLIGHT_ALPHA = 0.24f
 private const val HIGHLIGHT_IN_MS = 250
@@ -320,7 +323,22 @@ fun EntryRow(
 
         if (selectable) {
             val description = stringResource(if (selected) R.string.deselect else R.string.select)
-            IconButton(onClick = onToggleSelect, enabled = enabled) {
+            // As tall as the row, so the toggles of neighbouring rows touch. An IconButton's
+            // 48.dp target left a strip between them that opened the row instead, easy to hit
+            // when ticking down a column. The ripple keeps the button's 40.dp circle.
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .width(SelectionToggleWidth)
+                    .clickable(
+                        interactionSource = null,
+                        indication = ripple(bounded = false, radius = 20.dp),
+                        enabled = enabled,
+                        role = Role.Button,
+                        onClick = onToggleSelect,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
                 SelectionMark(selected, contentDescription = description)
             }
         }
@@ -586,7 +604,7 @@ private fun StartupEntryRow(
             }
         }
         if (selectable) {
-            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.size(SelectionToggleWidth), contentAlignment = Alignment.Center) {
                 SelectionMark(selected, contentDescription = null)
             }
         }
