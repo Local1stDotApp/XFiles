@@ -95,18 +95,15 @@ object ShizukuGate {
 
     internal fun refresh() {
         val context = appContext ?: return
-        if (!isInstalled(context)) {
-            setPermissionPermanentlyDenied(false)
-            _state.value = ShizukuState.NotInstalled
-            return
-        }
-
-        val status = runCatching {
+        // A live binder proves a service is there, so it is asked first. Shizako and other
+        // compatible services deliver one without defining Shizuku's permission, which is all
+        // isInstalled can see; that lookup only names the reason when no service answers.
+        val connected = runCatching {
             val binder = Shizuku.getBinder()
             if (binder == null || !binder.isBinderAlive || !Shizuku.pingBinder()) {
-                return@runCatching ShizukuState.NotRunning
+                return@runCatching null
             }
-            if (Shizuku.isPreV11()) return@runCatching ShizukuState.NotRunning
+            if (Shizuku.isPreV11()) return@runCatching null
             if (Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED) {
                 setPermissionPermanentlyDenied(false)
                 ShizukuState.Ready
@@ -116,16 +113,16 @@ object ShizukuGate {
                 setPermissionPermanentlyDenied(Shizuku.shouldShowRequestPermissionRationale())
                 ShizukuState.PermissionRequired
             }
-        }.getOrElse {
-            setPermissionPermanentlyDenied(false)
-            ShizukuState.NotRunning
-        }
-        _state.value = status
+        }.getOrNull()
+        if (connected == null) setPermissionPermanentlyDenied(false)
+        _state.value = connected
+            ?: if (isInstalled(context)) ShizukuState.NotRunning else ShizukuState.NotInstalled
     }
 
     private fun isInstalled(context: Context): Boolean = runCatching {
         // The permission is a global namespace entry. Looking it up works with package hiding,
-        // recognizes Shizuku forks, and avoids adding a package-visibility <queries> entry.
+        // recognizes forks that keep Shizuku's permission name, and avoids adding a
+        // package-visibility <queries> entry.
         context.packageManager
             .getPermissionInfo(ShizukuProvider.PERMISSION, 0)
             .packageName
